@@ -14,19 +14,43 @@
   --blue: #60a5fa;
   --text: #f8fafc;
   --muted: #94a3b8;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 20px;
+  --shell-max: 430px;
   font-family: "Outfit", system-ui, sans-serif;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+#root {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+img,
+svg,
+video {
+  max-width: 100%;
 }
 
 a {
@@ -34,14 +58,16 @@ a {
 }
 
 .shell {
-  max-width: 430px;
+  width: 100%;
+  max-width: var(--shell-max);
   margin: 0 auto;
+  min-width: 0;
   min-height: 100vh;
   min-height: 100dvh;
-  padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(48px, env(safe-area-inset-bottom))
-    max(20px, env(safe-area-inset-left));
+  padding: max(var(--space-lg), env(safe-area-inset-top)) max(var(--space-md), env(safe-area-inset-right))
+    max(48px, env(safe-area-inset-bottom)) max(var(--space-md), env(safe-area-inset-left));
   background:
-    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(251, 191, 36, 0.2), transparent 55%),
+    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(251, 191, 36, 0.22), transparent 55%),
     radial-gradient(ellipse 80% 60% at 100% 50%, rgba(96, 165, 250, 0.14), transparent 50%),
     radial-gradient(ellipse 60% 50% at 0% 100%, rgba(52, 211, 153, 0.08), transparent 45%),
     var(--bg);
@@ -111,7 +137,18 @@ button.btn-gold:hover:not(:disabled) {
 
 a.btn-gold:active,
 button.btn-gold:active:not(:disabled) {
-  transform: translateY(0) scale(0.99);
+  transform: translateY(1px) scale(0.98);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.25) inset,
+    0 4px 16px rgba(251, 191, 36, 0.35);
+  transition-duration: 0.08s;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  a.btn-gold:active,
+  button.btn-gold:active:not(:disabled) {
+    filter: brightness(1.04);
+  }
 }
 
 .btn-gold:disabled {
@@ -229,15 +266,15 @@ button.btn-ghost:hover:not(:disabled) {
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(ellipse 90% 55% at 50% -5%, rgba(251, 191, 36, 0.28), transparent 52%),
-    radial-gradient(ellipse 70% 45% at 100% 30%, rgba(96, 165, 250, 0.18), transparent 48%),
-    radial-gradient(ellipse 55% 40% at 0% 75%, rgba(52, 211, 153, 0.12), transparent 45%);
+    radial-gradient(ellipse 95% 60% at 50% -8%, rgba(251, 191, 36, 0.38), transparent 50%),
+    radial-gradient(ellipse 75% 50% at 100% 28%, rgba(96, 165, 250, 0.2), transparent 46%),
+    radial-gradient(ellipse 58% 42% at 0% 72%, rgba(52, 211, 153, 0.14), transparent 44%);
 }
 
 .marketing-glow--auth {
   background:
-    radial-gradient(ellipse 85% 50% at 50% 0%, rgba(251, 191, 36, 0.32), transparent 50%),
-    radial-gradient(ellipse 60% 40% at 90% 60%, rgba(96, 165, 250, 0.15), transparent 45%);
+    radial-gradient(ellipse 90% 55% at 50% 0%, rgba(251, 191, 36, 0.36), transparent 48%),
+    radial-gradient(ellipse 65% 42% at 90% 58%, rgba(96, 165, 250, 0.17), transparent 44%);
 }
 
 .marketing-inner {
@@ -245,17 +282,19 @@ button.btn-ghost:hover:not(:disabled) {
   z-index: 1;
   width: 100%;
   max-width: 400px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-md);
 }
 
 .marketing-hero {
-  margin: 4px 0 8px;
-  font-size: clamp(2rem, 8vw, 2.5rem);
+  margin: 2px 0 var(--space-xs);
+  font-size: clamp(2.125rem, 9vw, 2.625rem);
   font-weight: 800;
   letter-spacing: -0.04em;
   line-height: 1.05;
+  text-shadow: 0 0 40px rgba(251, 191, 36, 0.25);
 }
 
 .marketing-lead {
@@ -263,35 +302,45 @@ button.btn-ghost:hover:not(:disabled) {
   max-width: 340px;
   font-size: 15px;
   line-height: 1.55;
-  color: #cbd5e1;
+  color: #e2e8f0;
 }
 
 .glass-card {
   position: relative;
+  overflow: hidden;
   border-radius: 22px;
-  padding: 20px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: var(--space-lg) var(--space-md);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   background: linear-gradient(
     155deg,
-    rgba(255, 255, 255, 0.12) 0%,
-    rgba(255, 255, 255, 0.05) 40%,
-    rgba(30, 48, 78, 0.55) 100%
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0.06) 42%,
+    rgba(30, 48, 78, 0.58) 100%
   );
-  backdrop-filter: blur(20px) saturate(1.35);
-  -webkit-backdrop-filter: blur(20px) saturate(1.35);
+  backdrop-filter: blur(22px) saturate(1.4);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.07) inset,
     0 20px 50px -20px rgba(0, 0, 0, 0.55),
-    0 0 80px -20px rgba(251, 191, 36, 0.15);
+    0 0 88px -18px rgba(251, 191, 36, 0.2);
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
+.glass-card::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, transparent 42%);
+}
+
 .glass-card:hover {
-  border-color: rgba(251, 191, 36, 0.22);
+  border-color: rgba(251, 191, 36, 0.28);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.09) inset,
     0 24px 56px -18px rgba(0, 0, 0, 0.5),
-    0 0 100px -16px rgba(251, 191, 36, 0.22);
+    0 0 110px -14px rgba(251, 191, 36, 0.28);
 }
 
 .glass-card--auth {
@@ -383,20 +432,83 @@ button.btn-ghost:hover:not(:disabled) {
 .auth-brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-sm);
   font-weight: 800;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--text);
   text-decoration: none;
   letter-spacing: -0.02em;
 }
 
+.tg-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tg-logo-mark {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(253, 230, 138, 0.25), rgba(251, 191, 36, 0.12));
+  box-shadow:
+    0 0 0 1px rgba(251, 191, 36, 0.35) inset,
+    0 6px 24px rgba(251, 191, 36, 0.45);
+}
+
+.tg-logo-mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.tg-logo-text {
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  text-shadow: 0 0 24px rgba(251, 191, 36, 0.35);
+}
+
+.tg-logo--sm .tg-logo-mark {
+  width: 32px;
+  height: 32px;
+  padding: 5px;
+}
+
+.tg-logo--sm .tg-logo-text {
+  font-size: 15px;
+}
+
+.tg-logo--md .tg-logo-mark {
+  width: 40px;
+  height: 40px;
+  padding: 6px;
+}
+
+.tg-logo--md .tg-logo-text {
+  font-size: 17px;
+}
+
+.tg-logo--lg .tg-logo-mark {
+  width: 52px;
+  height: 52px;
+  padding: 8px;
+  border-radius: 14px;
+}
+
+.tg-logo--lg .tg-logo-text {
+  font-size: 22px;
+}
+
 .auth-brand-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   background: linear-gradient(135deg, var(--gold), var(--gold-b));
-  box-shadow: 0 4px 16px rgba(251, 191, 36, 0.35);
+  box-shadow: 0 6px 24px rgba(251, 191, 36, 0.45);
 }
 
 .auth-title {
@@ -529,7 +641,12 @@ button.btn-ghost:hover:not(:disabled) {
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.stack--loose {
+  gap: var(--space-md);
 }
 
 .mt {
@@ -550,20 +667,6 @@ button.btn-ghost:hover:not(:disabled) {
   --muted: #94a8c9;
   --border: #375a8f;
   --text: #ffffff;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-
-  .btn-gold {
-    box-shadow: none;
-  }
 }
 
 .btn-gold,
@@ -667,12 +770,6 @@ a.btn-ghost {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .skeleton {
-    animation: none;
-    background: rgba(255, 255, 255, 0.08);
-  }
-}
 
 .page-loader {
   gap: 14px;
@@ -751,16 +848,39 @@ a.btn-ghost {
   text-align: center;
 }
 
+@media (max-width: 430px) {
+  .marketing-page {
+    padding-inline: max(14px, env(safe-area-inset-left)) max(14px, env(safe-area-inset-right));
+  }
+
+  .marketing-inner {
+    gap: var(--space-sm);
+  }
+
+  .glass-card {
+    padding: var(--space-md) 14px;
+  }
+}
+
 @media (max-width: 360px) {
+  .shell {
+    padding-inline: max(14px, env(safe-area-inset-left)) max(14px, env(safe-area-inset-right));
+  }
+
   .marketing-footer-links {
     flex-wrap: wrap;
     justify-content: center;
-    gap: 10px 16px;
+    gap: 10px 14px;
   }
 
   .trust-pill {
     font-size: 10px;
     padding: 8px 10px;
+  }
+
+  .tg-logo--lg .tg-logo-mark {
+    width: 46px;
+    height: 46px;
   }
 }
 
@@ -829,8 +949,32 @@ a.btn-ghost {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .btn-gold {
+    box-shadow: 0 4px 12px rgba(251, 191, 36, 0.25);
+  }
+
+  .skeleton {
+    animation: none;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
   .checkout-overlay-spinner {
     animation: none;
     border-top-color: var(--gold);
+  }
+
+  .glass-card:hover {
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.07) inset,
+      0 20px 50px -20px rgba(0, 0, 0, 0.55),
+      0 0 88px -18px rgba(251, 191, 36, 0.2);
   }
 }

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import PaystackTestBanner from "../components/PaystackTestBanner";
 import { TrustIndicators } from "../components/fintech/TrustIndicators";
+import { TipGuardLogo } from "../components/TipGuardLogo";
 
 export default function Landing() {
   const { user, role, isGuardUser, isMerchantUser } = useAuth();
@@ -13,6 +14,9 @@ export default function Landing() {
         <PaystackTestBanner />
 
         <header className="fx-fade-up text-center">
+          <div className="mb-1 flex justify-center">
+            <TipGuardLogo size="lg" showWordmark={false} />
+          </div>
           <p className="muted-label">South Africa · Digital tipping</p>
           <h1 className="marketing-hero fx-gradient-text">TipGuard</h1>
           <p className="marketing-lead">
@@ -24,7 +28,7 @@ export default function Landing() {
 
         <div className="glass-card fx-fade-up fx-stagger-2">
           {!user ? (
-            <div className="stack" style={{ gap: 10 }}>
+            <div className="stack stack--loose">
               <p className="glass-card-copy">
                 Create an account or sign in to send tips, manage your wallet, and track every payment securely.
               </p>
@@ -39,7 +43,7 @@ export default function Landing() {
               </Link>
             </div>
           ) : (
-            <div className="stack" style={{ gap: 10 }}>
+            <div className="stack stack--loose">
               <p className="glass-card-copy">You are signed in. Open your dashboard to continue.</p>
               {role === "admin" ? (
                 <Link to="/admin" className="btn-gold btn-gold--shine tap-target">

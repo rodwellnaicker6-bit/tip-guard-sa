@@ -60,4 +60,15 @@ test.describe("Auth pages and route guards (no credentials)", () => {
     await page.goto("/");
     await expect(page.getByRole("link", { name: /sign in/i }).first()).toBeVisible();
   });
+
+  test("landing has no horizontal overflow at 360px", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.goto("/");
+    const overflow = await page.evaluate(() => {
+      const doc = document.documentElement;
+      return doc.scrollWidth > doc.clientWidth + 1;
+    });
+    expect(overflow).toBe(false);
+    await expect(page.getByText("TipGuard").first()).toBeVisible();
+  });
 });

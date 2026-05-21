@@ -8,12 +8,6 @@
     animation: fx-scale-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
-  .fx-shimmer {
-    background: linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.08) 45%, transparent 70%);
-    background-size: 200% 100%;
-    animation: fx-shimmer 2.2s ease-in-out infinite;
-  }
-
   .fx-glow-pulse {
     animation: fx-glow-pulse 2.4s ease-in-out infinite;
   }
@@ -41,22 +35,13 @@
   }
 }
 
-@keyframes fx-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
 @keyframes fx-glow-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.35);
+    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4);
   }
   50% {
-    box-shadow: 0 0 40px 2px rgba(245, 158, 11, 0.2);
+    box-shadow: 0 0 48px 4px rgba(251, 191, 36, 0.22);
   }
 }
 
@@ -73,10 +58,11 @@
 }
 
 .fx-gradient-text {
-  background: linear-gradient(135deg, #fef3c7, #fbbf24, #f97316);
+  background: linear-gradient(135deg, #fff7ed 0%, #fde68a 28%, #fbbf24 55%, #f59e0b 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  filter: drop-shadow(0 2px 12px rgba(251, 191, 36, 0.35));
 }
 
 .fx-stagger-1 {
@@ -92,5 +78,10 @@
 @media (prefers-reduced-motion: reduce) {
   a.btn-gold--shine::after {
     display: none;
+  }
+
+  .fx-check-draw {
+    animation: none;
+    stroke-dashoffset: 0;
   }
 }

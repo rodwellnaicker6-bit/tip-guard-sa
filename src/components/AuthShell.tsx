@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { TrustIndicators } from "./fintech/TrustIndicators";
 import PaystackTestBanner from "./PaystackTestBanner";
+import { TipGuardLogo } from "./TipGuardLogo";
 
 /** Premium auth layout — glass card, trust row, mobile-first. */
 export function AuthShell({
@@ -22,8 +23,7 @@ export function AuthShell({
         <PaystackTestBanner />
         <header className="auth-header fx-fade-up text-center">
           <Link to="/" className="auth-brand mx-auto" aria-label="TipGuard home">
-            <span className="auth-brand-mark" aria-hidden />
-            TipGuard
+            <TipGuardLogo size="md" />
           </Link>
           <h1 className="auth-title fx-gradient-text">{title}</h1>
           {subtitle ? <p className="auth-subtitle">{subtitle}</p> : null}
