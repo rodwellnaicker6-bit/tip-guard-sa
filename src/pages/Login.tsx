@@ -4,6 +4,7 @@ import { useAuth } from "../context/useAuth";
 import { usePostAuthRedirect } from "../hooks/usePostAuthRedirect";
 import PageLoader from "../components/PageLoader";
 import { AuthShell } from "../components/AuthShell";
+import { FetchError } from "../components/FetchError";
 import { DEMO_ACCOUNTS, isDemoMode } from "../lib/demoMode";
 
 export default function Login() {
@@ -28,14 +29,18 @@ export default function Login() {
     };
   }, []);
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function attemptSignIn() {
     setError(null);
     setSubmitting(true);
     const { error: err } = await signIn(email, password);
     if (!mountedRef.current) return;
     setSubmitting(false);
     if (err) setError(err);
+  }
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    await attemptSignIn();
   }
 
   if (user?.id && showLoader) {
@@ -81,7 +86,9 @@ export default function Login() {
           required
           disabled={submitting}
         />
-        {error && <div className="error">{error}</div>}
+        {error ? (
+          <FetchError message={error} onRetry={() => void attemptSignIn()} retryLabel="Try signing in again" />
+        ) : null}
         <button
           className={`btn-gold btn-gold--shine tap-target ${submitting ? "btn-gold--loading" : ""}`}
           type="submit"

@@ -4,6 +4,7 @@ import { didSupabaseInitFail, isSupabaseBrowserConfigured } from "../lib/supabas
 import { bootLog, logBootHealth } from "../lib/bootDebug";
 import { BootBanner } from "./BootBanner";
 import { BootLoadingFallback } from "./BootFallback";
+import { OfflineBanner } from "./OfflineBanner";
 
 const FORCE_READY_MS = 10_000;
 
@@ -37,9 +38,10 @@ export function AppBootGate({ children }: { children: ReactNode }) {
   }
 
   return (
-    <>
+    <div className="app-root">
       <BootBanner />
-      {children}
-    </>
+      <OfflineBanner />
+      <div className="app-main">{children}</div>
+    </div>
   );
 }

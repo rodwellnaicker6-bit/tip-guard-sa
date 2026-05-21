@@ -8,6 +8,7 @@ import { startTipCheckout } from "../payments/checkoutFlow";
 import type { PublicGuardRow } from "./CustomerHome";
 import { useToast } from "../context/useToast";
 import { Skeleton } from "../components/Skeleton";
+import { FetchError } from "../components/FetchError";
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import { TrustRibbon } from "../components/fintech/TrustRibbon";
 import { CheckoutLoadingOverlay } from "../components/CheckoutLoadingOverlay";
@@ -25,6 +26,7 @@ export default function TipCheckout() {
   const [starting, setStarting] = useState(false);
   const [checkoutPhase, setCheckoutPhase] = useState<CheckoutPhase>("idle");
   const [loading, setLoading] = useState(true);
+  const [reload, setReload] = useState(0);
 
   const cents = useMemo(() => centsFromRandInput(amount), [amount]);
   const amountLabel = cents != null ? zarFromCents(cents) : "R 0.00";
@@ -49,7 +51,7 @@ export default function TipCheckout() {
     return () => {
       cancelled = true;
     };
-  }, [guardId]);
+  }, [guardId, reload]);
 
   async function startPayment() {
     setError(null);
@@ -99,9 +101,13 @@ export default function TipCheckout() {
 
   if (!guard) {
     return (
-      <div className="shell mx-auto max-w-md px-5 py-8">
-        {error ? <div className="error">{error}</div> : <p>Could not load this guard.</p>}
-        <Link to="/customer" className="mt-4 inline-block text-amber-400">
+      <div className="shell mx-auto max-w-md space-y-4 px-5 py-8">
+        {error ? (
+          <FetchError message={error} onRetry={() => setReload((n) => n + 1)} retryLabel="Reload guard" />
+        ) : (
+          <p>Could not load this guard.</p>
+        )}
+        <Link to="/customer" className="tap-target inline-block text-amber-400">
           Back
         </Link>
       </div>
@@ -135,7 +141,7 @@ export default function TipCheckout() {
             <button
               key={r}
               type="button"
-              className={`rounded-xl border px-1 py-2 text-xs font-bold transition sm:text-sm ${
+              className={`tap-target rounded-xl border px-1 py-2 text-xs font-bold transition sm:text-sm ${
                 amount === String(r)
                   ? "border-amber-400/80 bg-amber-500/15 text-amber-300"
                   : "border-white/10 bg-white/5 text-slate-200 hover:border-amber-400/40"
@@ -149,7 +155,7 @@ export default function TipCheckout() {
         <label className="mt-3 block">
           <span className="text-xs text-slate-500">Custom</span>
           <input
-            className="field mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-lg font-semibold text-white"
+            className="field tap-target mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-lg font-semibold text-white"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             type="number"
@@ -166,13 +172,16 @@ export default function TipCheckout() {
         South Africa. NFC tap-to-tip is prepared in code for supported Android Chrome builds.
       </p>
 
-      {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>}
+      {error ? (
+        <FetchError message={error} onRetry={() => void startPayment()} retryLabel="Retry payment" />
+      ) : null}
 
       <button
         type="button"
-        className={`fx-fade-up rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 text-base font-black text-black shadow-lg shadow-amber-500/25 transition active:scale-[0.99] disabled:opacity-50 ${!starting ? "fx-glow-pulse" : ""}`}
+        className={`hub-primary-cta tap-target fx-fade-up rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 text-base font-black text-black shadow-lg shadow-amber-500/25 transition active:scale-[0.99] disabled:opacity-50 ${!starting ? "fx-glow-pulse" : ""}`}
         onClick={() => void startPayment()}
         disabled={!hasPaystackPublicKey() || starting}
+        aria-busy={starting}
       >
         {starting ? (
           <span className="inline-flex items-center justify-center gap-2">

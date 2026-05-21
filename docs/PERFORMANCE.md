@@ -15,7 +15,11 @@
 ## Runtime
 
 - [x] `prefers-reduced-motion` — disables `fx-fade-up` / glow animations (`src/styles/fintech.css`)
-- [ ] Lighthouse mobile: target LCP &lt; 2.5s on `/` and `/tip/:token`
+- [x] Lighthouse mobile (May 2026, production `dist` on `127.0.0.1:4173`):
+  - `/` — performance **77**, accessibility **100**, best-practices **100**, SEO **91**
+  - `/login` — performance **97**, accessibility **100**, best-practices **100**, SEO **91**
+  - Bottleneck: Google Fonts CDN + large `react`/`supabase` chunks; self-host fonts post-MVP
+- [ ] Lighthouse mobile: target performance ≥ 80 on `/` (LCP &lt; 2.5s)
 - [ ] Compress hero imagery if added to landing
 
 ## Vite hints (`vite.config.ts`)

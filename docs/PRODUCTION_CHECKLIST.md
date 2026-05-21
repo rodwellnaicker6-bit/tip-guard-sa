@@ -2,6 +2,20 @@
 
 See [ROADMAP_AND_DEPLOYMENT.md](./ROADMAP_AND_DEPLOYMENT.md), [AUTH_SMOKE_TESTS.md](./AUTH_SMOKE_TESTS.md), [MIGRATIONS_AND_RLS.md](./MIGRATIONS_AND_RLS.md), [PRODUCTION_READINESS_AND_DEPLOYMENT.md](./PRODUCTION_READINESS_AND_DEPLOYMENT.md), and **[DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)** for smoke tests, SQL verification, and go-live steps.
 
+## UX & quality (MVP pass)
+
+- [x] Visual glitches — boot banner in `app-root` layout (no sticky overlap); hub `overflow-x` guarded
+- [x] `prefers-reduced-motion` — global + `src/styles/fintech.css`
+- [x] Async route skeletons — `RouteFallback`, hub `StatCardsSkeleton`, checkout/wallet loaders
+- [x] Auth keyboard — `useAuthKeyboardInset` + `scrollIntoView` on focus in `AuthShell`
+- [x] Touch targets — `.tap-target` / `min-height: 44px` on primary controls
+- [x] Offline — `useOnlineStatus` + `OfflineBanner`; `FetchError` retry on hubs/checkout
+- [x] Auth/payment retry — transient `signIn` retries; Paystack init retry; UI retry buttons
+- [x] Primary buttons — `disabled` + `aria-busy` + loading spinners on auth/checkout CTAs
+- [x] Typography — `.page-header`, `.stack--loose`, `.hub-shell` / `.dashboard-hub`
+- [x] Fintech polish — glass panels, dashboard glow, trust ribbons on hubs
+- [ ] Beta sign-off — [BETA_TESTER_CHECKLIST.md](./BETA_TESTER_CHECKLIST.md)
+
 ## Configuration
 
 - [ ] Database migrations applied through `20260621110000_launch_stability_indexes.sql` (includes `20260621100000_ecosystem_scaling_core.sql` and earlier). Earlier baseline: `20260615100000_tipguard_rbac_extension.sql` (customers, merchants, `qr_codes`, views, activity log).
@@ -11,6 +25,14 @@ See [ROADMAP_AND_DEPLOYMENT.md](./ROADMAP_AND_DEPLOYMENT.md), [AUTH_SMOKE_TESTS.
 - [ ] Paystack webhook URL deployed and receiving events (Paystack Dashboard → **Settings** → **API & Webhooks** → recent deliveries).
 - [ ] `PUBLIC_APP_URL` set for Paystack `callback_url` in `paystack-initialize` (recommended).
 - [ ] Email auth: confirm-email behaviour matches your UX (see `docs/SUPABASE_DEPLOY.md`); redirect URLs include `/auth/callback` and `/auth/reset`.
+
+## Performance & PWA
+
+- [x] `index.html` — font preconnect/preload, `manifest.webmanifest`
+- [x] Vite `manualChunks` — `react`, `router`, `supabase`, `sentry`
+- [x] Lighthouse scores documented in [PERFORMANCE.md](./PERFORMANCE.md)
+- [x] SPA deep links — `vercel.json` rewrite; e2e `/login`, `/customer/dashboard`, `/tip/:token`
+- [ ] Service worker (post-MVP)
 
 ## Payments
 
@@ -32,3 +54,4 @@ See [ROADMAP_AND_DEPLOYMENT.md](./ROADMAP_AND_DEPLOYMENT.md), [AUTH_SMOKE_TESTS.
 - [ ] Guard: payout request flow records an internal payout request.
 - [ ] Short link `/t/:token` while signed out → login → returns to `/customer/tip/:guardId`.
 - [ ] Signup with email confirmations: user sees verify step, completes link, lands on `/onboarding` or preserved redirect.
+- [ ] `npm run lint && npm run build && npm run test:e2e` (auth guards + demo refresh when seeded)

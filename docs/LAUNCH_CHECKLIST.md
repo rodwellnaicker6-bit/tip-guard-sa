@@ -9,10 +9,18 @@ Use with [DEPLOY.md](../DEPLOY.md) and [docs/PRODUCTION_CHECKLIST.md](./PRODUCTI
 - [ ] Supabase secrets: `PAYSTACK_SECRET_KEY`, `PUBLIC_APP_URL`
 - [ ] Vercel env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PAYSTACK_PUBLIC_KEY` (test keys on staging)
 - [ ] Auth redirect URLs: `/auth/callback`, `/auth/reset`
-- [ ] `npm run lint && npm run build && npm run test:auth`
-- [ ] Manual: login → dashboard → refresh → logout
+- [ ] `npm run lint && npm run build && npm run test:e2e`
+- [ ] Manual: login → dashboard → refresh → logout ([BETA_TESTER_CHECKLIST.md](./BETA_TESTER_CHECKLIST.md))
 - [ ] Manual: test tip with `pk_test_` end-to-end
 - [ ] Legal pages reviewed by counsel (Terms, Privacy, POPIA, Cookies, Refunds, Merchant)
+- [ ] Review [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) with stakeholders
+
+## UX go-live
+
+- [x] Mobile overflow + touch targets verified (e2e 360px)
+- [x] Offline banner + fetch retry on dashboards
+- [x] Web manifest linked for add-to-home-screen
+- [ ] Lighthouse mobile ≥ 80 performance on `/` (see PERFORMANCE.md)
 
 ## Security
 
@@ -29,6 +37,7 @@ Use with [DEPLOY.md](../DEPLOY.md) and [docs/PRODUCTION_CHECKLIST.md](./PRODUCTI
 - [ ] Rate limits wired to `api_rate_log`
 - [ ] Sentry `@sentry/react` package + source maps
 - [ ] Full payout reconciliation reports
+- [ ] Service worker + offline QR cache
 
 ## Go / no-go
 

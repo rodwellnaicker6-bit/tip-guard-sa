@@ -8,6 +8,7 @@ import {
 } from "react";
 import { getAuthCallbackUrl, getAuthResetUrl } from "../lib/appOrigin";
 import { formatAuthUserFacingError } from "../lib/supabaseAuthErrors";
+import { isTransientNetworkError } from "../lib/networkUtils";
 import { resetPostAuthRedirectState } from "../hooks/usePostAuthRedirect";
 import { clearAuthRedirectStorage } from "../lib/authRedirect";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
@@ -283,11 +284,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: "Supabase is not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env." };
     }
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (!mountedRef.current) return {};
-      if (error) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (!mountedRef.current) return {};
+        if (!error) return {};
         if (import.meta.env.DEV) console.warn("[AuthProvider] signIn:", error.message);
-        return { error: formatAuthUserFacingError(error) };
+        const msg = formatAuthUserFacingError(error);
+        if (attempt < 2 && isTransientNetworkError(error.message)) {
+          await new Promise((r) => setTimeout(r, 350 * (attempt + 1)));
+          continue;
+        }
+        return { error: msg };
       }
       return {};
     } catch (e) {

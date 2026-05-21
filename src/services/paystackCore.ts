@@ -3,6 +3,7 @@ import type { CheckoutPhase } from "../payments/types";
 import { supabase } from "../lib/supabase";
 import { openPaystackInline, zarSubunitsFromCents } from "../lib/paystack";
 import { getPaystackPublicKey, isPaystackConfigured, paystackEnvIssue } from "../lib/paystackEnv";
+import { isTransientNetworkError } from "../lib/networkUtils";
 
 /** Prevents double-invoke (double-tap) opening two Paystack sessions. */
 let tipCheckoutInFlight = false;
@@ -44,8 +45,7 @@ export async function initializePaystackTransaction(body: {
 }
 
 function isTransientInvokeError(msg: string): boolean {
-  const m = msg.toLowerCase();
-  return m.includes("failed to send") || m.includes("network") || m.includes("fetch") || m.includes("timeout");
+  return isTransientNetworkError(msg);
 }
 
 function setPhase(opts: { onCheckoutPhase?: (p: CheckoutPhase) => void }, phase: CheckoutPhase) {

@@ -174,8 +174,20 @@ export default function Register() {
             <span>Venue or business — payouts and QR</span>
           </label>
         </fieldset>
-        <button className="btn-gold tap-target" type="submit" disabled={submitting} aria-busy={submitting}>
-          {submitting ? "Creating account…" : "Continue"}
+        <button
+          className={`btn-gold btn-gold--shine tap-target ${submitting ? "btn-gold--loading" : ""}`}
+          type="submit"
+          disabled={submitting}
+          aria-busy={submitting}
+        >
+          {submitting ? (
+            <span className="btn-gold-inner">
+              <span className="btn-spinner" aria-hidden />
+              Creating account…
+            </span>
+          ) : (
+            "Continue"
+          )}
         </button>
         {error && <div className="error">{error}</div>}
       </form>

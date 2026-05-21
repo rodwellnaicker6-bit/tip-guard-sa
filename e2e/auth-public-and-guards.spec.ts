@@ -72,6 +72,21 @@ test.describe("Auth pages and route guards (no credentials)", () => {
     await expect(page.locator("h1.auth-title")).toHaveText("Welcome back");
   });
 
+  test("deep-link /tip/:token route renders without crash", async ({ page }) => {
+    await page.goto("/tip/demo-token-e2e", { waitUntil: "domcontentloaded" });
+    await expect(page.locator("body")).toBeVisible();
+    const hasHeading = await page.getByRole("heading").first().isVisible().catch(() => false);
+    const hasError = await page.getByText(/invalid|expired|unavailable|tip/i).first().isVisible().catch(() => false);
+    expect(hasHeading || hasError).toBe(true);
+  });
+
+  test("SPA routes resolve via vercel rewrite (login, customer dashboard redirect)", async ({ page }) => {
+    await page.goto("/login", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: /welcome back/i })).toBeVisible();
+    await page.goto("/customer/dashboard", { waitUntil: "networkidle" });
+    await expect(page).toHaveURL(/\/login/, { timeout: 15_000 });
+  });
+
   test("landing has no horizontal overflow at 360px", async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto("/");

@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import { Skeleton } from "../components/Skeleton";
 import EmptyState from "../components/EmptyState";
+import { FetchError } from "../components/FetchError";
 import { TrustRibbon } from "../components/fintech/TrustRibbon";
 
 /** Public listing / checkout (no ledger fields). */
@@ -27,11 +28,13 @@ export default function CustomerHome() {
   const [guards, setGuards] = useState<PublicGuardRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      setError(null);
       const { data, error: err } = await supabase.rpc("list_public_guards");
       if (cancelled) return;
       if (err) setError(err.message);
@@ -41,7 +44,7 @@ export default function CustomerHome() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reload]);
 
   function goTip(g: PublicGuardRow) {
     if (!user) {
@@ -70,7 +73,7 @@ export default function CustomerHome() {
           Sign in to send a tip — an account is required for PCI-aligned checkout.
         </div>
       )}
-      {error && <div className="error">{error}</div>}
+      {error ? <FetchError message={error} onRetry={() => setReload((n) => n + 1)} /> : null}
       {loading && (
         <div className="mt-2 space-y-2">
           {[0, 1, 2].map((i) => (

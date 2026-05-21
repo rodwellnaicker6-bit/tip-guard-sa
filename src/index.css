@@ -613,11 +613,48 @@ button.btn-ghost:hover:not(:disabled) {
   accent-color: var(--gold);
 }
 
+.app-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  min-width: 0;
+}
+
+.app-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .boot-banner {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 40;
+}
+
+.offline-banner {
   position: sticky;
   top: 0;
-  z-index: 45;
+  z-index: 41;
   flex-shrink: 0;
+  padding: 8px 14px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.92);
+  border-bottom: 1px solid rgba(248, 113, 113, 0.35);
+}
+
+.auth-shell--keyboard .marketing-inner {
+  scroll-margin-bottom: 24px;
+}
+
+.auth-shell .field:focus-visible {
+  scroll-margin-bottom: 120px;
 }
 
 .tx-row {
@@ -688,12 +725,18 @@ button.btn-ghost:hover:not(:disabled) {
 }
 
 .page-header {
-  margin-bottom: 4px;
+  margin-bottom: var(--space-sm);
 }
 
+.page-header h1,
 .page-header h2 {
-  font-size: 26px;
+  font-size: clamp(1.5rem, 6vw, 1.75rem);
   letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.page-header .muted-label {
+  margin-bottom: 4px;
 }
 
 .row {
@@ -878,6 +921,23 @@ a.btn-ghost {
   width: 100%;
   min-width: 0;
   padding-bottom: 12px;
+  position: relative;
+}
+
+.dashboard-hub::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: -8% 10% auto;
+  height: 42%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse 80% 70% at 50% 0%, rgba(251, 191, 36, 0.14), transparent 68%);
+  z-index: 0;
+}
+
+.dashboard-hub > * {
+  position: relative;
+  z-index: 1;
 }
 
 .hub-shell .shell {
@@ -1140,6 +1200,10 @@ a.btn-ghost {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   *,
   *::before,
   *::after {
