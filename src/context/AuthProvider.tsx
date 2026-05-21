@@ -8,6 +8,7 @@ import {
 } from "react";
 import { getAuthCallbackUrl, getAuthResetUrl } from "../lib/appOrigin";
 import { formatAuthUserFacingError } from "../lib/supabaseAuthErrors";
+import { resetPostAuthRedirectState } from "../hooks/usePostAuthRedirect";
 import { clearAuthRedirectStorage } from "../lib/authRedirect";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { isSupabaseBrowserConfigured, supabase } from "../lib/supabase";
@@ -74,7 +75,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setHasGuardRow(false);
       setHasMerchantRow(false);
     } finally {
-      if (!signal?.aborted && mountedRef.current) {
+      if (
+        mountedRef.current &&
+        (!signal?.aborted || accountAbortRef.current?.signal === signal)
+      ) {
         setProfileReady(true);
       }
     }
@@ -117,7 +121,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionReady(true);
   }, []);
 
+  const authBootRef = useRef(0);
+
   useEffect(() => {
+    const bootGen = ++authBootRef.current;
     sessionReadyRef.current = false;
     let effectCancelled = false;
 
@@ -156,7 +163,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.info(`[AuthDebug] AuthProvider event: ${event} user=${next?.user?.id ?? "none"}`);
       }
       applySession(next);
-      if (next?.user?.id) {
+      // TOKEN_REFRESHED can fire in a tight loop and abort in-flight profile loads,
+      // leaving profileReady false and blocking post-login redirects.
+      if (
+        next?.user?.id &&
+        (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "USER_UPDATED")
+      ) {
         scheduleLoadAccount(next.user.id);
       }
       if (
@@ -171,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     queueMicrotask(() => {
       void supabase.auth.getSession().then(({ data: { session: next } }) => {
-        if (effectCancelled || !mountedRef.current) return;
+        if (bootGen !== authBootRef.current || effectCancelled || !mountedRef.current) return;
         if (next) {
           applySession(next);
           if (next.user?.id) scheduleLoadAccount(next.user.id);
@@ -382,6 +394,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     clearAuthRedirectStorage();
+    resetPostAuthRedirectState();
     accountAbortRef.current?.abort();
     try {
       await supabase.auth.signOut({ scope: "local" });

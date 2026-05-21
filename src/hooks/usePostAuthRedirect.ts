@@ -6,6 +6,11 @@ import { navigateAfterAuth, type PostAuthNavigateOptions } from "../lib/authRedi
 /** Survives Login remount so a failed redirect does not re-trigger navigation loops. */
 let postAuthRedirectUserId: string | null = null;
 
+/** Cleared on sign-out so a later login can redirect again. */
+export function resetPostAuthRedirectState(): void {
+  postAuthRedirectUserId = null;
+}
+
 /**
  * Single post-login redirect coordinator for Login / Register.
  * Waits for `authReady` and passes profile snapshot to avoid duplicate Supabase reads.
