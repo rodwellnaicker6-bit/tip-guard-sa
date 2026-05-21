@@ -28,11 +28,13 @@ test.describe("Demo customer login → dashboard", () => {
     await page.getByRole("button", { name: /^continue$/i }).click();
 
     await expect(page).toHaveURL(/\/customer\/dashboard/, { timeout: 30_000 });
-    await expect(page.getByText("Your dashboard")).toBeVisible();
+    await expect(page.locator("h1").filter({ hasText: "Your dashboard" })).toHaveText("Your dashboard");
 
     await page.reload({ waitUntil: "networkidle" });
     await expect(page).toHaveURL(/\/customer\/dashboard/, { timeout: 15_000 });
-    await expect(page.getByText("Your dashboard")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("h1").filter({ hasText: "Your dashboard" })).toHaveText("Your dashboard", {
+      timeout: 15_000,
+    });
 
     await page.getByRole("button", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/(login)?$/, { timeout: 15_000 });

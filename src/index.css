@@ -297,6 +297,9 @@ button.btn-ghost:hover:not(:disabled) {
   font-weight: 800;
   letter-spacing: -0.04em;
   line-height: 1.05;
+  color: var(--text);
+  visibility: visible;
+  opacity: 1;
   text-shadow: 0 0 40px rgba(251, 191, 36, 0.25);
 }
 
@@ -514,12 +517,20 @@ button.btn-ghost:hover:not(:disabled) {
   box-shadow: 0 6px 24px rgba(251, 191, 36, 0.45);
 }
 
+.auth-header {
+  position: relative;
+  z-index: 2;
+}
+
 .auth-title {
   margin: 12px 0 6px;
   font-size: clamp(1.5rem, 6vw, 1.75rem);
   font-weight: 800;
   letter-spacing: -0.03em;
   line-height: 1.15;
+  color: var(--text);
+  visibility: visible;
+  opacity: 1;
 }
 
 .auth-subtitle {
