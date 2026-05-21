@@ -78,6 +78,8 @@ export default function Landing() {
           <div className="marketing-footer-links">
             <Link to="/terms">Terms</Link>
             <Link to="/privacy">Privacy</Link>
+            <Link to="/legal/popia">POPIA</Link>
+            <Link to="/legal/refunds">Refunds</Link>
             <a href="https://paystack.com" target="_blank" rel="noreferrer">
               Paystack
             </a>

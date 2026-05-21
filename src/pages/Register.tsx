@@ -4,6 +4,7 @@ import { useAuth } from "../context/useAuth";
 import { getSupabaseBrowserConfigIssue, isSupabaseBrowserConfigured } from "../lib/supabase";
 import { usePostAuthRedirect } from "../hooks/usePostAuthRedirect";
 import PageLoader from "../components/PageLoader";
+import { sanitizeDisplayName, sanitizeEmail } from "../lib/sanitize";
 
 type RolePick = "customer" | "guard" | "merchant";
 type Step = "account" | "verify-email";
@@ -48,7 +49,12 @@ export default function Register() {
     }
 
     setSubmitting(true);
-    const { error: err, needsEmailVerification } = await signUp(email, password, fullName, role);
+    const { error: err, needsEmailVerification } = await signUp(
+      sanitizeEmail(email),
+      password,
+      sanitizeDisplayName(fullName),
+      role,
+    );
     if (!mountedRef.current) return;
     setSubmitting(false);
     if (err) {

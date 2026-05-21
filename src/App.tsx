@@ -1,49 +1,56 @@
-import { lazy, Suspense } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { lazy, Suspense, type ReactNode } from "react";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthProvider";
 import { ToastProvider } from "./context/ToastProvider";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { SessionIdleWatcher } from "./components/SessionIdleWatcher";
 import { RequireAdmin, RequireAuth, RequireGuard, RequireMerchant } from "./components/RequireAuth";
+import { HubLayout } from "./layouts/HubLayout";
+import { Skeleton } from "./components/Skeleton";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
 import AuthCallback from "./pages/AuthCallback";
 import PasswordReset from "./pages/PasswordReset";
-import Onboarding from "./pages/Onboarding";
-import Settings from "./pages/Settings";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
-import CustomerHome from "./pages/CustomerHome";
-import CustomerDashboard from "./pages/CustomerDashboard";
-import MerchantDashboard from "./pages/MerchantDashboard";
-import MerchantSetup from "./pages/MerchantSetup";
-import TipCheckout from "./pages/TipCheckout";
-import TipDone from "./pages/TipDone";
 import TipResolve from "./pages/TipResolve";
-import QrTipLanding from "./pages/QrTipLanding";
-import MerchantLocations from "./pages/MerchantLocations";
-import MerchantGuards from "./pages/MerchantGuards";
-import GuardHome from "./pages/GuardHome";
-import GuardSetup from "./pages/GuardSetup";
-import GuardConnect from "./pages/GuardConnect";
-import GuardQR from "./pages/GuardQR";
-import GuardProfile from "./pages/GuardProfile";
-import GuardHistory from "./pages/GuardHistory";
-import CustomerHistory from "./pages/CustomerHistory";
-import CustomerWallet from "./pages/CustomerWallet";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentFailure from "./pages/PaymentFailure";
-import CustomerTransactions from "./pages/CustomerTransactions";
-import MerchantKyc from "./pages/MerchantKyc";
-import { Skeleton } from "./components/Skeleton";
+import NotFound from "./pages/NotFound";
 
+const Onboarding = lazy(() => import("./pages/Onboarding"));
+const Settings = lazy(() => import("./pages/Settings"));
+const CustomerHome = lazy(() => import("./pages/CustomerHome"));
+const CustomerDashboard = lazy(() => import("./pages/CustomerDashboard"));
+const CustomerHistory = lazy(() => import("./pages/CustomerHistory"));
+const CustomerWallet = lazy(() => import("./pages/CustomerWallet"));
+const CustomerTransactions = lazy(() => import("./pages/CustomerTransactions"));
+const TipCheckout = lazy(() => import("./pages/TipCheckout"));
+const TipDone = lazy(() => import("./pages/TipDone"));
+const QrTipLanding = lazy(() => import("./pages/QrTipLanding"));
+const MerchantDashboard = lazy(() => import("./pages/MerchantDashboard"));
+const MerchantSetup = lazy(() => import("./pages/MerchantSetup"));
+const MerchantLocations = lazy(() => import("./pages/MerchantLocations"));
+const MerchantGuards = lazy(() => import("./pages/MerchantGuards"));
+const MerchantKyc = lazy(() => import("./pages/MerchantKyc"));
+const GuardHome = lazy(() => import("./pages/GuardHome"));
+const GuardSetup = lazy(() => import("./pages/GuardSetup"));
+const GuardConnect = lazy(() => import("./pages/GuardConnect"));
+const GuardQR = lazy(() => import("./pages/GuardQR"));
+const GuardProfile = lazy(() => import("./pages/GuardProfile"));
+const GuardHistory = lazy(() => import("./pages/GuardHistory"));
+const PopiaNotice = lazy(() => import("./pages/PopiaNotice"));
+const CookiesPolicy = lazy(() => import("./pages/CookiesPolicy"));
+const RefundPolicy = lazy(() => import("./pages/RefundPolicy"));
+const MerchantOnboardingLegal = lazy(() => import("./pages/MerchantOnboardingLegal"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const AdminSecurity = lazy(() => import("./pages/AdminSecurity"));
 const AdminTransactions = lazy(() => import("./pages/AdminTransactions"));
 const AdminAnalytics = lazy(() => import("./pages/AdminAnalytics"));
 
-function AdminRouteFallback() {
+function RouteFallback() {
   return (
     <div className="shell mx-auto max-w-lg space-y-3 px-5 py-10">
       <Skeleton style={{ height: 28, width: "55%" }} />
@@ -51,6 +58,10 @@ function AdminRouteFallback() {
       <Skeleton style={{ height: 80, width: "100%", borderRadius: 14 }} />
     </div>
   );
+}
+
+function Lazy({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<RouteFallback />}>{children}</Suspense>;
 }
 
 function AppRoutes() {
@@ -64,57 +75,74 @@ function AppRoutes() {
       <Route path="/auth/reset" element={<PasswordReset />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
+      <Route
+        path="/legal/popia"
+        element={
+          <Lazy>
+            <PopiaNotice />
+          </Lazy>
+        }
+      />
+      <Route
+        path="/legal/cookies"
+        element={
+          <Lazy>
+            <CookiesPolicy />
+          </Lazy>
+        }
+      />
+      <Route
+        path="/legal/refunds"
+        element={
+          <Lazy>
+            <RefundPolicy />
+          </Lazy>
+        }
+      />
+      <Route
+        path="/legal/merchant"
+        element={
+          <Lazy>
+            <MerchantOnboardingLegal />
+          </Lazy>
+        }
+      />
       <Route path="/t/:token" element={<TipResolve />} />
-      <Route path="/tip/:token" element={<QrTipLanding />} />
-      <Route path="/customer" element={<CustomerHome />} />
       <Route
-        path="/customer/dashboard"
+        path="/tip/:token"
         element={
-          <RequireAuth>
-            <CustomerDashboard />
-          </RequireAuth>
+          <Lazy>
+            <QrTipLanding />
+          </Lazy>
         }
       />
-      <Route
-        path="/customer/history"
-        element={
-          <RequireAuth>
-            <CustomerHistory />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/customer/wallet"
-        element={
-          <RequireAuth>
-            <CustomerWallet />
-          </RequireAuth>
-        }
-      />
+      <Route path="/payment/success" element={<PaymentSuccess />} />
+      <Route path="/payment/failure" element={<PaymentFailure />} />
       <Route
         path="/customer/tip/:guardId"
         element={
           <RequireAuth>
-            <TipCheckout />
+            <Lazy>
+              <TipCheckout />
+            </Lazy>
           </RequireAuth>
         }
       />
-      <Route path="/customer/done" element={<TipDone />} />
-      <Route path="/payment/success" element={<PaymentSuccess />} />
-      <Route path="/payment/failure" element={<PaymentFailure />} />
       <Route
-        path="/customer/transactions"
+        path="/customer/done"
         element={
-          <RequireAuth>
-            <CustomerTransactions />
-          </RequireAuth>
+          <Lazy>
+            <TipDone />
+          </Lazy>
         }
       />
       <Route
         path="/onboarding"
         element={
           <RequireAuth>
-            <Onboarding />
+            <Lazy>
+              <Onboarding />
+            </Lazy>
           </RequireAuth>
         }
       />
@@ -122,123 +150,205 @@ function AppRoutes() {
         path="/settings"
         element={
           <RequireAuth>
-            <Settings />
+            <Lazy>
+              <Settings />
+            </Lazy>
           </RequireAuth>
         }
       />
-      <Route
-        path="/guard"
-        element={
-          <RequireAuth>
-            <RequireGuard>
-              <GuardHome />
-            </RequireGuard>
-          </RequireAuth>
-        }
-      />
+
+      <Route element={<HubLayout variant="customer" />}>
+        <Route
+          path="/customer"
+          element={
+            <Lazy>
+              <CustomerHome />
+            </Lazy>
+          }
+        />
+        <Route
+          path="/customer/dashboard"
+          element={
+            <RequireAuth>
+              <Lazy>
+                <CustomerDashboard />
+              </Lazy>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/customer/history"
+          element={
+            <RequireAuth>
+              <Lazy>
+                <CustomerHistory />
+              </Lazy>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/customer/wallet"
+          element={
+            <RequireAuth>
+              <Lazy>
+                <CustomerWallet />
+              </Lazy>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/customer/transactions"
+          element={
+            <RequireAuth>
+              <Lazy>
+                <CustomerTransactions />
+              </Lazy>
+            </RequireAuth>
+          }
+        />
+      </Route>
+
       <Route
         path="/guard/setup"
         element={
           <RequireAuth>
-            <GuardSetup />
+            <Lazy>
+              <GuardSetup />
+            </Lazy>
           </RequireAuth>
         }
       />
-      <Route
-        path="/guard/connect"
-        element={
-          <RequireAuth>
-            <RequireGuard>
-              <GuardConnect />
-            </RequireGuard>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/guard/qr"
-        element={
-          <RequireAuth>
-            <RequireGuard>
-              <GuardQR />
-            </RequireGuard>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/guard/profile"
-        element={
-          <RequireAuth>
-            <RequireGuard>
-              <GuardProfile />
-            </RequireGuard>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/guard/history"
-        element={
-          <RequireAuth>
-            <RequireGuard>
-              <GuardHistory />
-            </RequireGuard>
-          </RequireAuth>
-        }
-      />
+      <Route element={<HubLayout variant="guard" />}>
+        <Route
+          path="/guard"
+          element={
+            <RequireAuth>
+              <RequireGuard>
+                <Lazy>
+                  <GuardHome />
+                </Lazy>
+              </RequireGuard>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/guard/connect"
+          element={
+            <RequireAuth>
+              <RequireGuard>
+                <Lazy>
+                  <GuardConnect />
+                </Lazy>
+              </RequireGuard>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/guard/qr"
+          element={
+            <RequireAuth>
+              <RequireGuard>
+                <Lazy>
+                  <GuardQR />
+                </Lazy>
+              </RequireGuard>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/guard/profile"
+          element={
+            <RequireAuth>
+              <RequireGuard>
+                <Lazy>
+                  <GuardProfile />
+                </Lazy>
+              </RequireGuard>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/guard/history"
+          element={
+            <RequireAuth>
+              <RequireGuard>
+                <Lazy>
+                  <GuardHistory />
+                </Lazy>
+              </RequireGuard>
+            </RequireAuth>
+          }
+        />
+      </Route>
+
       <Route
         path="/merchant/setup"
         element={
           <RequireAuth>
-            <MerchantSetup />
+            <Lazy>
+              <MerchantSetup />
+            </Lazy>
           </RequireAuth>
         }
       />
-      <Route
-        path="/merchant/kyc"
-        element={
-          <RequireAuth>
-            <RequireMerchant>
-              <MerchantKyc />
-            </RequireMerchant>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/merchant"
-        element={
-          <RequireAuth>
-            <RequireMerchant>
-              <MerchantDashboard />
-            </RequireMerchant>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/merchant/locations"
-        element={
-          <RequireAuth>
-            <RequireMerchant>
-              <MerchantLocations />
-            </RequireMerchant>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/merchant/guards"
-        element={
-          <RequireAuth>
-            <RequireMerchant>
-              <MerchantGuards />
-            </RequireMerchant>
-          </RequireAuth>
-        }
-      />
+      <Route element={<HubLayout variant="merchant" />}>
+        <Route
+          path="/merchant"
+          element={
+            <RequireAuth>
+              <RequireMerchant>
+                <Lazy>
+                  <MerchantDashboard />
+                </Lazy>
+              </RequireMerchant>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/merchant/locations"
+          element={
+            <RequireAuth>
+              <RequireMerchant>
+                <Lazy>
+                  <MerchantLocations />
+                </Lazy>
+              </RequireMerchant>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/merchant/guards"
+          element={
+            <RequireAuth>
+              <RequireMerchant>
+                <Lazy>
+                  <MerchantGuards />
+                </Lazy>
+              </RequireMerchant>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/merchant/kyc"
+          element={
+            <RequireAuth>
+              <RequireMerchant>
+                <Lazy>
+                  <MerchantKyc />
+                </Lazy>
+              </RequireMerchant>
+            </RequireAuth>
+          }
+        />
+      </Route>
+
       <Route
         path="/admin"
         element={
           <RequireAdmin>
-            <Suspense fallback={<AdminRouteFallback />}>
+            <Lazy>
               <AdminDashboard />
-            </Suspense>
+            </Lazy>
           </RequireAdmin>
         }
       />
@@ -246,9 +356,9 @@ function AppRoutes() {
         path="/admin/security"
         element={
           <RequireAdmin>
-            <Suspense fallback={<AdminRouteFallback />}>
+            <Lazy>
               <AdminSecurity />
-            </Suspense>
+            </Lazy>
           </RequireAdmin>
         }
       />
@@ -256,9 +366,9 @@ function AppRoutes() {
         path="/admin/transactions"
         element={
           <RequireAdmin>
-            <Suspense fallback={<AdminRouteFallback />}>
+            <Lazy>
               <AdminTransactions />
-            </Suspense>
+            </Lazy>
           </RequireAdmin>
         }
       />
@@ -266,13 +376,14 @@ function AppRoutes() {
         path="/admin/analytics"
         element={
           <RequireAdmin>
-            <Suspense fallback={<AdminRouteFallback />}>
+            <Lazy>
               <AdminAnalytics />
-            </Suspense>
+            </Lazy>
           </RequireAdmin>
         }
       />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/404" element={<NotFound />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
@@ -283,6 +394,7 @@ export default function App() {
       <BrowserRouter>
         <ToastProvider>
           <AuthProvider>
+            <SessionIdleWatcher />
             <AppRoutes />
           </AuthProvider>
         </ToastProvider>

@@ -35,7 +35,8 @@ export default function AdminSecurity() {
         <h1 className="text-2xl font-black text-white">Security</h1>
         <p className="mt-1 text-sm leading-relaxed text-slate-400">
           Production admin accounts should use multi-factor authentication (Supabase Auth TOTP or your IdP). This screen
-          lists factors visible to the current session only.
+          lists factors visible to the current session only. Full enrollment UI is post-MVP — see Settings → Admin security
+          (MFA) for scaffold status.
         </p>
       </header>
 

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import PageLoader from "../components/PageLoader";
+import { sanitizeDisplayName } from "../lib/sanitize";
 
 type LocationRow = {
   id: string;
@@ -53,10 +54,12 @@ export default function MerchantLocations() {
     if (!merchantId || !name.trim()) return;
     setBusy(true);
     setError(null);
+    const safeName = sanitizeDisplayName(name);
+    const safeAddress = address.trim() ? sanitizeDisplayName(address) : null;
     const { error: insErr } = await supabase.from("merchant_locations").insert({
       merchant_id: merchantId,
-      name: name.trim(),
-      address: address.trim() || null,
+      name: safeName,
+      address: safeAddress,
     });
     setBusy(false);
     if (insErr) {

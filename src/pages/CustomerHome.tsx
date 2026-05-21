@@ -5,7 +5,6 @@ import { useAuth } from "../context/useAuth";
 import { Skeleton } from "../components/Skeleton";
 import EmptyState from "../components/EmptyState";
 import { TrustRibbon } from "../components/fintech/TrustRibbon";
-import { CustomerFab } from "../components/fintech/CustomerFab";
 
 /** Public listing / checkout (no ledger fields). */
 export type PublicGuardRow = {
@@ -133,7 +132,6 @@ export default function CustomerHome() {
         </Link>
       </div>
 
-      {user && <CustomerFab />}
     </div>
   );
 }

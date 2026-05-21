@@ -948,6 +948,112 @@ a.btn-ghost {
   line-height: 1.45;
 }
 
+/* Viewport breakpoints: 320 / 375 / 390 / 430 + tablet */
+@media (min-width: 768px) {
+  :root {
+    --shell-max: 720px;
+  }
+
+  .dashboard-hub {
+    max-width: 720px;
+  }
+
+  .marketing-inner {
+    max-width: 480px;
+  }
+}
+
+@media (min-width: 390px) and (max-width: 429px) {
+  .shell {
+    padding-inline: max(18px, env(safe-area-inset-left)) max(18px, env(safe-area-inset-right));
+  }
+}
+
+@media (max-width: 374px) {
+  .shell {
+    padding-inline: max(14px, env(safe-area-inset-left)) max(14px, env(safe-area-inset-right));
+  }
+}
+
+@media (max-width: 320px) {
+  .marketing-hero {
+    font-size: 1.85rem;
+  }
+
+  .hub-nav-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hub-shell {
+  min-width: 0;
+  overflow-x: hidden;
+  padding-bottom: max(72px, calc(56px + env(safe-area-inset-bottom)));
+}
+
+.mobile-bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: space-around;
+  gap: 2px;
+  padding: 6px max(8px, env(safe-area-inset-left)) max(6px, env(safe-area-inset-bottom))
+    max(8px, env(safe-area-inset-right));
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 16, 32, 0.94);
+  backdrop-filter: blur(12px);
+}
+
+.mobile-bottom-nav__item {
+  flex: 1;
+  min-height: 44px;
+  max-width: 5.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--muted);
+  transition:
+    color 0.2s ease,
+    background 0.2s ease;
+}
+
+.mobile-bottom-nav__item--active {
+  color: var(--gold);
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.legal-prose {
+  font-size: 14px;
+  text-align: left;
+  line-height: 1.55;
+}
+
+.legal-prose h2 {
+  margin-top: 1rem;
+}
+
+.legal-prose p,
+.legal-prose ul {
+  margin: 0 0 0.75rem;
+}
+
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll table {
+  min-width: 100%;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

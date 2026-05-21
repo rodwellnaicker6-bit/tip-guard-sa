@@ -1,4 +1,5 @@
 import { isPaystackTestMode } from "./paystackMode";
+import { validatePaystackPublicKey } from "./paystackEnv";
 
 /** Validates Vite public env. In production, missing keys throw at startup. */
 export function validateClientEnv(): void {
@@ -34,6 +35,8 @@ export function validateClientEnv(): void {
   if (missing.length > 0) {
     throw new Error(`Missing required production env: ${missing.join(", ")}`);
   }
+  const pkErr = validatePaystackPublicKey(paystackPk);
+  if (pkErr) throw new Error(pkErr);
 }
 
 /** Human-readable env summary for support / settings (no secrets). */

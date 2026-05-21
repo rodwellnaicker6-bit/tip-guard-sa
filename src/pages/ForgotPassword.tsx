@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { sanitizeEmail } from "../lib/sanitize";
 
 export default function ForgotPassword() {
   const { resetPasswordForEmail } = useAuth();
@@ -13,7 +14,7 @@ export default function ForgotPassword() {
     e.preventDefault();
     setError(null);
     setBusy(true);
-    const { error: err } = await resetPasswordForEmail(email.trim());
+    const { error: err } = await resetPasswordForEmail(sanitizeEmail(email));
     setBusy(false);
     if (err) {
       setError(err);
@@ -31,8 +32,9 @@ export default function ForgotPassword() {
       </p>
       <form className="stack mt" onSubmit={onSubmit}>
         <input
-          className="field"
+          className="field tap-target"
           type="email"
+          inputMode="email"
           autoComplete="email"
           placeholder="Email address"
           value={email}

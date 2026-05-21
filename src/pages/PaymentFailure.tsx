@@ -72,7 +72,10 @@ export default function PaymentFailure() {
             Back to guards
           </Link>
         )}
-        <Link className="block text-center text-sm text-slate-500" to="/">
+        <Link className="tap-target block text-center text-sm text-slate-500" to="/customer/transactions">
+          View transactions
+        </Link>
+        <Link className="tap-target block text-center text-sm text-slate-500" to="/">
           Home
         </Link>
       </div>

@@ -4,6 +4,7 @@ import "./index.css";
 import "./styles/fintech.css";
 import App from "./App.tsx";
 import { validateClientEnv } from "./lib/env";
+import { initSentry } from "./lib/sentry";
 
 if (typeof localStorage !== "undefined" && localStorage.getItem("tipguard_theme") === "hc") {
   document.documentElement.dataset.theme = "hc";
@@ -18,6 +19,7 @@ if (typeof localStorage !== "undefined") {
 }
 
 validateClientEnv();
+initSentry();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

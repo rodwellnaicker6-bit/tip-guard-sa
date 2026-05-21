@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import PageLoader from "../components/PageLoader";
+import { sanitizeDisplayName } from "../lib/sanitize";
 
 type GuardRow = {
   id: string;
@@ -71,7 +72,7 @@ export default function MerchantGuards() {
       return;
     }
     const { error: insErr } = await supabase.from("guards").insert({
-      display_name: displayName.trim(),
+      display_name: sanitizeDisplayName(displayName),
       merchant_id: merchantId,
       location_id: locationId || null,
       location: locations.find((l) => l.id === locationId)?.name ?? null,

@@ -131,7 +131,7 @@ export default function AdminTransactions() {
       <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
         Showing {filtered.length} of {rows.length} loaded
       </p>
-      <div className="stack mt" style={{ overflowX: "auto" }}>
+      <div className="table-scroll stack mt">
         {filtered.length > 0 ? (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>

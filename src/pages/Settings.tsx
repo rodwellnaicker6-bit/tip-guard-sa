@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import PaystackTestBanner from "../components/PaystackTestBanner";
+import { DEFAULT_ADMIN_MFA_SETTINGS } from "../lib/mfaTypes";
 
 const THEME_KEY = "tipguard_theme";
 const DARK_KEY = "tipguard_dark";
@@ -12,7 +13,8 @@ function applyDarkClass(on: boolean) {
 }
 
 export default function Settings() {
-  const { user, signOut } = useAuth();
+  const { user, role, signOut } = useAuth();
+  const mfa = DEFAULT_ADMIN_MFA_SETTINGS;
   const [highContrast, setHighContrast] = useState(
     () => typeof document !== "undefined" && document.documentElement.dataset.theme === "hc",
   );
@@ -78,15 +80,39 @@ export default function Settings() {
         <p className="mt-1 text-xs text-slate-500">Stronger borders and text contrast.</p>
       </div>
 
+      {role === "admin" && (
+        <div className="card stack rounded-2xl border border-amber-500/25 bg-amber-500/5 p-4">
+          <strong className="text-white">Admin security (MFA)</strong>
+          <p className="mt-2 text-sm leading-relaxed text-slate-400">
+            Multi-factor authentication for admin accounts is recommended before production. Full TOTP enrollment via
+            Supabase Auth is post-MVP; use the security dashboard to inspect session factors.
+          </p>
+          <p className="text-xs text-slate-500">
+            Require TOTP: {mfa.requireTotpForAdmin ? "yes" : "no (scaffold)"} · Factors: {mfa.factors.length}
+          </p>
+          <Link className="mt-3 inline-block text-sm font-bold text-amber-400" to="/admin/security">
+            Open admin security
+          </Link>
+        </div>
+      )}
+
       <div className="card stack rounded-2xl border border-white/10 bg-white/5 p-4">
         <strong className="text-white">Privacy &amp; data (South Africa)</strong>
         <p className="mt-2 text-sm leading-relaxed text-slate-400">
           TipGuard processes personal information to run payments and verification. For launch readiness, ensure your deployment has a
           current privacy notice and a process for access and deletion requests under POPIA.
         </p>
-        <Link className="mt-3 inline-block text-sm font-bold text-amber-400" to="/privacy">
-          Privacy policy
-        </Link>
+        <div className="mt-3 flex flex-wrap gap-3 text-sm">
+          <Link className="font-bold text-amber-400" to="/privacy">
+            Privacy
+          </Link>
+          <Link className="font-bold text-amber-400" to="/legal/popia">
+            POPIA
+          </Link>
+          <Link className="font-bold text-amber-400" to="/terms">
+            Terms
+          </Link>
+        </div>
       </div>
 
       <button className="btn-ghost w-full rounded-2xl border border-white/15 py-3 font-semibold" type="button" onClick={() => void signOut()}>
