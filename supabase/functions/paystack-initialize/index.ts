@@ -1,0 +1,286 @@
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { corsHeaders } from "../_shared/cors.ts";
+
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 30;
+
+function randomRef(prefix: string): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return prefix + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+type InitBody = {
+  kind?: "tip" | "wallet_topup" | "subscription";
+  guard_id?: string;
+  amount_cents?: number;
+  plan_code?: string;
+  channels?: string[];
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  try {
+    const secret = Deno.env.get("PAYSTACK_SECRET_KEY") ?? "";
+    if (!secret) {
+      return new Response(JSON.stringify({ error: "PAYSTACK_SECRET_KEY not configured", code: "config" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Missing Authorization", code: "unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      { global: { headers: { Authorization: authHeader } } },
+    );
+
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
+    if (userErr || !user) {
+      return new Response(JSON.stringify({ error: "Invalid session", code: "invalid_session" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const service = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    );
+
+    const since = new Date(Date.now() - RATE_WINDOW_MS).toISOString();
+    const { count, error: rateErr } = await service
+      .from("api_rate_log")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("route", "paystack-initialize")
+      .gte("created_at", since);
+
+    if (rateErr) console.error("rate_log_count", rateErr);
+    if ((count ?? 0) >= RATE_MAX) {
+      await service.from("fraud_events").insert({
+        user_id: user.id,
+        kind: "rate_limit",
+        detail: { route: "paystack-initialize", count },
+      });
+      return new Response(JSON.stringify({ error: "Too many payment attempts. Try again shortly.", code: "rate_limit" }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    await service.from("api_rate_log").insert({
+      user_id: user.id,
+      route: "paystack-initialize",
+    });
+
+    const body = await req.json().catch(() => null) as InitBody | null;
+    const kind = body?.kind;
+    const amountCents = body?.amount_cents;
+    const guardId = body?.guard_id;
+    const channels = Array.isArray(body?.channels) && body!.channels!.length > 0
+      ? body!.channels!
+      : ["card", "bank", "apple_pay"];
+
+    if (kind === "subscription") {
+      return new Response(
+        JSON.stringify({
+          error: "Subscriptions are not enabled in checkout yet. Create plans in Paystack and use paystack-create-plan for codes.",
+          code: "subscription_stub",
+        }),
+        { status: 501, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (kind !== "tip" && kind !== "wallet_topup") {
+      return new Response(JSON.stringify({ error: "kind must be tip or wallet_topup", code: "validation" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (typeof amountCents !== "number" || amountCents < 100 || amountCents > 5_000_000) {
+      return new Response(JSON.stringify({ error: "amount_cents out of allowed range", code: "amount_range" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const email = user.email ?? `${user.id}@customers.tipguard.local`;
+    const reference = randomRef(kind === "tip" ? "tg_" : "wl_");
+    const paystackTest = secret.startsWith("sk_test_");
+
+    const metadata: Record<string, string> = {
+      user_id: user.id,
+      type: kind === "tip" ? "guard_tip" : "wallet_topup",
+      app: "tipguard-sa",
+      paystack_test: paystackTest ? "true" : "false",
+    };
+
+    if (kind === "tip") {
+      if (!guardId) {
+        return new Response(JSON.stringify({ error: "guard_id required for tips", code: "validation" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: guard, error: gErr } = await service
+        .from("guards")
+        .select("id, display_name, verified")
+        .eq("id", guardId)
+        .maybeSingle();
+
+      if (gErr || !guard?.id) {
+        return new Response(JSON.stringify({ error: "Guard not found", code: "guard_not_found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (!guard.verified) {
+        return new Response(JSON.stringify({ error: "Guard is not verified for payments", code: "guard_unverified" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      metadata.guard_id = guard.id;
+      metadata.guard_display_name = String(guard.display_name ?? "").slice(0, 120);
+
+      const { error: tipErr } = await service.from("tips").insert({
+        guard_id: guard.id,
+        payer_id: user.id,
+        amount_cents: amountCents,
+        paystack_reference: reference,
+        status: "pending",
+      });
+
+      if (tipErr) {
+        console.error(tipErr);
+        return new Response(JSON.stringify({ error: "Could not create tip record", code: "tip_insert_failed" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { error: txErr } = await service.from("transactions").insert({
+        user_id: user.id,
+        type: "tip",
+        amount_cents: amountCents,
+        currency: "ZAR",
+        status: "pending",
+        paystack_reference: reference,
+        metadata: { guard_id: guard.id, guard_display_name: metadata.guard_display_name },
+      });
+
+      if (txErr) {
+        console.error(txErr);
+        await service.from("tips").delete().eq("paystack_reference", reference);
+        return new Response(JSON.stringify({ error: "Could not create transaction record", code: "tx_insert_failed" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      const { error: txErr } = await service.from("transactions").insert({
+        user_id: user.id,
+        type: "wallet_topup",
+        amount_cents: amountCents,
+        currency: "ZAR",
+        status: "pending",
+        paystack_reference: reference,
+        metadata: {},
+      });
+
+      if (txErr) {
+        console.error(txErr);
+        return new Response(JSON.stringify({ error: "Could not create transaction record", code: "tx_insert_failed" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    const paystackBody: Record<string, unknown> = {
+      email,
+      amount: amountCents,
+      currency: "ZAR",
+      reference,
+      metadata,
+      channels,
+    };
+
+    const callbackBase = Deno.env.get("PUBLIC_APP_URL")?.replace(/\/$/, "") ?? "";
+    if (callbackBase) {
+      paystackBody.callback_url = `${callbackBase}/payment/success?ref=${encodeURIComponent(reference)}`;
+    }
+
+    const initRes = await fetch("https://api.paystack.co/transaction/initialize", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(paystackBody),
+    });
+
+    const initJson = await initRes.json().catch(() => null) as {
+      status?: boolean;
+      message?: string;
+      data?: { access_code?: string; authorization_url?: string; reference?: string };
+    } | null;
+
+    if (!initRes.ok || !initJson?.status || !initJson.data?.access_code) {
+      console.error("paystack_init_failed", initRes.status, initJson);
+      if (kind === "tip") {
+        await service.from("tips").delete().eq("paystack_reference", reference);
+      }
+      await service.from("transactions").delete().eq("paystack_reference", reference);
+      return new Response(
+        JSON.stringify({
+          error: initJson?.message ?? "Paystack initialize failed",
+          code: "paystack_init",
+        }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const accessCode = initJson.data.access_code;
+
+    if (kind === "tip") {
+      await service.from("tips").update({ paystack_access_code: accessCode }).eq("paystack_reference", reference);
+    }
+
+    return new Response(
+      JSON.stringify({
+        access_code: accessCode,
+        authorization_url: initJson.data.authorization_url,
+        reference: initJson.data.reference ?? reference,
+        email,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (e) {
+    console.error(e);
+    return new Response(JSON.stringify({ error: (e as Error).message ?? "Server error", code: "internal" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});

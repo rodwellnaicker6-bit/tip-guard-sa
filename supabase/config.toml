@@ -1,0 +1,19 @@
+# TipGuard SA — Supabase config (extend as needed)
+# https://supabase.com/docs/guides/cli/config
+
+project_id = "fyjmujhlqpvfryelnfum"
+
+[functions.paystack-webhook]
+verify_jwt = false
+
+[functions.paystack-initialize]
+verify_jwt = true
+
+[functions.paystack-create-plan]
+verify_jwt = true
+
+[functions.request-payout]
+verify_jwt = true
+
+[functions.paystack-verify]
+verify_jwt = true

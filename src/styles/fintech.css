@@ -1,0 +1,96 @@
+/* TipGuard premium motion + utilities (no external motion lib) */
+@media (prefers-reduced-motion: no-preference) {
+  .fx-fade-up {
+    animation: fx-fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .fx-scale-in {
+    animation: fx-scale-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .fx-shimmer {
+    background: linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.08) 45%, transparent 70%);
+    background-size: 200% 100%;
+    animation: fx-shimmer 2.2s ease-in-out infinite;
+  }
+
+  .fx-glow-pulse {
+    animation: fx-glow-pulse 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes fx-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes fx-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fx-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes fx-glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 40px 2px rgba(245, 158, 11, 0.2);
+  }
+}
+
+.fx-check-draw {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: fx-check-draw 0.7s cubic-bezier(0.65, 0, 0.35, 1) forwards 0.15s;
+}
+
+@keyframes fx-check-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.fx-gradient-text {
+  background: linear-gradient(135deg, #fef3c7, #fbbf24, #f97316);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.fx-stagger-1 {
+  animation-delay: 0.06s;
+}
+.fx-stagger-2 {
+  animation-delay: 0.12s;
+}
+.fx-stagger-3 {
+  animation-delay: 0.18s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  a.btn-gold--shine::after {
+    display: none;
+  }
+}
