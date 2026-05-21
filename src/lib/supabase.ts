@@ -1,4 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { reconcileSupabaseAuthStorage } from "./supabaseAuthStorage";
+import { normalizeSupabaseUrl, projectRefFromSupabaseUrl } from "./supabaseProject";
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
 const rawAnon = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
@@ -48,25 +50,45 @@ if (!isSupabaseBrowserConfigured) {
 /** Local Supabase CLI default; used only when env vars are missing so createClient does not throw. */
 export const SUPABASE_LOCAL_PLACEHOLDER_URL = "http://127.0.0.1:54321";
 
-/** Valid-shaped placeholders so createClient does not throw; real values come from `.env`. */
-const resolvedUrl = rawUrl || SUPABASE_LOCAL_PLACEHOLDER_URL;
+const resolvedUrl = isSupabaseBrowserConfigured && rawUrl
+  ? normalizeSupabaseUrl(rawUrl)
+  : rawUrl || SUPABASE_LOCAL_PLACEHOLDER_URL;
+
 const resolvedAnon =
   rawAnon ||
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0";
 
-export const supabase = createClient(resolvedUrl, resolvedAnon, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-});
+if (isSupabaseBrowserConfigured) {
+  reconcileSupabaseAuthStorage(resolvedUrl);
+}
+
+const projectRef = projectRefFromSupabaseUrl(resolvedUrl);
+const authStorageKey = projectRef ? `tipguard-${projectRef}-auth` : "tipguard-auth";
+
+let supabaseSingleton: SupabaseClient | null = null;
+
+/** Single browser Supabase client — never recreate after auth events. */
+export function getSupabaseClient(): SupabaseClient {
+  if (!supabaseSingleton) {
+    supabaseSingleton = createClient(resolvedUrl, resolvedAnon, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storageKey: authStorageKey,
+      },
+    });
+  }
+  return supabaseSingleton;
+}
+
+export const supabase = getSupabaseClient();
 
 /** Dev-only: log resolved host (no secrets). Restart `npm run dev` after .env changes. */
 if (import.meta.env.DEV && isSupabaseBrowserConfigured) {
   try {
     const host = new URL(resolvedUrl).host;
-    console.info(`[TipGuard] Supabase → ${host}`);
+    console.info(`[TipGuard] Supabase → ${host} (storage: ${authStorageKey})`);
   } catch {
     console.warn("[TipGuard] VITE_SUPABASE_URL is not a valid URL");
   }

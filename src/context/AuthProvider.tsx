@@ -2,9 +2,11 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { getAuthCallbackUrl, getAuthResetUrl } from "../lib/appOrigin";
 import { formatAuthUserFacingError } from "../lib/supabaseAuthErrors";
 import { clearAuthRedirectStorage } from "../lib/authRedirect";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
@@ -23,8 +25,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [hasGuardRow, setHasGuardRow] = useState(false);
   const [hasMerchantRow, setHasMerchantRow] = useState(false);
   const [loading, setLoading] = useState(true);
+  const accountAbortRef = useRef<AbortController | null>(null);
+  const bootDoneRef = useRef(false);
 
   const loadAccount = useCallback(async (uid: string, signal?: AbortSignal) => {
+    if (!isSupabaseBrowserConfigured) return;
     try {
       const [profRes, guardRes, merchRes] = await Promise.all([
         supabase.from("profiles").select("role").eq("id", uid).maybeSingle(),
@@ -32,15 +37,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         supabase.from("merchants").select("id").eq("user_id", uid).maybeSingle(),
       ]);
       if (signal?.aborted) return;
-      if (profRes.error || !profRes.data?.role) {
+      if (profRes.error) {
+        if (import.meta.env.DEV) console.warn("[AuthProvider] profiles:", profRes.error.message);
         setRole(null);
-      } else {
+      } else if (profRes.data?.role) {
         setRole(profRes.data.role as AuthRole);
+      } else {
+        setRole(null);
       }
       setHasGuardRow(!!guardRes.data && !guardRes.error);
       setHasMerchantRow(!!merchRes.data && !merchRes.error);
-    } catch {
+    } catch (e) {
       if (signal?.aborted) return;
+      if (import.meta.env.DEV) console.warn("[AuthProvider] loadAccount failed", e);
       setRole(null);
       setHasGuardRow(false);
       setHasMerchantRow(false);
@@ -54,11 +63,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setHasMerchantRow(false);
       return;
     }
-    await loadAccount(user.id);
+    const ac = new AbortController();
+    accountAbortRef.current?.abort();
+    accountAbortRef.current = ac;
+    await loadAccount(user.id, ac.signal);
   }, [loadAccount, user]);
+
+  /** Never call Supabase data APIs inside onAuthStateChange — defer to avoid auth deadlocks. */
+  const scheduleLoadAccount = useCallback(
+    (uid: string) => {
+      accountAbortRef.current?.abort();
+      const ac = new AbortController();
+      accountAbortRef.current = ac;
+      queueMicrotask(() => {
+        void loadAccount(uid, ac.signal);
+      });
+    },
+    [loadAccount],
+  );
+
+  const finishBoot = useCallback(() => {
+    if (bootDoneRef.current) return;
+    bootDoneRef.current = true;
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
+    bootDoneRef.current = false;
+    setLoading(true);
 
     const applySession = (next: AuthContextValue["session"]) => {
       if (!mounted) return;
@@ -73,9 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!isSupabaseBrowserConfigured) {
       applySession(null);
-      void Promise.resolve().then(() => {
-        if (mounted) setLoading(false);
-      });
+      finishBoot();
       return () => {
         mounted = false;
       };
@@ -84,59 +115,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, next) => {
+      if (!mounted) return;
+      if (import.meta.env.DEV) {
+        console.info(`[AuthProvider] auth event: ${event}`);
+      }
       applySession(next);
       if (next?.user?.id) {
-        void loadAccount(next.user.id);
+        scheduleLoadAccount(next.user.id);
       }
       if (event === "INITIAL_SESSION") {
-        setLoading(false);
+        finishBoot();
+      }
+      if (event === "SIGNED_OUT") {
+        finishBoot();
       }
     });
 
-    void (async () => {
-      try {
-        const { data, error } = await supabase.auth.getSession();
-        if (!mounted) return;
-        if (error && import.meta.env.DEV) {
-          console.warn("[AuthProvider] getSession:", error.message);
+    const bootFallback = window.setTimeout(() => {
+      if (mounted && !bootDoneRef.current) {
+        if (import.meta.env.DEV) {
+          console.warn("[AuthProvider] boot fallback — forcing loading false");
         }
-        applySession(data.session);
-        if (data.session?.user?.id) {
-          await loadAccount(data.session.user.id);
-        }
-      } catch (e) {
-        if (import.meta.env.DEV) console.warn("[AuthProvider] getSession failed", e);
-        if (mounted) applySession(null);
-      } finally {
-        if (mounted) setLoading(false);
+        finishBoot();
       }
-    })();
+    }, 10_000);
 
     return () => {
       mounted = false;
+      window.clearTimeout(bootFallback);
       subscription.unsubscribe();
+      accountAbortRef.current?.abort();
     };
-  }, [loadAccount]);
+  }, [finishBoot, scheduleLoadAccount]);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    if (!isSupabaseBrowserConfigured) {
+      return { error: "Supabase is not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env." };
+    }
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return { error: formatAuthUserFacingError(error) };
+      if (error) {
+        if (import.meta.env.DEV) console.warn("[AuthProvider] signIn:", error.message);
+        return { error: formatAuthUserFacingError(error) };
+      }
       return {};
     } catch (e) {
+      if (import.meta.env.DEV) console.warn("[AuthProvider] signIn failed", e);
       return { error: formatAuthUserFacingError(e) };
     }
   }, []);
 
   const signUp = useCallback(
     async (email: string, password: string, fullName: string, nextRole: Exclude<AuthRole, null>) => {
-      const redirect = typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined;
       try {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            emailRedirectTo: redirect,
+            emailRedirectTo: getAuthCallbackUrl(),
             data: { role: nextRole, full_name: fullName },
           },
         });
@@ -161,12 +197,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const resendSignupEmail = useCallback(async (email: string) => {
-    const redirect = typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined;
     try {
       const { error } = await supabase.auth.resend({
         type: "signup",
         email,
-        options: { emailRedirectTo: redirect },
+        options: { emailRedirectTo: getAuthCallbackUrl() },
       });
       if (error) {
         if (import.meta.env.DEV) console.error("[resendSignupEmail] Supabase auth error", error);
@@ -207,10 +242,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInMagicLink = useCallback(async (email: string) => {
     try {
-      const redirect = typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined;
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: redirect },
+        options: { emailRedirectTo: getAuthCallbackUrl() },
       });
       if (error) return { error: formatAuthUserFacingError(error) };
       return {};
@@ -221,8 +255,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resetPasswordForEmail = useCallback(async (email: string) => {
     try {
-      const redirect = typeof window !== "undefined" ? `${window.location.origin}/auth/reset` : undefined;
-      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: redirect });
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: getAuthResetUrl(),
+      });
       if (error) return { error: formatAuthUserFacingError(error) };
       return {};
     } catch (e) {
@@ -242,7 +277,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     clearAuthRedirectStorage();
-    await supabase.auth.signOut();
+    accountAbortRef.current?.abort();
+    try {
+      await supabase.auth.signOut({ scope: "local" });
+    } catch (e) {
+      if (import.meta.env.DEV) console.warn("[AuthProvider] signOut", e);
+    }
     setSession(null);
     setUser(null);
     setRole(null);

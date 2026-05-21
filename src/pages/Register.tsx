@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { getSupabaseBrowserConfigIssue, isSupabaseBrowserConfigured } from "../lib/supabase";
@@ -22,25 +22,19 @@ export default function Register() {
   const [resendBusy, setResendBusy] = useState(false);
   const [resendMsg, setResendMsg] = useState<string | null>(null);
   const [routing, setRouting] = useState(false);
+  const redirectStarted = useRef(false);
 
   useEffect(() => {
     if (authLoading || !user?.id) {
-      let skip = false;
-      void Promise.resolve().then(() => {
-        if (!skip) setRouting(false);
-      });
-      return () => {
-        skip = true;
-      };
+      redirectStarted.current = false;
+      setRouting(false);
+      return;
     }
+    if (redirectStarted.current) return;
+    redirectStarted.current = true;
+    setRouting(true);
     let cancelled = false;
-    void Promise.resolve().then(() => {
-      if (!cancelled) setRouting(true);
-    });
-    (async () => {
-      if (cancelled) return;
-      await navigateAfterAuth(user.id, navigate, { preferOnboarding: true });
-    })().finally(() => {
+    void navigateAfterAuth(user.id, navigate, { preferOnboarding: true }).finally(() => {
       if (!cancelled) setRouting(false);
     });
     return () => {

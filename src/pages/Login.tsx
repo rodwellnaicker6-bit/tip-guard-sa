@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { navigateAfterAuth } from "../lib/authRedirect";
@@ -16,26 +16,20 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [routing, setRouting] = useState(false);
+  const redirectStarted = useRef(false);
 
   useEffect(() => {
     if (authLoading || !user?.id) {
-      let skip = false;
-      void Promise.resolve().then(() => {
-        if (!skip) setRouting(false);
-      });
-      return () => {
-        skip = true;
-      };
+      redirectStarted.current = false;
+      setRouting(false);
+      return;
     }
+    if (redirectStarted.current) return;
+    redirectStarted.current = true;
+    setRouting(true);
     let cancelled = false;
-    void Promise.resolve().then(() => {
-      if (!cancelled) setRouting(true);
-    });
-    (async () => {
-      if (cancelled) return;
-      const from = (location.state as { from?: string } | null)?.from;
-      await navigateAfterAuth(user.id, navigate, { from });
-    })().finally(() => {
+    const from = (location.state as { from?: string } | null)?.from;
+    void navigateAfterAuth(user.id, navigate, { from }).finally(() => {
       if (!cancelled) setRouting(false);
     });
     return () => {

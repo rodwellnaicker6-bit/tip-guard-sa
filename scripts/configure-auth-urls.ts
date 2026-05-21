@@ -15,6 +15,10 @@ const redirectUrls = [
   "http://localhost:5173/",
   "http://localhost:5173/auth/callback",
   "http://localhost:5173/auth/reset",
+  "http://localhost:5174",
+  "http://localhost:5174/",
+  "http://localhost:5174/auth/callback",
+  "http://localhost:5174/auth/reset",
 ];
 
 async function main() {
