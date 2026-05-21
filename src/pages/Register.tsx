@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { getSupabaseBrowserConfigIssue, isSupabaseBrowserConfigured } from "../lib/supabase";
-import { navigateAfterAuth } from "../lib/authRedirect";
+import { usePostAuthRedirect } from "../hooks/usePostAuthRedirect";
 import PageLoader from "../components/PageLoader";
 
 type RolePick = "customer" | "guard" | "merchant";
@@ -10,8 +10,8 @@ type Step = "account" | "verify-email";
 
 /** Signup uses `emailRedirectTo` → `/auth/callback`; that full URL must be allowed in Supabase Dashboard → Authentication → Redirect URLs. */
 export default function Register() {
-  const { signUp, resendSignupEmail, user, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
+  const { signUp, resendSignupEmail, user } = useAuth();
+  const { showLoader } = usePostAuthRedirect({ preferOnboarding: true });
   const [step, setStep] = useState<Step>("account");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,26 +21,14 @@ export default function Register() {
   const [submitting, setSubmitting] = useState(false);
   const [resendBusy, setResendBusy] = useState(false);
   const [resendMsg, setResendMsg] = useState<string | null>(null);
-  const [routing, setRouting] = useState(false);
-  const redirectStarted = useRef(false);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    if (authLoading || !user?.id) {
-      redirectStarted.current = false;
-      setRouting(false);
-      return;
-    }
-    if (redirectStarted.current) return;
-    redirectStarted.current = true;
-    setRouting(true);
-    let cancelled = false;
-    void navigateAfterAuth(user.id, navigate, { preferOnboarding: true }).finally(() => {
-      if (!cancelled) setRouting(false);
-    });
+    mountedRef.current = true;
     return () => {
-      cancelled = true;
+      mountedRef.current = false;
     };
-  }, [authLoading, user?.id, navigate]);
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -61,6 +49,7 @@ export default function Register() {
 
     setSubmitting(true);
     const { error: err, needsEmailVerification } = await signUp(email, password, fullName, role);
+    if (!mountedRef.current) return;
     setSubmitting(false);
     if (err) {
       setError(err);
@@ -70,7 +59,6 @@ export default function Register() {
       setStep("verify-email");
       return;
     }
-    navigate("/onboarding", { replace: true, state: { registeredRole: role } });
   }
 
   async function onResend() {
@@ -78,12 +66,13 @@ export default function Register() {
     setError(null);
     setResendBusy(true);
     const { error: err } = await resendSignupEmail(email.trim());
+    if (!mountedRef.current) return;
     setResendBusy(false);
     if (err) setError(err);
     else setResendMsg("Verification email sent again. Check your inbox and spam folder.");
   }
 
-  if (user?.id && routing) {
+  if (user?.id && showLoader) {
     return <PageLoader />;
   }
 

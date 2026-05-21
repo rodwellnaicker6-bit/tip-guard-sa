@@ -7,10 +7,11 @@ function loginRedirectState(pathname: string, search: string) {
   return { from: `${pathname}${search}` };
 }
 
+/** Block protected routes until session is hydrated and profile rows are loaded when signed in. */
 export function RequireAuth({ children }: { children: ReactElement }) {
-  const { user, loading } = useAuth();
+  const { user, authReady } = useAuth();
   const location = useLocation();
-  if (loading) return <PageLoader />;
+  if (!authReady) return <PageLoader />;
   if (!user?.id) {
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
@@ -20,9 +21,9 @@ export function RequireAuth({ children }: { children: ReactElement }) {
 }
 
 export function RequireAdmin({ children }: { children: ReactElement }) {
-  const { user, role, loading } = useAuth();
+  const { user, role, authReady } = useAuth();
   const location = useLocation();
-  if (loading) return <PageLoader />;
+  if (!authReady) return <PageLoader />;
   if (!user?.id) {
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
@@ -36,9 +37,9 @@ export function RequireAdmin({ children }: { children: ReactElement }) {
 
 /** Guard dashboard routes (not `/guard/setup`, where new guards land first). */
 export function RequireGuard({ children }: { children: ReactElement }) {
-  const { user, loading, isGuardUser } = useAuth();
+  const { user, authReady, isGuardUser } = useAuth();
   const location = useLocation();
-  if (loading) return <PageLoader />;
+  if (!authReady) return <PageLoader />;
   if (!user?.id) {
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
@@ -52,9 +53,9 @@ export function RequireGuard({ children }: { children: ReactElement }) {
 
 /** Merchant / venue hub (profile role `merchant` and/or a row in `merchants`). */
 export function RequireMerchant({ children }: { children: ReactElement }) {
-  const { user, loading, isMerchantUser } = useAuth();
+  const { user, authReady, isMerchantUser } = useAuth();
   const location = useLocation();
-  if (loading) return <PageLoader />;
+  if (!authReady) return <PageLoader />;
   if (!user?.id) {
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />

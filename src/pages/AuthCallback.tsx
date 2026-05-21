@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
-import { navigateAfterAuth } from "../lib/authRedirect";
+import { usePostAuthRedirect } from "../hooks/usePostAuthRedirect";
 import { formatAuthUserFacingError } from "../lib/supabaseAuthErrors";
 
 function readAuthType(): string | null {
@@ -16,79 +17,104 @@ function readAuthType(): string | null {
 type Status = "working" | "error";
 
 export default function AuthCallback() {
-  const navigate = useNavigate();
   const [message, setMessage] = useState(() =>
     readAuthType() === "signup" ? "Confirming your email…" : "Signing you in…",
   );
   const [status, setStatus] = useState<Status>("working");
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [sessionEstablished, setSessionEstablished] = useState(false);
+  const mountedRef = useRef(true);
+  const exchangeStarted = useRef(false);
+  const authType = readAuthType();
+  const preferOnboarding = authType === "signup";
+
+  usePostAuthRedirect({ preferOnboarding, enabled: sessionEstablished });
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (exchangeStarted.current) return;
+    exchangeStarted.current = true;
+
     let cancelled = false;
     (async () => {
+      if (!mountedRef.current) return;
       setStatus("working");
       setErrorDetail(null);
       try {
+        let session: Session | null = null;
+
         if (typeof window !== "undefined") {
           const url = new URL(window.location.href);
           const code = url.searchParams.get("code");
           if (code) {
-            const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
-            if (cancelled) return;
+            const { data, error: exErr } = await supabase.auth.exchangeCodeForSession(code);
+            if (cancelled || !mountedRef.current) return;
             if (exErr) {
+              console.error("[AuthCrash] AuthCallback.exchangeCodeForSession", exErr);
               setErrorDetail(formatAuthUserFacingError(exErr));
               setStatus("error");
+              exchangeStarted.current = false;
               return;
             }
+            session = data.session;
             window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
           }
         }
 
-        const hash = typeof window !== "undefined" ? window.location.hash : "";
-        const params = new URLSearchParams(hash.replace(/^#/, ""));
-        const access = params.get("access_token");
-        const refresh = params.get("refresh_token");
-        if (access && refresh) {
-          const { error } = await supabase.auth.setSession({ access_token: access, refresh_token: refresh });
-          if (cancelled) return;
-          if (error) {
-            setErrorDetail(formatAuthUserFacingError(error));
-            setStatus("error");
-            return;
+        if (!session && typeof window !== "undefined") {
+          const hash = window.location.hash;
+          const params = new URLSearchParams(hash.replace(/^#/, ""));
+          const access = params.get("access_token");
+          const refresh = params.get("refresh_token");
+          if (access && refresh) {
+            const { data, error } = await supabase.auth.setSession({
+              access_token: access,
+              refresh_token: refresh,
+            });
+            if (cancelled || !mountedRef.current) return;
+            if (error) {
+              console.error("[AuthCrash] AuthCallback.setSession", error);
+              setErrorDetail(formatAuthUserFacingError(error));
+              setStatus("error");
+              exchangeStarted.current = false;
+              return;
+            }
+            session = data.session;
+            window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
           }
-          window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
         }
 
-        const authType = readAuthType();
-        const { data, error: sessErr } = await supabase.auth.getSession();
-        if (cancelled) return;
-        if (sessErr) {
-          setErrorDetail(formatAuthUserFacingError(sessErr));
-          setStatus("error");
-          return;
-        }
-        if (!data.session) {
+        if (!session?.user?.id) {
           setErrorDetail("No active session after this link. Try signing in, or request a new email.");
           setStatus("error");
+          exchangeStarted.current = false;
           return;
         }
-        if (authType === "signup") {
+        if (authType === "signup" && mountedRef.current) {
           setMessage("Email verified — you are signed in.");
         }
-        await navigateAfterAuth(data.session.user.id, navigate, {
-          preferOnboarding: authType === "signup",
-        });
+        if (mountedRef.current) {
+          setSessionEstablished(true);
+        }
       } catch (e) {
-        if (!cancelled) {
+        if (!cancelled && mountedRef.current) {
+          console.error("[AuthCrash] AuthCallback", e);
           setErrorDetail(formatAuthUserFacingError(e));
           setStatus("error");
+          exchangeStarted.current = false;
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [authType]);
 
   if (status === "error") {
     return (

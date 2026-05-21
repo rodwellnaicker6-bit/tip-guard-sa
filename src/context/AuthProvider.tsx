@@ -24,9 +24,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<AuthRole>(null);
   const [hasGuardRow, setHasGuardRow] = useState(false);
   const [hasMerchantRow, setHasMerchantRow] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [profileReady, setProfileReady] = useState(true);
+  const mountedRef = useRef(true);
   const accountAbortRef = useRef<AbortController | null>(null);
-  const bootDoneRef = useRef(false);
+  const sessionReadyRef = useRef(false);
+  const reconnectBusyRef = useRef(false);
+
+  const authReady = sessionReady && profileReady;
+  const loading = !authReady;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const loadAccount = useCallback(async (uid: string, signal?: AbortSignal) => {
     if (!isSupabaseBrowserConfigured) return;
@@ -36,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         supabase.from("guards").select("id").eq("user_id", uid).maybeSingle(),
         supabase.from("merchants").select("id").eq("user_id", uid).maybeSingle(),
       ]);
-      if (signal?.aborted) return;
+      if (signal?.aborted || !mountedRef.current) return;
       if (profRes.error) {
         if (import.meta.env.DEV) console.warn("[AuthProvider] profiles:", profRes.error.message);
         setRole(null);
@@ -48,30 +61,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setHasGuardRow(!!guardRes.data && !guardRes.error);
       setHasMerchantRow(!!merchRes.data && !merchRes.error);
     } catch (e) {
-      if (signal?.aborted) return;
-      if (import.meta.env.DEV) console.warn("[AuthProvider] loadAccount failed", e);
+      if (signal?.aborted || !mountedRef.current) return;
+      console.error("[AuthCrash] AuthProvider.loadAccount", e);
       setRole(null);
       setHasGuardRow(false);
       setHasMerchantRow(false);
+    } finally {
+      if (!signal?.aborted && mountedRef.current) {
+        setProfileReady(true);
+      }
     }
   }, []);
 
   const refreshProfile = useCallback(async () => {
     if (!user?.id) {
+      if (!mountedRef.current) return;
       setRole(null);
       setHasGuardRow(false);
       setHasMerchantRow(false);
+      setProfileReady(true);
       return;
     }
     const ac = new AbortController();
     accountAbortRef.current?.abort();
     accountAbortRef.current = ac;
+    setProfileReady(false);
     await loadAccount(user.id, ac.signal);
   }, [loadAccount, user]);
 
   /** Never call Supabase data APIs inside onAuthStateChange — defer to avoid auth deadlocks. */
   const scheduleLoadAccount = useCallback(
     (uid: string) => {
+      if (!mountedRef.current) return;
+      setProfileReady(false);
       accountAbortRef.current?.abort();
       const ac = new AbortController();
       accountAbortRef.current = ac;
@@ -82,40 +104,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [loadAccount],
   );
 
-  const finishBoot = useCallback(() => {
-    if (bootDoneRef.current) return;
-    bootDoneRef.current = true;
-    setLoading(false);
+  const markSessionReady = useCallback(() => {
+    if (sessionReadyRef.current || !mountedRef.current) return;
+    sessionReadyRef.current = true;
+    setSessionReady(true);
   }, []);
 
   useEffect(() => {
-    let mounted = true;
-    bootDoneRef.current = false;
-    setLoading(true);
+    sessionReadyRef.current = false;
+    let effectCancelled = false;
+
+    queueMicrotask(() => {
+      if (effectCancelled || !mountedRef.current) return;
+      setSessionReady(false);
+      setProfileReady(true);
+    });
+
+    if (!isSupabaseBrowserConfigured) {
+      queueMicrotask(() => {
+        if (effectCancelled || !mountedRef.current) return;
+        setSession(null);
+        setUser(null);
+        setRole(null);
+        setHasGuardRow(false);
+        setHasMerchantRow(false);
+        markSessionReady();
+      });
+      return () => {
+        effectCancelled = true;
+      };
+    }
 
     const applySession = (next: AuthContextValue["session"]) => {
-      if (!mounted) return;
+      if (!mountedRef.current) return;
       setSession(next);
       setUser(next?.user ?? null);
       if (!next?.user?.id) {
         setRole(null);
         setHasGuardRow(false);
         setHasMerchantRow(false);
+        setProfileReady(true);
       }
     };
-
-    if (!isSupabaseBrowserConfigured) {
-      applySession(null);
-      finishBoot();
-      return () => {
-        mounted = false;
-      };
-    }
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, next) => {
-      if (!mounted) return;
+      if (!mountedRef.current) return;
       if (import.meta.env.DEV) {
         console.info(`[AuthProvider] auth event: ${event}`);
       }
@@ -123,30 +158,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (next?.user?.id) {
         scheduleLoadAccount(next.user.id);
       }
-      if (event === "INITIAL_SESSION") {
-        finishBoot();
-      }
-      if (event === "SIGNED_OUT") {
-        finishBoot();
+      if (event === "INITIAL_SESSION" || event === "SIGNED_OUT") {
+        markSessionReady();
       }
     });
 
     const bootFallback = window.setTimeout(() => {
-      if (mounted && !bootDoneRef.current) {
+      if (mountedRef.current && !sessionReadyRef.current) {
         if (import.meta.env.DEV) {
-          console.warn("[AuthProvider] boot fallback — forcing loading false");
+          console.warn("[AuthProvider] boot fallback — forcing session ready");
         }
-        finishBoot();
+        markSessionReady();
       }
     }, 10_000);
 
     return () => {
-      mounted = false;
+      effectCancelled = true;
       window.clearTimeout(bootFallback);
       subscription.unsubscribe();
       accountAbortRef.current?.abort();
     };
-  }, [finishBoot, scheduleLoadAccount]);
+  }, [markSessionReady, scheduleLoadAccount]);
+
+  /** Re-sync session after tab focus without extra auth listeners. */
+  useEffect(() => {
+    if (!isSupabaseBrowserConfigured) return;
+
+    const reconnect = () => {
+      if (document.visibilityState !== "visible" || reconnectBusyRef.current) return;
+      reconnectBusyRef.current = true;
+      void supabase.auth
+        .getSession()
+        .then(({ data: { session: next } }) => {
+          if (!mountedRef.current || !next) return;
+          setSession(next);
+          setUser(next.user ?? null);
+          if (next.user?.id) {
+            scheduleLoadAccount(next.user.id);
+          }
+        })
+        .catch((e) => {
+          if (import.meta.env.DEV) console.warn("[AuthProvider] reconnect getSession", e);
+        })
+        .finally(() => {
+          reconnectBusyRef.current = false;
+        });
+    };
+
+    const onFocus = () => reconnect();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") reconnect();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [scheduleLoadAccount]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!isSupabaseBrowserConfigured) {
@@ -154,13 +224,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (!mountedRef.current) return {};
       if (error) {
         if (import.meta.env.DEV) console.warn("[AuthProvider] signIn:", error.message);
         return { error: formatAuthUserFacingError(error) };
       }
       return {};
     } catch (e) {
-      if (import.meta.env.DEV) console.warn("[AuthProvider] signIn failed", e);
+      if (!mountedRef.current) return {};
+      console.error("[AuthCrash] AuthProvider.signIn", e);
       return { error: formatAuthUserFacingError(e) };
     }
   }, []);
@@ -176,6 +248,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             data: { role: nextRole, full_name: fullName },
           },
         });
+        if (!mountedRef.current) return {};
         if (error) {
           if (import.meta.env.DEV) {
             console.error("[signUp] Supabase auth error", {
@@ -189,7 +262,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const needsEmailVerification = !data.session && !!data.user;
         return { needsEmailVerification };
       } catch (e) {
-        if (import.meta.env.DEV) console.error("[signUp] unexpected error", e);
+        if (!mountedRef.current) return {};
+        console.error("[AuthCrash] AuthProvider.signUp", e);
         return { error: formatAuthUserFacingError(e) };
       }
     },
@@ -203,13 +277,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         options: { emailRedirectTo: getAuthCallbackUrl() },
       });
+      if (!mountedRef.current) return {};
       if (error) {
         if (import.meta.env.DEV) console.error("[resendSignupEmail] Supabase auth error", error);
         return { error: formatAuthUserFacingError(error) };
       }
       return {};
     } catch (e) {
-      if (import.meta.env.DEV) console.error("[resendSignupEmail] unexpected error", e);
+      if (!mountedRef.current) return {};
+      console.error("[AuthCrash] AuthProvider.resendSignupEmail", e);
       return { error: formatAuthUserFacingError(e) };
     }
   }, []);
@@ -218,9 +294,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const p = normalizeZaPhone(phone);
       const { error } = await supabase.auth.signInWithOtp({ phone: p });
+      if (!mountedRef.current) return {};
       if (error) return { error: formatAuthUserFacingError(error) };
       return {};
     } catch (e) {
+      if (!mountedRef.current) return {};
       return { error: formatAuthUserFacingError(e) };
     }
   }, []);
@@ -233,9 +311,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         type: "sms",
       });
+      if (!mountedRef.current) return {};
       if (error) return { error: formatAuthUserFacingError(error) };
       return {};
     } catch (e) {
+      if (!mountedRef.current) return {};
       return { error: formatAuthUserFacingError(e) };
     }
   }, []);
@@ -246,9 +326,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         options: { emailRedirectTo: getAuthCallbackUrl() },
       });
+      if (!mountedRef.current) return {};
       if (error) return { error: formatAuthUserFacingError(error) };
       return {};
     } catch (e) {
+      if (!mountedRef.current) return {};
       return { error: formatAuthUserFacingError(e) };
     }
   }, []);
@@ -258,9 +340,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: getAuthResetUrl(),
       });
+      if (!mountedRef.current) return {};
       if (error) return { error: formatAuthUserFacingError(error) };
       return {};
     } catch (e) {
+      if (!mountedRef.current) return {};
       return { error: formatAuthUserFacingError(e) };
     }
   }, []);
@@ -268,9 +352,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updatePassword = useCallback(async (newPassword: string) => {
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (!mountedRef.current) return {};
       if (error) return { error: formatAuthUserFacingError(error) };
       return {};
     } catch (e) {
+      if (!mountedRef.current) return {};
       return { error: formatAuthUserFacingError(e) };
     }
   }, []);
@@ -283,12 +369,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       if (import.meta.env.DEV) console.warn("[AuthProvider] signOut", e);
     }
+    if (!mountedRef.current) return;
     setSession(null);
     setUser(null);
     setRole(null);
     setHasGuardRow(false);
     setHasMerchantRow(false);
-  }, []);
+    setProfileReady(true);
+    markSessionReady();
+  }, [markSessionReady]);
 
   const isGuardUser = role === "guard" || hasGuardRow;
   const isMerchantUser = role === "merchant" || hasMerchantRow;
@@ -303,6 +392,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         hasMerchantRow,
         isGuardUser,
         isMerchantUser,
+        sessionReady,
+        profileReady,
+        authReady,
         loading,
         signIn,
         signUp,
@@ -323,6 +415,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hasMerchantRow,
       isGuardUser,
       isMerchantUser,
+      sessionReady,
+      profileReady,
+      authReady,
       loading,
       signIn,
       signUp,

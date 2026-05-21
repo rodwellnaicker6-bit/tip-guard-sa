@@ -14,6 +14,13 @@ export type AuthContextValue = {
   isGuardUser: boolean;
   /** Profile role merchant or merchants row. */
   isMerchantUser: boolean;
+  /** True after Supabase emits INITIAL_SESSION (or boot timeout / unconfigured). */
+  sessionReady: boolean;
+  /** True when no signed-in user or profile/guard/merchant rows have been loaded. */
+  profileReady: boolean;
+  /** Session hydrated and profile fetch finished (when signed in). Use for route guards and redirects. */
+  authReady: boolean;
+  /** @deprecated Prefer `authReady`; kept as `!authReady` for existing consumers. */
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (

@@ -1,52 +1,44 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
-import { navigateAfterAuth } from "../lib/authRedirect";
+import { usePostAuthRedirect } from "../hooks/usePostAuthRedirect";
 import PageLoader from "../components/PageLoader";
 import { AuthShell } from "../components/AuthShell";
 import { DEMO_ACCOUNTS, isDemoMode } from "../lib/demoMode";
 
 export default function Login() {
-  const { signIn, user, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
+  const { signIn, user } = useAuth();
   const location = useLocation();
   const passwordUpdated = Boolean((location.state as { passwordUpdated?: boolean } | null)?.passwordUpdated);
+  const redirectFrom = useMemo(
+    () => (location.state as { from?: string } | null)?.from,
+    [location.state],
+  );
+  const { showLoader } = usePostAuthRedirect({ from: redirectFrom });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [routing, setRouting] = useState(false);
-  const redirectStarted = useRef(false);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    if (authLoading || !user?.id) {
-      redirectStarted.current = false;
-      setRouting(false);
-      return;
-    }
-    if (redirectStarted.current) return;
-    redirectStarted.current = true;
-    setRouting(true);
-    let cancelled = false;
-    const from = (location.state as { from?: string } | null)?.from;
-    void navigateAfterAuth(user.id, navigate, { from }).finally(() => {
-      if (!cancelled) setRouting(false);
-    });
+    mountedRef.current = true;
     return () => {
-      cancelled = true;
+      mountedRef.current = false;
     };
-  }, [authLoading, user?.id, navigate, location.state]);
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     const { error: err } = await signIn(email, password);
+    if (!mountedRef.current) return;
     setSubmitting(false);
     if (err) setError(err);
   }
 
-  if (user?.id && routing) {
+  if (user?.id && showLoader) {
     return <PageLoader />;
   }
 
