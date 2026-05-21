@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
 import PageLoader from "../components/PageLoader";
 import EmptyState from "../components/EmptyState";
+import { FetchError } from "../components/FetchError";
 import { TxStatusBadge } from "../components/TxStatusBadge";
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import PaystackTestBanner from "../components/PaystackTestBanner";
@@ -46,7 +47,7 @@ export default function CustomerTransactions() {
       .select("id, type, amount_cents, currency, status, paystack_reference, created_at")
       .order("created_at", { ascending: false })
       .limit(200);
-    if (qErr) setError(qErr.message);
+    if (qErr) setError("Could not load transactions. Please try again.");
     else {
       setError(null);
       setRows((data as TxRow[]) ?? []);
@@ -85,7 +86,7 @@ export default function CustomerTransactions() {
   if (loading && rows.length === 0) return <PageLoader />;
 
   return (
-    <div className="shell mx-auto max-w-lg space-y-4 px-5 py-8 pb-20">
+    <div className="shell dashboard-hub mx-auto max-w-lg space-y-4 px-4 py-8 pb-20 sm:px-5">
       <PaystackTestBanner />
       <header className="page-header fx-fade-up">
         <p className="muted-label">Ledger</p>
@@ -93,7 +94,7 @@ export default function CustomerTransactions() {
         <p className="mt-1 text-sm text-slate-400">Paystack-backed tips and wallet activity in ZAR.</p>
       </header>
 
-      {error && <div className="error fx-fade-up">{error}</div>}
+      {error ? <FetchError message={error} onRetry={() => void load()} /> : null}
 
       <GlassPanel className="fx-fade-up space-y-3" glow="slate">
         <label className="block">
@@ -157,6 +158,13 @@ export default function CustomerTransactions() {
               rows.length === 0
                 ? "Complete a tip or wallet top-up to see entries here."
                 : "Try clearing filters or widening the date range."
+            }
+            action={
+              rows.length === 0 ? (
+                <Link className="hub-primary-cta btn-gold tap-target" to="/customer/wallet">
+                  Top up wallet
+                </Link>
+              ) : undefined
             }
           />
         )

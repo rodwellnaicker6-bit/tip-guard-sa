@@ -57,7 +57,7 @@ export default function Login() {
       {passwordUpdated && <div className="success">Password updated. Sign in with your new password.</div>}
       <form className="stack" onSubmit={onSubmit}>
         <input
-          className="field"
+          className="field tap-target"
           type="email"
           autoComplete="email"
           placeholder="Email address"
@@ -67,7 +67,7 @@ export default function Login() {
           disabled={submitting}
         />
         <input
-          className="field"
+          className="field tap-target"
           type="password"
           autoComplete="current-password"
           placeholder="Password"

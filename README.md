@@ -51,6 +51,16 @@ See `src/components/RequireAuth.tsx`: `RequireAuth`, `RequireGuard`, `RequireMer
 
 RLS on customer/guard/admin paths; service role only in Edge. Never commit `.env` (gitignored).
 
+## Deploy (Vercel)
+
+1. Copy `.env.example` → Vercel **Production** env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PAYSTACK_PUBLIC_KEY` (never `SUPABASE_SERVICE_ROLE_KEY` or `PAYSTACK_SECRET_KEY` in the client).
+2. Framework preset **Vite**; `npm run build` runs `validateClientEnv()` and fails in prod if keys are missing.
+3. `vercel.json` SPA rewrite sends all routes to `index.html` (client routes like `/guard`, `/t/:token`).
+4. After deploy: add `https://<domain>/auth/callback` and `/auth/reset` to Supabase Auth redirect URLs (see [Supabase deploy](docs/SUPABASE_DEPLOY.md)).
+5. Smoke: login → role dashboard → test Paystack with `pk_test_` on staging first.
+
+Full checklist: [Production checklist](docs/PRODUCTION_CHECKLIST.md) · [Roadmap & deployment](docs/ROADMAP_AND_DEPLOYMENT.md).
+
 ## Legacy UI note
 
 Older screens still use `.shell` / CSS variables from `src/index.css`. New surfaces combine Tailwind (`dark` class on `<html>`) with those tokens; Settings toggles dark UI and high-contrast.

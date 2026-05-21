@@ -7,6 +7,9 @@ import type { GuardRow } from "./CustomerHome";
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import { TrustRibbon } from "../components/fintech/TrustRibbon";
 import { Sparkline } from "../components/fintech/Sparkline";
+import PageLoader from "../components/PageLoader";
+import EmptyState from "../components/EmptyState";
+import { FetchError } from "../components/FetchError";
 
 type TipRow = {
   id: string;
@@ -19,7 +22,9 @@ export default function GuardHome() {
   const { user, signOut } = useAuth();
   const [guard, setGuard] = useState<GuardRow | null>(null);
   const [recentTips, setRecentTips] = useState<TipRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   const [payoutAmount, setPayoutAmount] = useState("500");
   const [payoutBusy, setPayoutBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -29,10 +34,14 @@ export default function GuardHome() {
     if (!user?.id) return;
     let cancelled = false;
     (async () => {
+      setLoading(true);
+      setError(null);
       const { data, error: err } = await supabase.from("guards").select("*").eq("user_id", user.id).maybeSingle();
       if (cancelled) return;
       if (err) {
-        setError(err.message);
+        setError("We could not load your guard profile. Please try again.");
+        setGuard(null);
+        setLoading(false);
         return;
       }
       const g = (data as GuardRow) ?? null;
@@ -45,12 +54,16 @@ export default function GuardHome() {
           .order("created_at", { ascending: false })
           .limit(12);
         if (!cancelled && !tErr && tips) setRecentTips(tips as TipRow[]);
+        else if (!cancelled) setRecentTips([]);
+      } else if (!cancelled) {
+        setRecentTips([]);
       }
+      if (!cancelled) setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [user?.id, reload]);
 
   useEffect(() => {
     if (!guard?.id) return;
@@ -106,11 +119,15 @@ export default function GuardHome() {
     setToast(msg);
   }
 
+  if (loading) {
+    return <PageLoader />;
+  }
+
   if (error) {
     return (
-      <div className="shell mx-auto max-w-lg px-5 py-8">
-        <div className="error">{error}</div>
-        <Link to="/" className="mt-4 inline-block text-amber-400">
+      <div className="shell dashboard-hub mx-auto max-w-lg space-y-4 px-4 py-8 sm:px-5">
+        <FetchError message={error} onRetry={() => setReload((n) => n + 1)} />
+        <Link to="/" className="tap-target text-center text-sm text-amber-400">
           Home
         </Link>
       </div>
@@ -119,16 +136,16 @@ export default function GuardHome() {
 
   if (!guard) {
     return (
-      <div className="shell mx-auto flex max-w-lg flex-col gap-4 px-5 py-10">
+      <div className="shell dashboard-hub mx-auto flex max-w-lg flex-col gap-4 px-4 py-10 sm:px-5">
         <h2 className="text-xl font-bold text-white">Finish guard profile</h2>
         <p className="text-sm text-slate-400">We could not find a guard profile linked to your account yet.</p>
         <Link
-          className="rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-3 text-center font-black text-black"
+          className="hub-primary-cta tap-target bg-gradient-to-r from-amber-400 to-amber-600 text-black"
           to="/guard/setup"
         >
           Create guard profile
         </Link>
-        <button className="rounded-2xl border border-white/15 py-3 font-semibold text-slate-200" type="button" onClick={() => void signOut()}>
+        <button className="tap-target rounded-2xl border border-white/15 py-3 font-semibold text-slate-200" type="button" onClick={() => void signOut()}>
           Sign out
         </button>
       </div>
@@ -138,7 +155,7 @@ export default function GuardHome() {
   const first = guard.display_name.split(" ")[0];
 
   return (
-    <div className="shell mx-auto max-w-lg space-y-5 px-5 py-8 pb-16">
+    <div className="shell dashboard-hub mx-auto max-w-lg space-y-5 px-4 py-8 pb-16 sm:px-5">
       <header className="fx-fade-up flex flex-wrap items-end justify-between gap-2">
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Guard dashboard</p>
@@ -184,7 +201,15 @@ export default function GuardHome() {
         </div>
         <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
           {recentTips.length === 0 ? (
-            <p className="text-sm text-slate-500">No tips yet — share your QR from the QR screen.</p>
+            <EmptyState
+              title="No tips yet"
+              description="Share your QR code so customers can tip you on site."
+              action={
+                <Link className="hub-primary-cta tap-target text-amber-200" to="/guard/qr" style={{ background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.35)" }}>
+                  Open QR screen
+                </Link>
+              }
+            />
           ) : (
             recentTips.map((t) => (
               <div
@@ -201,20 +226,17 @@ export default function GuardHome() {
         </div>
       </GlassPanel>
 
-      <nav className="grid grid-cols-2 gap-2">
-        <Link
-          to="/guard/qr"
-          className="rounded-xl border border-amber-500/30 bg-amber-500/10 py-3 text-center text-sm font-bold text-amber-200"
-        >
-          QR & links
+      <nav className="hub-nav-grid" aria-label="Guard hub">
+        <Link to="/guard/qr" className="hub-nav-link border-amber-500/30 bg-amber-500/10 text-amber-200">
+          QR &amp; links
         </Link>
-        <Link to="/guard/profile" className="rounded-xl border border-white/10 py-3 text-center text-sm font-semibold text-slate-200">
+        <Link to="/guard/profile" className="hub-nav-link text-slate-200">
           Profile
         </Link>
-        <Link to="/guard/connect" className="rounded-xl border border-white/10 py-3 text-center text-sm font-semibold text-slate-200">
+        <Link to="/guard/connect" className="hub-nav-link text-slate-200">
           Connect
         </Link>
-        <Link to="/guard/history" className="rounded-xl border border-white/10 py-3 text-center text-sm font-semibold text-slate-200">
+        <Link to="/guard/history" className="hub-nav-link text-slate-200">
           Transactions
         </Link>
       </nav>
@@ -239,11 +261,11 @@ export default function GuardHome() {
         {toast && <div className="mt-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">{toast}</div>}
       </GlassPanel>
 
-      <div className="flex gap-2">
-        <button className="flex-1 rounded-2xl border border-white/10 py-3 text-sm font-semibold text-slate-300" type="button" onClick={() => void signOut()}>
+      <div className="flex flex-wrap gap-2">
+        <button className="tap-target min-h-[44px] flex-1 rounded-2xl border border-white/10 py-3 text-sm font-semibold text-slate-300" type="button" onClick={() => void signOut()}>
           Sign out
         </button>
-        <Link className="flex flex-1 items-center justify-center rounded-2xl border border-white/10 py-3 text-sm font-semibold text-amber-400" to="/">
+        <Link className="tap-target min-h-[44px] flex flex-1 items-center justify-center rounded-2xl border border-white/10 py-3 text-sm font-semibold text-amber-400" to="/">
           Home
         </Link>
       </div>

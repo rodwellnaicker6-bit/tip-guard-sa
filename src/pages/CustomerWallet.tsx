@@ -7,6 +7,7 @@ import { hasPaystackPublicKey, payWalletTopUpWithPaystack } from "../services/pa
 import { useToast } from "../context/useToast";
 import PageLoader from "../components/PageLoader";
 import EmptyState from "../components/EmptyState";
+import { FetchError } from "../components/FetchError";
 
 const REFRESH_MS = 45_000;
 
@@ -31,7 +32,7 @@ export default function CustomerWallet() {
     if (!user?.id) return;
     const { data, error: wErr } = await supabase.from("customer_wallets").select("balance_cents").eq("user_id", user.id).maybeSingle();
     if (wErr) {
-      setLoadErr(wErr.message);
+      setLoadErr("Could not load wallet balance. Please try again.");
       return;
     }
     setBalanceCents(data?.balance_cents ?? 0);
@@ -104,13 +105,15 @@ export default function CustomerWallet() {
   }
 
   return (
-    <div className="shell stack">
-      <h2>Wallet</h2>
-      <p style={{ color: "var(--muted)", fontSize: 14 }}>
-        Top-ups use Paystack in ZAR. Funds credit your wallet after Paystack sends <code>charge.success</code> to our
-        webhook and the server verifies the signature.
-      </p>
-      {loadErr && <div className="error">{loadErr}</div>}
+    <div className="shell dashboard-hub stack min-w-0">
+      <header className="page-header">
+        <p className="muted-label">Wallet</p>
+        <h2 className="font-black text-white">Your balance</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          Top-ups use Paystack in ZAR. Funds credit after Paystack confirms payment to our webhook.
+        </p>
+      </header>
+      {loadErr ? <FetchError message={loadErr} onRetry={() => void refreshBalance()} /> : null}
       <div className="card stack">
         <p style={{ margin: 0 }}>Available balance</p>
         <h3 style={{ color: "var(--gold)", fontSize: 28, margin: 0 }}>{balanceCents != null ? zarFromCents(balanceCents) : "—"}</h3>
@@ -119,6 +122,11 @@ export default function CustomerWallet() {
         <EmptyState
           title="Wallet is empty"
           description="Add funds below to build a balance for deployments that debit the wallet at checkout."
+          action={
+            <button className="hub-primary-cta btn-gold tap-target" type="button" onClick={() => document.getElementById("wallet-topup")?.scrollIntoView({ behavior: "smooth" })}>
+              Add funds
+            </button>
+          }
         />
       )}
 
@@ -131,11 +139,13 @@ export default function CustomerWallet() {
         and recorded via webhook metadata when your operator is ready.
       </p>
 
-      <h3 style={{ marginTop: 16 }}>Add funds</h3>
+      <h3 id="wallet-topup" style={{ marginTop: 16 }}>
+        Add funds
+      </h3>
       <div className="stack mt">
         <label>
           <span>Amount (ZAR)</span>
-          <input className="field mt" value={amount} onChange={(e) => setAmount(e.target.value)} type="number" min="1" step="1" />
+          <input className="field tap-target mt" value={amount} onChange={(e) => setAmount(e.target.value)} type="number" min="1" step="1" inputMode="numeric" />
         </label>
         {error && <div className="error">{error}</div>}
         <button className="btn-gold" type="button" onClick={() => void startDeposit()} disabled={!hasPaystackPublicKey() || starting}>
@@ -144,11 +154,20 @@ export default function CustomerWallet() {
         {!hasPaystackPublicKey() && <p className="error">Add VITE_PAYSTACK_PUBLIC_KEY to your .env file.</p>}
       </div>
 
-      <div className="row" style={{ gap: 12, flexWrap: "wrap", marginTop: 8 }}>
-        <Link to="/customer/transactions">Transaction history</Link>
-        <Link to="/customer/history">Tip history</Link>
-        <Link to="/customer">Browse guards</Link>
-      </div>
+      <nav className="hub-nav-grid" style={{ marginTop: 8 }}>
+        <Link className="hub-nav-link text-amber-400" to="/customer/transactions">
+          Ledger
+        </Link>
+        <Link className="hub-nav-link text-amber-400" to="/customer/history">
+          Tip history
+        </Link>
+        <Link className="hub-nav-link text-slate-300" to="/customer">
+          Guards
+        </Link>
+        <Link className="hub-nav-link text-slate-300" to="/customer/dashboard">
+          Dashboard
+        </Link>
+      </nav>
     </div>
   );
 }
