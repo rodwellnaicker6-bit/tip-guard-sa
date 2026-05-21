@@ -7,11 +7,12 @@ import { TrustRibbon } from "../components/fintech/TrustRibbon";
 import { getLoyaltySnapshot } from "../lib/loyalty";
 import { zarFromCents } from "../lib/money";
 import { StatCardsSkeleton } from "../components/StatCardsSkeleton";
+import { ProfileCompletionCard } from "../components/ProfileCompletionCard";
 import { FetchError } from "../components/FetchError";
 import EmptyState from "../components/EmptyState";
 
 export default function CustomerDashboard() {
-  const { user, signOut } = useAuth();
+  const { user, profileFields, signOut } = useAuth();
   const email = user?.email ?? "your account";
   const [tipCount, setTipCount] = useState<number | null>(null);
   const [volume, setVolume] = useState<number | null>(null);
@@ -51,16 +52,18 @@ export default function CustomerDashboard() {
   const statsReady = !loading && !error;
 
   return (
-    <div className="shell dashboard-hub mx-auto max-w-lg space-y-5 px-4 py-8 sm:px-5">
-      <header className="page-header fx-fade-up">
+    <div className="shell dashboard-hub mx-auto max-w-lg space-y-5 px-4 py-6 sm:px-5">
+      <header className="page-header">
         <p className="muted-label">Wallet hub</p>
-        <h1 className="fx-gradient-text font-black tracking-tight">Your dashboard</h1>
+        <h1 className="font-black tracking-tight text-amber-100">Your dashboard</h1>
         <p className="mt-1 text-sm text-slate-400">
           Signed in as <span className="font-semibold text-slate-200">{email}</span>
         </p>
       </header>
 
       <TrustRibbon />
+
+      <ProfileCompletionCard fields={profileFields} />
 
       {error ? <FetchError message={error} onRetry={() => setReload((n) => n + 1)} /> : null}
 

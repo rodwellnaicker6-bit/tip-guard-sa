@@ -7,6 +7,7 @@ import { useToast } from "../context/useToast";
 import { downloadDataUrl, renderQrPrintCard } from "../lib/qrBranding";
 import PageLoader from "../components/PageLoader";
 import { Skeleton } from "../components/Skeleton";
+import { NfcTapPanel } from "../components/NfcTapPanel";
 
 type LinkRow = { token: string; created_at: string; scan_count?: number | null };
 type GuardMeta = { id: string; display_name: string; merchant_name: string | null };
@@ -165,7 +166,7 @@ export default function GuardQR() {
   if (loading) return <PageLoader />;
 
   return (
-    <div className="shell mx-auto max-w-lg space-y-5 px-5 py-8 pb-16">
+    <div className="shell qr-hub mx-auto max-w-lg space-y-5 px-4 py-8 pb-[max(4rem,env(safe-area-inset-bottom))] sm:px-5">
       <div>
         <p className="text-xs font-bold uppercase tracking-wider text-slate-500">QR & deep links</p>
         <h1 className="text-2xl font-black text-white">Tip links</h1>
@@ -176,8 +177,10 @@ export default function GuardQR() {
 
       {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>}
 
+      <NfcTapPanel />
+
       <button
-        className="w-full rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 font-black text-black disabled:opacity-50"
+        className="tap-target w-full rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 font-black text-black disabled:opacity-50"
         type="button"
         onClick={() => void createLink()}
         disabled={busy || !guard}
@@ -189,7 +192,15 @@ export default function GuardQR() {
         <div className="space-y-3 rounded-2xl border border-white/10 bg-slate-900/50 p-4">
           {qrDataUrl ? (
             <div className="flex flex-col items-center gap-2">
-              <img src={qrDataUrl} alt="Tip QR" className="rounded-xl border border-amber-500/40 bg-white p-2 shadow-lg" width={280} height={280} />
+              <img
+                src={qrDataUrl}
+                alt="Tip QR"
+                className="mx-auto max-w-full rounded-xl border border-amber-500/40 bg-white p-2 shadow-lg"
+                width={280}
+                height={280}
+                loading="lazy"
+                decoding="async"
+              />
               <div className="flex flex-wrap justify-center gap-3">
                 <button type="button" className="text-sm font-bold text-amber-400 underline" onClick={downloadQr}>
                   Download QR PNG

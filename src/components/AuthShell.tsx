@@ -21,11 +21,11 @@ export function AuthShell({
       <div className="marketing-glow marketing-glow--auth" aria-hidden />
       <div className="marketing-inner">
         <PaystackTestBanner />
-        <header className="auth-header fx-fade-up text-center">
-          <Link to="/" className="auth-brand mx-auto" aria-label="TipGuard home">
+        <header className="auth-header text-center">
+          <Link to="/" className="auth-brand mx-auto min-w-0" aria-label="TipGuard home">
             <TipGuardLogo size="md" />
           </Link>
-          <h1 className="auth-title fx-gradient-text">{title}</h1>
+          <h1 className="auth-title">{title}</h1>
           {subtitle ? <p className="auth-subtitle">{subtitle}</p> : null}
         </header>
 

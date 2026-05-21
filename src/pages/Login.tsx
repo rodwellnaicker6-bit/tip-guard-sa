@@ -59,7 +59,11 @@ export default function Login() {
         <input
           className="field tap-target"
           type="email"
+          name="email"
+          inputMode="email"
           autoComplete="email"
+          autoCapitalize="none"
+          spellCheck={false}
           placeholder="Email address"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -69,6 +73,7 @@ export default function Login() {
         <input
           className="field tap-target"
           type="password"
+          name="password"
           autoComplete="current-password"
           placeholder="Password"
           value={password}

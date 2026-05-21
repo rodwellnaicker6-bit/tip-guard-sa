@@ -27,7 +27,7 @@ export function BootBanner() {
   return (
     <div
       role="status"
-      className="border-b border-amber-500/30 bg-amber-950/80 px-3 py-2 text-center text-[11px] leading-snug text-amber-100/90"
+      className="boot-banner border-b border-amber-500/30 bg-amber-950/80 px-3 py-2 text-center text-[11px] leading-snug text-amber-100/90"
     >
       <span className="font-semibold text-amber-300">TipGuard boot</span>
       {" · "}

@@ -8,8 +8,12 @@ interface ImportMetaEnv {
   readonly VITE_PAYSTACK_TEST_MODE?: string;
   /** Active gateway for `startTipCheckout` (default: paystack). */
   readonly VITE_TIP_PAYMENT_GATEWAY?: string;
-  /** Optional Sentry DSN — init stub in src/lib/sentry.ts; add @sentry/react post-MVP */
+  /** Optional Sentry DSN — @sentry/react when set */
   readonly VITE_SENTRY_DSN?: string;
+  readonly VITE_PLAUSIBLE_DOMAIN?: string;
+  readonly VITE_POSTHOG_KEY?: string;
+  readonly VITE_POSTHOG_HOST?: string;
+  readonly VITE_ENABLE_PUSH?: string;
   /** Idle logout after N minutes of inactivity; 0 or unset = disabled */
   readonly VITE_SESSION_IDLE_MINUTES?: string;
 }

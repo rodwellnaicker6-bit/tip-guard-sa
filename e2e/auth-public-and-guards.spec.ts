@@ -55,14 +55,25 @@ test.describe("Auth pages and route guards (no credentials)", () => {
   test("login and landing usable at mobile width", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/login");
-    await expect(page.getByRole("heading", { name: /welcome back/i })).toBeVisible();
+    await expect(page.getByText("Welcome back")).toBeVisible();
     await expect(page.getByRole("button", { name: /continue/i })).toBeEnabled();
     await page.goto("/");
     await expect(page.getByRole("link", { name: /sign in/i }).first()).toBeVisible();
   });
 
+  test("login has no horizontal overflow at 360px", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.goto("/login");
+    const overflow = await page.evaluate(() => {
+      const doc = document.documentElement;
+      return doc.scrollWidth > doc.clientWidth + 1;
+    });
+    expect(overflow).toBe(false);
+    await expect(page.getByText("Welcome back")).toBeVisible();
+  });
+
   test("landing has no horizontal overflow at 360px", async ({ page }) => {
-    await page.setViewportSize({ width: 360, height: 780 });
+    await page.setViewportSize({ width: 360, height: 800 });
     await page.goto("/");
     const overflow = await page.evaluate(() => {
       const doc = document.documentElement;

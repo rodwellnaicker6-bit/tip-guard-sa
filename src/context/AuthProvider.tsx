@@ -14,7 +14,7 @@ import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { bootLog } from "../lib/bootDebug";
 import { isSupabaseBrowserConfigured, supabase } from "../lib/supabase";
 import { AuthContext } from "./authReactContext";
-import type { AuthContextValue, AuthRole } from "./authTypes";
+import type { AuthContextValue, AuthProfileFields, AuthRole } from "./authTypes";
 
 /**
  * Auth state provider. This module exports only this component so React Fast Refresh stays valid.
@@ -24,6 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthContextValue["session"]>(null);
   const [user, setUser] = useState<AuthContextValue["user"]>(null);
   const [role, setRole] = useState<AuthRole>(null);
+  const [profileFields, setProfileFields] = useState<AuthProfileFields>({ full_name: null, phone: null });
   const [hasGuardRow, setHasGuardRow] = useState(false);
   const [hasMerchantRow, setHasMerchantRow] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
@@ -48,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!isSupabaseBrowserConfigured) return;
     try {
       const [profRes, guardRes, merchRes] = await Promise.all([
-        supabase.from("profiles").select("role").eq("id", uid).maybeSingle(),
+        supabase.from("profiles").select("role, full_name, phone").eq("id", uid).maybeSingle(),
         supabase.from("guards").select("id").eq("user_id", uid).maybeSingle(),
         supabase.from("merchants").select("id").eq("user_id", uid).maybeSingle(),
       ]);
@@ -56,10 +57,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (profRes.error) {
         if (import.meta.env.DEV) console.warn("[AuthProvider] profiles:", profRes.error.message);
         setRole(null);
-      } else if (profRes.data?.role) {
-        setRole(profRes.data.role as AuthRole);
+        setProfileFields({ full_name: null, phone: null });
+      } else if (profRes.data) {
+        setRole((profRes.data.role as AuthRole) ?? null);
+        setProfileFields({
+          full_name: (profRes.data.full_name as string | null) ?? null,
+          phone: (profRes.data.phone as string | null) ?? null,
+        });
       } else {
         setRole(null);
+        setProfileFields({ full_name: null, phone: null });
       }
       setHasGuardRow(!!guardRes.data && !guardRes.error);
       setHasMerchantRow(!!merchRes.data && !merchRes.error);
@@ -67,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (signal?.aborted || !mountedRef.current) return;
       console.error("[AuthCrash] AuthProvider.loadAccount", e);
       setRole(null);
+      setProfileFields({ full_name: null, phone: null });
       setHasGuardRow(false);
       setHasMerchantRow(false);
     } finally {
@@ -83,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user?.id) {
       if (!mountedRef.current) return;
       setRole(null);
+      setProfileFields({ full_name: null, phone: null });
       setHasGuardRow(false);
       setHasMerchantRow(false);
       setProfileReady(true);
@@ -419,6 +428,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
     setUser(null);
     setRole(null);
+    setProfileFields({ full_name: null, phone: null });
     setHasGuardRow(false);
     setHasMerchantRow(false);
     setProfileReady(true);
@@ -434,6 +444,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         session,
         role,
+        profileFields,
         hasGuardRow,
         hasMerchantRow,
         isGuardUser,
@@ -458,6 +469,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       session,
       role,
+      profileFields,
       hasGuardRow,
       hasMerchantRow,
       isGuardUser,

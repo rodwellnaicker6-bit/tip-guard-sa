@@ -10,6 +10,7 @@ import { CheckoutLoadingOverlay } from "../components/CheckoutLoadingOverlay";
 import type { CheckoutPhase } from "../payments/types";
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import { TrustRibbon } from "../components/fintech/TrustRibbon";
+import { Skeleton } from "../components/Skeleton";
 
 const PRESETS = [10, 20, 50] as const;
 
@@ -117,7 +118,8 @@ export default function QrTipLanding() {
   if (loading) {
     return (
       <PageWrap>
-        <Spinner />
+        <Skeleton style={{ height: 28, width: "60%", margin: "0 auto" }} />
+        <Skeleton style={{ height: 180, width: "100%", borderRadius: 20, marginTop: 16 }} />
         <p className="text-sm text-slate-400">Loading secure tip page…</p>
       </PageWrap>
     );
@@ -142,9 +144,9 @@ export default function QrTipLanding() {
   }
 
   return (
-    <div className="shell mx-auto min-h-screen max-w-md px-4 py-6 pb-28">
+    <div className="shell qr-landing mx-auto min-h-[100dvh] max-w-md px-4 py-6 pb-[max(7rem,env(safe-area-inset-bottom))]">
       {checkoutPhase !== "idle" && overlayMsg ? <CheckoutLoadingOverlay message={overlayMsg} /> : null}
-      <header className="mb-4 text-center">
+      <header className="fx-fade-up mb-4 text-center">
         <p className="text-xs font-bold uppercase tracking-wider text-amber-400/90">TipGuard SA</p>
         <h1 className="mt-1 text-2xl font-black text-white">Tip {target.guard_display_name}</h1>
         <p className="mt-1 text-xs text-slate-500">{target.scan_count} scans · ZAR only</p>
@@ -220,14 +222,9 @@ export default function QrTipLanding() {
 
 function PageWrap({ children }: { children: ReactNode }) {
   return (
-    <div className="shell mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 px-4 py-10 text-center">
+    <div className="shell mx-auto flex min-h-[100dvh] max-w-md flex-col items-center justify-center gap-4 px-4 py-10 pb-[env(safe-area-inset-bottom)] text-center">
       {children}
     </div>
   );
 }
 
-function Spinner() {
-  return (
-    <div className="mx-auto h-12 w-12 animate-spin rounded-full border-2 border-amber-400/30 border-t-amber-400" />
-  );
-}

@@ -58,8 +58,18 @@ WHERE schemaname = 'public'
 ORDER BY tablename, policyname;
 ```
 
+## 21 May 2026 — guards directory view (non-breaking)
+
+Migration `20260521120000_guards_public_directory_view.sql` adds:
+
+- `guards_public_directory` — `security_invoker = true`, exposes only public columns for **verified** guards
+- Grants `SELECT` to `anon` / `authenticated`
+- **Does not** drop `guards_select_authenticated` (existing apps may still read full rows when signed in)
+
+**Breaking change (future):** revoking direct `SELECT` on `guards` for `authenticated` and requiring `list_public_guards()` or `guards_public_directory` for customers. Coordinate with mobile/web releases before applying.
+
 ## Post-MVP
 
-- Tighten `guards_select_authenticated` to a security-invoker view exposing only public columns for customers
+- Revoke broad `guards_select_authenticated` after all clients use RPC/view
 - Automated RLS tests with JWT fixtures per role
 - Document policies for `merchants`, `qr_codes`, `transactions`, `wallets` after each new migration

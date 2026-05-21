@@ -1,5 +1,5 @@
 import type { NavigateFunction } from "react-router-dom";
-import type { AuthRole } from "../context/authTypes";
+import type { AuthProfileFields, AuthRole } from "../context/authTypes";
 import { isSupabaseBrowserConfigured, supabase } from "./supabase";
 import { pathAfterSignIn } from "./postAuthRedirect";
 
@@ -10,6 +10,7 @@ export type PostAuthNavigateOptions = {
     role: AuthRole;
     hasGuardRow: boolean;
     hasMerchantRow: boolean;
+    profileFields?: AuthProfileFields;
   };
 };
 
@@ -55,10 +56,10 @@ export async function navigateAfterAuth(
     }
 
     if (opts?.snapshot) {
-      const { role, hasGuardRow, hasMerchantRow } = opts.snapshot;
+      const { role, hasGuardRow, hasMerchantRow, profileFields } = opts.snapshot;
       authNavigate(
         navigate,
-        pathAfterSignIn(role ?? undefined, hasGuardRow, hasMerchantRow),
+        pathAfterSignIn(role ?? undefined, hasGuardRow, hasMerchantRow, profileFields),
       );
       return;
     }
@@ -81,7 +82,7 @@ export async function navigateAfterAuth(
 
     const [{ data: profile, error: pErr }, { data: guard, error: gErr }, { data: merchant, error: mErr }] =
       await Promise.all([
-        supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
+        supabase.from("profiles").select("role, full_name, phone").eq("id", userId).maybeSingle(),
         supabase.from("guards").select("id").eq("user_id", userId).maybeSingle(),
         supabase.from("merchants").select("id").eq("user_id", userId).maybeSingle(),
       ]);
@@ -92,7 +93,17 @@ export async function navigateAfterAuth(
 
     authNavigate(
       navigate,
-      pathAfterSignIn(profile?.role as string | undefined, !!guard?.id, !!merchant?.id),
+      pathAfterSignIn(
+        profile?.role as string | undefined,
+        !!guard?.id,
+        !!merchant?.id,
+        profile
+          ? {
+              full_name: (profile.full_name as string | null) ?? null,
+              phone: (profile.phone as string | null) ?? null,
+            }
+          : null,
+      ),
     );
   } catch (e) {
     console.error("[AuthCrash] navigateAfterAuth", e);

@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import { PAYMENT_PROVIDERS } from "../lib/paymentProviders";
-import PageLoader from "../components/PageLoader";
+import { Skeleton } from "../components/Skeleton";
+import { StatCardsSkeleton } from "../components/StatCardsSkeleton";
+import { ProfileCompletionCard } from "../components/ProfileCompletionCard";
 import { FetchError } from "../components/FetchError";
 
 type MerchRow = {
@@ -14,7 +16,7 @@ type MerchRow = {
 };
 
 export default function MerchantDashboard() {
-  const { user, role, signOut } = useAuth();
+  const { user, role, profileFields, signOut } = useAuth();
   const [merchant, setMerchant] = useState<MerchRow | null>(null);
   const [loading, setLoading] = useState(() => Boolean(user?.id));
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +48,15 @@ export default function MerchantDashboard() {
   }, [user?.id, reload]);
 
   if (loading) {
-    return <PageLoader />;
+    return (
+      <div className="shell dashboard-hub mx-auto max-w-lg space-y-5 px-4 py-8 pb-16 sm:px-5">
+        <header className="page-header">
+          <Skeleton style={{ height: 12, width: "40%" }} />
+          <Skeleton style={{ height: 28, width: "70%", marginTop: 8 }} />
+        </header>
+        <StatCardsSkeleton />
+      </div>
+    );
   }
 
   if (error) {
@@ -90,7 +100,9 @@ export default function MerchantDashboard() {
         <p className="text-slate-400">{merchant.location ?? "South Africa"}</p>
       </header>
 
-      <div className="card stack min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+      <ProfileCompletionCard fields={profileFields} />
+
+      <div className="card stack min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4 fx-fade-up">
         <strong className="text-slate-200">Venue status</strong>
         <p className="mt-1 text-sm text-slate-400">
           {merchant.verified ? "Verified with TipGuard" : "Pending verification — contact your operator if this stays pending."}

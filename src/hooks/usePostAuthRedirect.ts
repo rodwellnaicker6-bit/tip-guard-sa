@@ -17,7 +17,7 @@ export function resetPostAuthRedirectState(): void {
  */
 export function usePostAuthRedirect(options: PostAuthNavigateOptions & { enabled?: boolean } = {}) {
   const { enabled = true } = options;
-  const { user, authReady, role, hasGuardRow, hasMerchantRow } = useAuth();
+  const { user, authReady, role, profileFields, hasGuardRow, hasMerchantRow } = useAuth();
   const navigate = useNavigate();
   const [routing, setRouting] = useState(false);
   const mountedRef = useRef(true);
@@ -44,7 +44,7 @@ export function usePostAuthRedirect(options: PostAuthNavigateOptions & { enabled
     redirectStarted.current = true;
     postAuthRedirectUserId = user.id;
     setRouting(true);
-    const snapshot = { role, hasGuardRow, hasMerchantRow };
+    const snapshot = { role, hasGuardRow, hasMerchantRow, profileFields };
     void navigateAfterAuth(user.id, navigate, {
       from,
       preferOnboarding,

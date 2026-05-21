@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { captureException } from "../lib/sentry";
 
 type Props = { children: ReactNode };
 type State = { error: Error | null };
@@ -12,6 +13,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("[TipGuard] ErrorBoundary", error.message, import.meta.env.DEV ? info.componentStack : "");
+    captureException(error, { componentStack: info.componentStack });
   }
 
   render() {

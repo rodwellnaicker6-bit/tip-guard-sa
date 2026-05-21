@@ -27,6 +27,7 @@
     "scan:secrets": "tsx scripts/scan-secrets.ts"
   },
   "dependencies": {
+    "@sentry/react": "^10.53.1",
     "@supabase/supabase-js": "^2.105.4",
     "qrcode": "^1.5.4",
     "react": "^19.2.6",

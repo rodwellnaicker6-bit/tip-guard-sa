@@ -5,6 +5,7 @@ import { getSupabaseBrowserConfigIssue, isSupabaseBrowserConfigured } from "../l
 import { usePostAuthRedirect } from "../hooks/usePostAuthRedirect";
 import PageLoader from "../components/PageLoader";
 import { sanitizeDisplayName, sanitizeEmail } from "../lib/sanitize";
+import { AuthShell } from "../components/AuthShell";
 
 type RolePick = "customer" | "guard" | "merchant";
 type Step = "account" | "verify-email";
@@ -84,45 +85,48 @@ export default function Register() {
 
   if (step === "verify-email") {
     return (
-      <div className="shell stack">
-        <h2>Verify your email</h2>
-        <p>
-          We sent a confirmation link to <strong style={{ color: "var(--text)" }}>{email}</strong>. Open it on this
-          device to activate your account, then sign in.
+      <AuthShell
+        title="Verify your email"
+        subtitle={`We sent a confirmation link to ${email}. Open it on this device to activate your account, then sign in.`}
+        footer={
+          <>
+            <Link to="/login">I have verified — sign in</Link>
+            <button type="button" className="auth-footer-link-btn" onClick={() => setStep("account")}>
+              Edit registration details
+            </button>
+          </>
+        }
+      >
+        <p className="glass-card-copy text-left">
+          Your operator must enable <strong className="text-slate-200">email confirmations</strong> in Supabase Auth for
+          this step to appear after signup.
         </p>
-        <div className="card stack" style={{ fontSize: 14 }}>
-          <p style={{ margin: 0 }}>
-            Your operator must enable <strong>email confirmations</strong> in Supabase Auth for this step to appear
-            after signup. See deploy docs for <code>enableConfirmations</code>.
-          </p>
-        </div>
         {resendMsg && <div className="success">{resendMsg}</div>}
-        <button className="btn-ghost" type="button" disabled={resendBusy} onClick={() => void onResend()}>
+        <button className="btn-ghost tap-target" type="button" disabled={resendBusy} onClick={() => void onResend()}>
           {resendBusy ? "Sending…" : "Resend verification email"}
         </button>
-        <Link className="btn-gold" style={{ textAlign: "center", textDecoration: "none" }} to="/login">
-          I have verified — sign in
-        </Link>
-        <button type="button" className="btn-ghost" onClick={() => setStep("account")}>
-          Edit registration details
-        </button>
         {error && <div className="error">{error}</div>}
-      </div>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="shell stack">
-      <p className="muted-label" style={{ marginBottom: 0 }}>
-        Step 1 of 3 · Account
-      </p>
-      <h2>Create account</h2>
-      <p>Choose how you will use TipGuard, then add your details. After signup you will confirm your email (if enabled)
-        and complete a short setup for your role. Business accounts start as customers in the database; you register a
-        venue profile next, and an operator can grant the merchant role when verified.</p>
-      <form className="stack mt" onSubmit={onSubmit}>
+    <AuthShell
+      title="Create account"
+      subtitle="Step 1 of 3 · Choose how you will use TipGuard, then add your details."
+      footer={
+        <>
+          <Link to="/login">Already registered?</Link>
+          <Link to="/">Home</Link>
+        </>
+      }
+    >
+      <form className="stack" onSubmit={onSubmit}>
         <input
-          className="field"
+          className="field tap-target"
+          type="text"
+          name="name"
+          autoComplete="name"
           placeholder="Full name"
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
@@ -130,52 +134,51 @@ export default function Register() {
           disabled={submitting}
         />
         <input
-          className="field"
+          className="field tap-target"
           type="email"
+          name="email"
+          inputMode="email"
           autoComplete="email"
-          placeholder="Email"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder="Email address"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
           disabled={submitting}
         />
         <input
-          className="field"
+          className="field tap-target"
           type="password"
+          name="new-password"
           autoComplete="new-password"
-          placeholder="Password (min 6 chars)"
+          placeholder="Password (min 6 characters)"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           minLength={6}
           required
           disabled={submitting}
         />
-        <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-          <label className="tap-target">
-            <input
-              type="radio"
-              name="role"
-              checked={role === "customer"}
-              onChange={() => setRole("customer")}
-              disabled={submitting}
-            />{" "}
-            Customer — tip guards
+        <fieldset className="role-picker" disabled={submitting}>
+          <legend className="muted-label">I am signing up as</legend>
+          <label className="role-picker__option tap-target">
+            <input type="radio" name="role" checked={role === "customer"} onChange={() => setRole("customer")} />
+            <span>Customer — tip guards</span>
           </label>
-          <label className="tap-target">
-            <input type="radio" name="role" checked={role === "guard"} onChange={() => setRole("guard")} disabled={submitting} /> Car guard —
-            receive tips
+          <label className="role-picker__option tap-target">
+            <input type="radio" name="role" checked={role === "guard"} onChange={() => setRole("guard")} />
+            <span>Car guard — receive tips</span>
           </label>
-          <label className="tap-target" style={{ flexBasis: "100%" }}>
-            <input type="radio" name="role" checked={role === "merchant"} onChange={() => setRole("merchant")} disabled={submitting} /> Venue
-            or business — register payouts and QR for your location
+          <label className="role-picker__option tap-target">
+            <input type="radio" name="role" checked={role === "merchant"} onChange={() => setRole("merchant")} />
+            <span>Venue or business — payouts and QR</span>
           </label>
-        </div>
-        <button className="btn-gold" type="submit" disabled={submitting} aria-busy={submitting}>
+        </fieldset>
+        <button className="btn-gold tap-target" type="submit" disabled={submitting} aria-busy={submitting}>
           {submitting ? "Creating account…" : "Continue"}
         </button>
         {error && <div className="error">{error}</div>}
       </form>
-      <Link to="/login">Already registered?</Link>
-    </div>
+    </AuthShell>
   );
 }

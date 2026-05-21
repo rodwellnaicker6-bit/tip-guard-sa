@@ -13,12 +13,12 @@ export default function Landing() {
       <div className="marketing-inner">
         <PaystackTestBanner />
 
-        <header className="fx-fade-up text-center">
+        <header className="text-center">
           <div className="mb-1 flex justify-center">
             <TipGuardLogo size="lg" showWordmark={false} />
           </div>
           <p className="muted-label">South Africa · Digital tipping</p>
-          <h1 className="marketing-hero fx-gradient-text">TipGuard</h1>
+          <h1 className="marketing-hero">TipGuard</h1>
           <p className="marketing-lead">
             Tip verified car guards and venues in seconds — scan a QR, tap NFC, or pay with card and mobile wallets in ZAR.
           </p>

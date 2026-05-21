@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { RouteAnalytics } from "./components/RouteAnalytics";
 import { AuthProvider } from "./context/AuthProvider";
 import { ToastProvider } from "./context/ToastProvider";
 import { AppBootGate } from "./components/AppBootGate";
-import { BootBanner } from "./components/BootBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { bootLog, logBootHealth } from "./lib/bootDebug";
 // SessionIdleWatcher disabled until env/auth bootstrap is stable (re-enable post-MVP).
@@ -409,9 +409,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+        <RouteAnalytics />
         <ToastProvider>
           <AuthProvider>
-            <BootBanner />
             <AppBootGate>
               <AppRoutes />
             </AppBootGate>

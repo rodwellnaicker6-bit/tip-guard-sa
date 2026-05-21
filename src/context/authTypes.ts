@@ -2,10 +2,17 @@ import type { Session, User } from "@supabase/supabase-js";
 
 export type AuthRole = "guard" | "customer" | "admin" | "merchant" | null;
 
+export type AuthProfileFields = {
+  full_name: string | null;
+  phone: string | null;
+};
+
 export type AuthContextValue = {
   user: User | null;
   session: Session | null;
   role: AuthRole;
+  /** From `profiles` — used for onboarding completion UI. */
+  profileFields: AuthProfileFields;
   /** True when the user has a `guards` row (signup may force profile role to customer). */
   hasGuardRow: boolean;
   /** Merchant business row (profile may be promoted to merchant by admin). */

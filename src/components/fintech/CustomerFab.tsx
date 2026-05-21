@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 export function CustomerFab() {
   return (
     <div
-      className="pointer-events-none fixed bottom-0 left-0 right-0 z-40 flex justify-end px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 lg:hidden"
+      className="pointer-events-none fixed bottom-0 left-0 right-0 z-30 flex justify-end px-4 pb-[max(4.5rem,calc(3.5rem+env(safe-area-inset-bottom)))] pt-2 lg:hidden"
       aria-label="Quick actions"
     >
       <div className="pointer-events-auto flex flex-col items-end gap-2">

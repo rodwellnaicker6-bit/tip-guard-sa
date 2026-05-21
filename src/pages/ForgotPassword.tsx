@@ -2,6 +2,7 @@ import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { sanitizeEmail } from "../lib/sanitize";
+import { AuthShell } from "../components/AuthShell";
 
 export default function ForgotPassword() {
   const { resetPasswordForEmail } = useAuth();
@@ -24,18 +25,25 @@ export default function ForgotPassword() {
   }
 
   return (
-    <div className="shell stack">
-      <h2>Forgot password</h2>
-      <p>
-        Enter the email on your TipGuard account. We will send a single-use link to set a new password. The link expires
-        after a short time for security.
-      </p>
-      <form className="stack mt" onSubmit={onSubmit}>
+    <AuthShell
+      title="Forgot password"
+      subtitle="We will email a single-use link to set a new password. The link expires after a short time for security."
+      footer={
+        <>
+          <Link to="/login">Back to sign in</Link>
+          <Link to="/">Home</Link>
+        </>
+      }
+    >
+      <form className="stack" onSubmit={onSubmit}>
         <input
           className="field tap-target"
           type="email"
+          name="email"
           inputMode="email"
           autoComplete="email"
+          autoCapitalize="none"
+          spellCheck={false}
           placeholder="Email address"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -53,7 +61,6 @@ export default function ForgotPassword() {
           {busy ? "Sending…" : "Send reset link"}
         </button>
       </form>
-      <Link to="/login">Back to sign in</Link>
-    </div>
+    </AuthShell>
   );
 }

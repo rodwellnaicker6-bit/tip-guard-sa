@@ -6,6 +6,7 @@ import App from "./App.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { bootLog, logBootHealth, logRuntimeEnvPresence } from "./lib/bootDebug";
 import { validateClientEnv } from "./lib/env";
+import { initAnalytics } from "./lib/analytics";
 import { initSentry } from "./lib/sentry";
 
 const BOOTSTRAP_FALLBACK_HTML = `
@@ -56,6 +57,11 @@ function bootstrap(): void {
       initSentry();
     } catch (e) {
       console.error("[TipGuard] initSentry failed", e);
+    }
+    try {
+      initAnalytics();
+    } catch (e) {
+      console.error("[TipGuard] initAnalytics failed", e);
     }
 
     const rootEl = document.getElementById("root");

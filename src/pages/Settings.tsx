@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import PaystackTestBanner from "../components/PaystackTestBanner";
 import { DEFAULT_ADMIN_MFA_SETTINGS } from "../lib/mfaTypes";
+import { supabase } from "../lib/supabase";
+import { normalizeZaPhone } from "../lib/normalizeZaPhone";
+import { profileCompletionPercent, profileChecklist } from "../lib/profileCompletion";
 
 const THEME_KEY = "tipguard_theme";
 const DARK_KEY = "tipguard_dark";
@@ -13,8 +16,12 @@ function applyDarkClass(on: boolean) {
 }
 
 export default function Settings() {
-  const { user, role, signOut } = useAuth();
+  const { user, role, profileFields, refreshProfile, signOut } = useAuth();
   const mfa = DEFAULT_ADMIN_MFA_SETTINGS;
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const profileFormKey = `${user?.id ?? ""}-${profileFields.full_name ?? ""}-${profileFields.phone ?? ""}`;
   const [highContrast, setHighContrast] = useState(
     () => typeof document !== "undefined" && document.documentElement.dataset.theme === "hc",
   );
@@ -48,18 +55,92 @@ export default function Settings() {
     applyDarkClass(next);
   }
 
-  const meta = (user?.user_metadata as { full_name?: string }) ?? {};
-  const name = typeof meta.full_name === "string" ? meta.full_name : "—";
+  async function saveProfile(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!user?.id) return;
+    const fd = new FormData(e.currentTarget);
+    const name = String(fd.get("full_name") ?? "").trim();
+    const phoneRaw = String(fd.get("phone") ?? "").trim();
+    if (name.length < 2) {
+      setProfileError("Display name must be at least 2 characters.");
+      return;
+    }
+    setProfileBusy(true);
+    setProfileError(null);
+    setProfileSaved(false);
+    let phoneVal: string | null = null;
+    if (phoneRaw) {
+      try {
+        phoneVal = normalizeZaPhone(phoneRaw);
+      } catch {
+        setProfileError("Enter a valid South African mobile number or leave blank.");
+        setProfileBusy(false);
+        return;
+      }
+    }
+    const { error } = await supabase
+      .from("profiles")
+      .update({ full_name: name, phone: phoneVal })
+      .eq("id", user.id);
+    setProfileBusy(false);
+    if (error) {
+      setProfileError(error.message);
+      return;
+    }
+    await refreshProfile();
+    setProfileSaved(true);
+  }
+
+  const pct = profileCompletionPercent(profileFields);
+  const checklist = profileChecklist(profileFields);
 
   return (
     <div className="shell mx-auto max-w-md space-y-4 px-5 py-8 pb-24">
       <h2 className="text-xl font-black text-white">Account</h2>
       <PaystackTestBanner />
 
-      <div className="card stack rounded-2xl border border-white/10 bg-white/5 p-4">
-        <p className="text-xs font-semibold uppercase text-slate-500">Name (from signup)</p>
-        <p className="text-lg font-bold text-white">{name}</p>
-      </div>
+      <form
+        key={profileFormKey}
+        className="card stack rounded-2xl border border-white/10 bg-white/5 p-4"
+        onSubmit={(e) => void saveProfile(e)}
+      >
+        <strong className="text-white">Profile · {pct}%</strong>
+        <label className="mt-3 block">
+          <span className="text-xs font-semibold uppercase text-slate-500">Display name</span>
+          <input
+            className="field tap-target mt-1 w-full"
+            name="full_name"
+            defaultValue={profileFields.full_name ?? ""}
+            autoComplete="name"
+            required
+            minLength={2}
+          />
+        </label>
+        <label className="mt-3 block">
+          <span className="text-xs font-semibold uppercase text-slate-500">Mobile (optional)</span>
+          <input
+            className="field tap-target mt-1 w-full"
+            name="phone"
+            type="tel"
+            inputMode="tel"
+            defaultValue={profileFields.phone ?? ""}
+            autoComplete="tel"
+            placeholder="e.g. 082 123 4567"
+          />
+        </label>
+        <ul className="mt-2 space-y-1 text-xs text-slate-500">
+          {checklist.map((item) => (
+            <li key={item.id}>
+              {item.done ? "✓" : "○"} {item.label}
+            </li>
+          ))}
+        </ul>
+        {profileError && <div className="error mt-2 text-sm">{profileError}</div>}
+        {profileSaved && <p className="mt-2 text-sm text-emerald-400">Profile saved.</p>}
+        <button type="submit" className="btn-gold tap-target mt-3 w-full rounded-2xl py-3 font-bold" disabled={profileBusy}>
+          {profileBusy ? "Saving…" : "Save profile"}
+        </button>
+      </form>
 
       <div className="card stack rounded-2xl border border-white/10 bg-white/5 p-4">
         <p className="text-xs font-semibold uppercase text-slate-500">Email</p>

@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
+import { VerificationStatusBadge } from "../components/VerificationStatusBadge";
 
 type GuardSelf = {
   id: string;
@@ -9,6 +10,7 @@ type GuardSelf = {
   bio: string | null;
   work_hours: string | null;
   photo_path: string | null;
+  verified: boolean;
 };
 
 export default function GuardProfile() {
@@ -18,6 +20,7 @@ export default function GuardProfile() {
   const [workHours, setWorkHours] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [kycStatus, setKycStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -25,7 +28,7 @@ export default function GuardProfile() {
     (async () => {
       const { data, error: err } = await supabase
         .from("guards")
-        .select("id, display_name, bio, work_hours, photo_path")
+        .select("id, display_name, bio, work_hours, photo_path, verified")
         .eq("user_id", user.id)
         .maybeSingle();
       if (cancelled) return;
@@ -41,6 +44,16 @@ export default function GuardProfile() {
       setGuard(g);
       setBio(g.bio ?? "");
       setWorkHours(g.work_hours ?? "");
+
+      const { data: kyc } = await supabase
+        .from("kyc_cases")
+        .select("status")
+        .eq("party_type", "guard")
+        .eq("party_id", g.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!cancelled) setKycStatus((kyc?.status as string) ?? null);
     })();
     return () => {
       cancelled = true;
@@ -103,6 +116,12 @@ export default function GuardProfile() {
     <div className="shell stack">
       <h2>Profile</h2>
       <p>{guard?.display_name}</p>
+      {guard && (
+        <VerificationStatusBadge verified={guard.verified} kycStatus={kycStatus} entityLabel="Guard verification" />
+      )}
+      <p className="text-xs text-slate-500">
+        Verification is set by your operator (see docs/KYC_VERIFICATION.md in the repo).
+      </p>
       {photoPublic && (
         <img src={photoPublic} alt="" style={{ width: "100%", maxHeight: 200, objectFit: "cover", borderRadius: 12 }} />
       )}

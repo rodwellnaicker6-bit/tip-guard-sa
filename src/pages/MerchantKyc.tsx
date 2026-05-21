@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import PageLoader from "../components/PageLoader";
+import { VerificationStatusBadge } from "../components/VerificationStatusBadge";
 
 type MerchantRow = { id: string; business_name: string };
 type KycRow = {
@@ -159,11 +160,10 @@ export default function MerchantKyc() {
       </header>
 
       {kyc && (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm">
-          <p className="text-slate-500">Status</p>
-          <p className="font-bold capitalize text-amber-300">{kyc.status.replace(/_/g, " ")}</p>
-          <p className="mt-1 text-xs text-slate-500">Last update: {new Date(kyc.updated_at).toLocaleString()}</p>
-        </div>
+        <VerificationStatusBadge kycStatus={kyc.status} entityLabel="KYC case" />
+      )}
+      {kyc && (
+        <p className="text-xs text-slate-500">Last update: {new Date(kyc.updated_at).toLocaleString()}</p>
       )}
 
       {error && <div className="error">{error}</div>}

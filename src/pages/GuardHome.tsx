@@ -7,9 +7,11 @@ import type { GuardRow } from "./CustomerHome";
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import { TrustRibbon } from "../components/fintech/TrustRibbon";
 import { Sparkline } from "../components/fintech/Sparkline";
-import PageLoader from "../components/PageLoader";
 import EmptyState from "../components/EmptyState";
 import { FetchError } from "../components/FetchError";
+import { ProfileCompletionCard } from "../components/ProfileCompletionCard";
+import { StatCardsSkeleton } from "../components/StatCardsSkeleton";
+import { VerificationStatusBadge } from "../components/VerificationStatusBadge";
 
 type TipRow = {
   id: string;
@@ -19,7 +21,7 @@ type TipRow = {
 };
 
 export default function GuardHome() {
-  const { user, signOut } = useAuth();
+  const { user, profileFields, signOut } = useAuth();
   const [guard, setGuard] = useState<GuardRow | null>(null);
   const [recentTips, setRecentTips] = useState<TipRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,7 +122,15 @@ export default function GuardHome() {
   }
 
   if (loading) {
-    return <PageLoader />;
+    return (
+      <div className="shell dashboard-hub mx-auto max-w-lg space-y-5 px-4 py-8 pb-16 sm:px-5">
+        <header className="page-header">
+          <p className="muted-label">Guard dashboard</p>
+          <p className="text-slate-400">Loading…</p>
+        </header>
+        <StatCardsSkeleton />
+      </div>
+    );
   }
 
   if (error) {
@@ -162,16 +172,13 @@ export default function GuardHome() {
           <h1 className="fx-gradient-text text-2xl font-black tracking-tight">Hi {first}</h1>
           <p className="text-sm text-slate-400">{guard.location}</p>
         </div>
-        <span
-          className={`rounded-full px-3 py-1 text-xs font-bold ${
-            guard.verified ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-300"
-          }`}
-        >
-          {guard.verified ? "Verified" : "Pending"}
-        </span>
       </header>
 
       <TrustRibbon />
+
+      <ProfileCompletionCard fields={profileFields} />
+
+      <VerificationStatusBadge verified={guard.verified} entityLabel="Guard verification" />
 
       <GlassPanel className="fx-fade-up" glow="amber">
         <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">14-day tip volume (ZAR)</p>

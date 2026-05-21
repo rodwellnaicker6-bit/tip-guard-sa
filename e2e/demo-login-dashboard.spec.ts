@@ -4,6 +4,8 @@ const DEMO_EMAIL = "demo-customer@tipguard.staging";
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? "TipGuardDemo2026!";
 
 test.describe("Demo customer login → dashboard", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
   test.beforeEach(async ({ context, page }) => {
     await context.clearCookies();
     // Clear storage once — addInitScript runs on every navigation/reload and would wipe the session.
@@ -26,13 +28,11 @@ test.describe("Demo customer login → dashboard", () => {
     await page.getByRole("button", { name: /^continue$/i }).click();
 
     await expect(page).toHaveURL(/\/customer\/dashboard/, { timeout: 30_000 });
-    await expect(page.getByRole("heading", { name: /your dashboard/i })).toBeVisible();
+    await expect(page.getByText("Your dashboard")).toBeVisible();
 
     await page.reload({ waitUntil: "networkidle" });
     await expect(page).toHaveURL(/\/customer\/dashboard/, { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: /your dashboard/i })).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(page.getByText("Your dashboard")).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole("button", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/(login)?$/, { timeout: 15_000 });
