@@ -10,19 +10,27 @@ export function getPaystackPublicKey(): string {
 }
 
 /** Validates public key shape; does not prove the key is active in Paystack. Warn-only unless strict. */
+import { isBootDebug } from "./bootDebug";
+
+function paystackWarn(message: string): void {
+  if (!isBootDebug && !import.meta.env.DEV) return;
+  if (PAYSTACK_ENV_STRICT) console.error(`TipGuard: ${message}`);
+  else console.warn(`TipGuard: ${message}`);
+}
+
 export function validatePaystackPublicKey(pk: string): string | null {
   if (!pk) {
-    console.error("TipGuard: VITE_PAYSTACK_PUBLIC_KEY is not set — checkout is disabled.");
+    paystackWarn("VITE_PAYSTACK_PUBLIC_KEY is not set — checkout is disabled.");
     return PAYSTACK_ENV_STRICT ? "VITE_PAYSTACK_PUBLIC_KEY is not set — checkout is disabled." : null;
   }
   if (pk.startsWith("sk_")) {
-    console.error("TipGuard: Secret Paystack key must not be used in the browser (use pk_* public key).");
+    paystackWarn("Secret Paystack key must not be used in the browser (use pk_* public key).");
     return PAYSTACK_ENV_STRICT
       ? "Secret Paystack key must not be used in the browser (use pk_* public key)."
       : null;
   }
   if (!PK_PATTERN.test(pk)) {
-    console.error("TipGuard: VITE_PAYSTACK_PUBLIC_KEY format is invalid (expected pk_test_* or pk_live_*).");
+    paystackWarn("VITE_PAYSTACK_PUBLIC_KEY format is invalid (expected pk_test_* or pk_live_*).");
     return PAYSTACK_ENV_STRICT
       ? "VITE_PAYSTACK_PUBLIC_KEY format is invalid (expected pk_test_* or pk_live_*)."
       : null;
@@ -48,7 +56,7 @@ export function paystackEnvIssue(): string | null {
   const formatErr = validatePaystackPublicKey(pk);
   if (formatErr) return PAYSTACK_ENV_STRICT ? formatErr : null;
   if (pk.startsWith("pk_live_") && import.meta.env.DEV) {
-    console.error("TipGuard: Live Paystack public key detected in dev build — use pk_test_ for local/staging.");
+    paystackWarn("Live Paystack public key detected in dev build — use pk_test_ for local/staging.");
     return PAYSTACK_ENV_STRICT
       ? "Live Paystack public key detected in dev build — use pk_test_ for local/staging."
       : null;

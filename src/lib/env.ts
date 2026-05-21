@@ -1,3 +1,4 @@
+import { isBootDebug } from "./bootDebug";
 import { isPaystackTestMode } from "./paystackMode";
 import { validatePaystackPublicKey } from "./paystackEnv";
 
@@ -36,9 +37,9 @@ export function validateClientEnv(): ClientEnvValidation {
   const pkErr = paystackPk ? validatePaystackPublicKey(paystackPk) : "VITE_PAYSTACK_PUBLIC_KEY is not set";
   if (pkErr) warnings.push(pkErr);
 
-  if (warnings.length > 0) {
+  if (warnings.length > 0 && isBootDebug) {
     const prefix = prod ? "TipGuard (prod)" : "TipGuard (dev)";
-    console.error(`${prefix}: env configuration issues — app renders with limited features:`, warnings);
+    console.warn(`${prefix}: env configuration issues — app renders with limited features:`, warnings);
   }
 
   if (CLIENT_ENV_STRICT && prod) {

@@ -184,7 +184,9 @@ export default function TipCheckout() {
         )}
       </button>
       {!hasPaystackPublicKey() && (
-        <p className="text-center text-sm text-red-400">Add VITE_PAYSTACK_PUBLIC_KEY (or enable another gateway) in your environment.</p>
+        <p className="text-center text-sm text-amber-300/90" role="status">
+          Payments unavailable — checkout is disabled until Paystack is configured for this deployment.
+        </p>
       )}
 
       <Link to="/customer" className="text-center text-sm text-amber-400/90">

@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { bootLog } from "./bootDebug";
 import { reconcileSupabaseAuthStorage } from "./supabaseAuthStorage";
 import { normalizeSupabaseUrl, projectRefFromSupabaseUrl } from "./supabaseProject";
 
@@ -32,19 +33,11 @@ export const isSupabaseBrowserConfigured = getSupabaseBrowserConfigIssue() === n
 
 if (!isSupabaseBrowserConfigured) {
   const issue = getSupabaseBrowserConfigIssue();
-  if (issue === "placeholder") {
-    console.warn(
-      import.meta.env.DEV
-        ? "TipGuard: VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY look like .env.example placeholders — replace them with your project URL and anon key from the Supabase Dashboard (Settings → API)."
-        : "TipGuard: Supabase URL/key look like template placeholders — set real VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY for production.",
-    );
-  } else {
-    console.warn(
-      import.meta.env.DEV
-        ? "TipGuard: VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY missing — auth and data will not work until configured (see .env.example)."
-        : "TipGuard: VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY missing — auth and data will not work until configured.",
-    );
-  }
+  const msg =
+    issue === "placeholder"
+      ? "VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY look like placeholders"
+      : "VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY missing";
+  bootLog("supabase config", msg);
 }
 
 /** Local Supabase CLI default; used only when env vars are missing so createClient does not throw. */
@@ -65,6 +58,16 @@ function resolveSupabaseCredentials(): { url: string; anon: string; storageKey: 
 }
 
 let supabaseSingleton: SupabaseClient | null = null;
+let supabaseInitFailed = false;
+let supabaseInitError: string | null = null;
+
+export function didSupabaseInitFail(): boolean {
+  return supabaseInitFailed;
+}
+
+export function getSupabaseInitError(): string | null {
+  return supabaseInitError;
+}
 
 function createSupabaseBrowserClient(): SupabaseClient {
   const { url, anon, storageKey } = resolveSupabaseCredentials();
@@ -85,7 +88,11 @@ function createSupabaseBrowserClient(): SupabaseClient {
       },
     });
   } catch (e) {
-    console.error("[TipGuard] createClient failed — using safe local placeholder", e);
+    const detail = e instanceof Error ? e.message : String(e);
+    supabaseInitFailed = true;
+    supabaseInitError = detail;
+    console.error("[TipGuard] createClient failed", e);
+    bootLog("supabase init failed", detail);
     return createClient(SUPABASE_LOCAL_PLACEHOLDER_URL, DEMO_ANON, {
       auth: {
         persistSession: false,
@@ -100,6 +107,7 @@ function createSupabaseBrowserClient(): SupabaseClient {
 /** Single browser Supabase client — lazy init; never throws at module import. */
 export function getSupabaseClient(): SupabaseClient {
   if (!supabaseSingleton) {
+    bootLog("getSupabaseClient init", { configured: isSupabaseBrowserConfigured });
     supabaseSingleton = createSupabaseBrowserClient();
     if (import.meta.env.DEV && isSupabaseBrowserConfigured) {
       try {

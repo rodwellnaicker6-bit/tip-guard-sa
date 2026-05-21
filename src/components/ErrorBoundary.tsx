@@ -11,9 +11,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    if (import.meta.env.DEV) {
-      console.error("[ErrorBoundary]", error, info.componentStack);
-    }
+    console.error("[TipGuard] ErrorBoundary", error.message, import.meta.env.DEV ? info.componentStack : "");
   }
 
   render() {

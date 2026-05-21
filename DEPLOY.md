@@ -31,6 +31,7 @@ In the Vercel project → **Settings → Environment Variables**, add these name
 | `VITE_TIP_PAYMENT_GATEWAY` | `paystack` (default), `payfast`, `yoco`, etc. |
 | `VITE_DEMO_MODE` | `true` for staging one-click demo login only |
 | `VITE_DEMO_PASSWORD` | Password for demo login when `VITE_DEMO_MODE=true` |
+| `VITE_DEBUG_BOOT` | `true` for verbose `[TipGuard:boot]` logs on one prod deploy cycle (unset after tracing) |
 
 Never put `SUPABASE_SERVICE_ROLE_KEY`, `PAYSTACK_SECRET_KEY`, or any `sk_*` key in Vercel **client** env. Set Paystack secret and service role in **Supabase Edge** secrets only (see [.env.example](.env.example)).
 
@@ -40,7 +41,16 @@ Vite inlines `VITE_*` at **build** time. If any required variable was missing wh
 
 1. Confirm all three **required** `VITE_*` names below exist for **Production** in Vercel (not only Preview).
 2. Trigger a **new production deploy** after saving env (redeploy alone is not enough if the prior build lacked keys).
-3. Deploy a build that includes commit `9a726aa` or later on `cursor/landing-login-polish` / `main` — those versions always mount Landing and only warn when env is incomplete.
+3. Deploy a build that includes commit `9a726aa` or later on `main` — those versions always mount Landing and only warn when env is incomplete.
+4. Optional: set `VITE_DEBUG_BOOT=true` on Production, redeploy once, reproduce in browser DevTools → Console (`[TipGuard]` one-liners), then remove the variable and redeploy again.
+
+## Redeploy on Vercel (after env or code changes)
+
+1. **Vercel** → your project → **Settings** → **Environment Variables** — confirm `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and (when ready) `VITE_PAYSTACK_PUBLIC_KEY` for **Production**.
+2. **Deployments** → latest **Production** deployment → **⋯** → **Redeploy** (or push to `main` if Git integration is connected).
+3. Wait for build to finish; open the production URL with a hard refresh (cache bypass).
+4. Confirm: landing loads, login works, dashboard loads; checkout shows **Payments unavailable** only when `VITE_PAYSTACK_PUBLIC_KEY` is missing (not a blank screen).
+5. Remove `VITE_DEBUG_BOOT` after startup is verified stable.
 
 ## Supabase Auth
 

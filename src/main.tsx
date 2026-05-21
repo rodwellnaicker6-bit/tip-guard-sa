@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import "./styles/fintech.css";
 import App from "./App.tsx";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { bootLog, logBootHealth, logRuntimeEnvPresence } from "./lib/bootDebug";
 import { validateClientEnv } from "./lib/env";
 import { initSentry } from "./lib/sentry";
 
@@ -43,10 +45,12 @@ function renderBootstrapFallback(rootEl: HTMLElement | null, err: unknown): void
 
 function bootstrap(): void {
   try {
+    bootLog("main.tsx bootstrap start");
+    logRuntimeEnvPresence();
     applyThemeFromStorage();
     const envCheck = validateClientEnv();
     if (!envCheck.ok) {
-      console.error("[TipGuard] env check reported issues (rendering app anyway):", envCheck.message, envCheck.missing);
+      bootLog("env check issues (rendering anyway)", envCheck.message, envCheck.missing);
     }
     try {
       initSentry();
@@ -60,10 +64,14 @@ function bootstrap(): void {
       return;
     }
 
+    logBootHealth("bootstrap");
+    bootLog("createRoot render");
     const root = createRoot(rootEl);
     root.render(
       <StrictMode>
-        <App />
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
       </StrictMode>,
     );
   } catch (err) {

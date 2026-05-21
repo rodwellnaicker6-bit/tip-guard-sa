@@ -190,10 +190,16 @@ export default function QrTipLanding() {
 
       {error && <div className="error mb-3">{error}</div>}
 
+      {!hasPaystackPublicKey() && (
+        <p className="mb-3 text-center text-sm text-amber-300/90" role="status">
+          Payments unavailable — tipping is disabled until Paystack is configured for this deployment.
+        </p>
+      )}
+
       <button
         type="button"
         className={`tap-target w-full rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 text-lg font-black text-black shadow-lg ${!paying ? "fx-glow-pulse" : ""}`}
-        disabled={paying}
+        disabled={paying || !hasPaystackPublicKey()}
         onClick={() => void pay()}
       >
         {paying ? "Opening checkout…" : user ? `Pay ${amountLabel}` : "Sign in to pay"}

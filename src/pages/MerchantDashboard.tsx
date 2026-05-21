@@ -16,7 +16,7 @@ type MerchRow = {
 export default function MerchantDashboard() {
   const { user, role, signOut } = useAuth();
   const [merchant, setMerchant] = useState<MerchRow | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => Boolean(user?.id));
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
 

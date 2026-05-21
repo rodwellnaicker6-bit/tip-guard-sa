@@ -11,6 +11,7 @@ import { formatAuthUserFacingError } from "../lib/supabaseAuthErrors";
 import { resetPostAuthRedirectState } from "../hooks/usePostAuthRedirect";
 import { clearAuthRedirectStorage } from "../lib/authRedirect";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
+import { bootLog } from "../lib/bootDebug";
 import { isSupabaseBrowserConfigured, supabase } from "../lib/supabase";
 import { AuthContext } from "./authReactContext";
 import type { AuthContextValue, AuthRole } from "./authTypes";
@@ -27,6 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [hasMerchantRow, setHasMerchantRow] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [profileReady, setProfileReady] = useState(true);
+  const [authBootError, setAuthBootError] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const accountAbortRef = useRef<AbortController | null>(null);
   const sessionReadyRef = useRef(false);
@@ -120,10 +122,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const bootGen = ++authBootRef.current;
     sessionReadyRef.current = false;
     let effectCancelled = false;
+    bootLog("AuthProvider boot", { configured: isSupabaseBrowserConfigured });
 
     if (!isSupabaseBrowserConfigured) {
       queueMicrotask(() => {
         if (effectCancelled || !mountedRef.current) return;
+        setAuthBootError(null);
         setSession(null);
         setUser(null);
         setRole(null);
@@ -172,28 +176,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     queueMicrotask(() => {
-      void supabase.auth.getSession().then(({ data: { session: next } }) => {
-        if (bootGen !== authBootRef.current || effectCancelled || !mountedRef.current) return;
-        if (next) {
-          applySession(next);
-          if (next.user?.id) scheduleLoadAccount(next.user.id);
-        } else {
+      void supabase.auth
+        .getSession()
+        .then(({ data: { session: next }, error }) => {
+          if (bootGen !== authBootRef.current || effectCancelled || !mountedRef.current) return;
+          if (error) {
+            bootLog("getSession error", error.message);
+            setAuthBootError("We could not restore your session. Sign in again or reload the page.");
+            applySession(null);
+            markSessionReady();
+            return;
+          }
+          setAuthBootError(null);
+          if (next) {
+            applySession(next);
+            if (next.user?.id) scheduleLoadAccount(next.user.id);
+          } else {
+            applySession(null);
+          }
+          markSessionReady();
+        })
+        .catch((e) => {
+          if (bootGen !== authBootRef.current || effectCancelled || !mountedRef.current) return;
+          const msg = e instanceof Error ? e.message : "Session check failed";
+          console.error("[AuthCrash] AuthProvider.getSession", e);
+          setAuthBootError(msg);
           applySession(null);
-        }
-        markSessionReady();
-      });
+          markSessionReady();
+        });
     });
 
     const bootFallback = window.setTimeout(() => {
       if (mountedRef.current && !sessionReadyRef.current) {
-        console.warn("[AuthProvider] session hydration timeout — marking session ready");
+        bootLog("session hydration timeout — marking ready");
         markSessionReady();
       }
     }, 10_000);
 
+    const profileFallback = window.setTimeout(() => {
+      if (mountedRef.current) {
+        setProfileReady((ready) => {
+          if (!ready) bootLog("profile load timeout — marking ready");
+          return true;
+        });
+      }
+    }, 15_000);
+
     return () => {
       effectCancelled = true;
       window.clearTimeout(bootFallback);
+      window.clearTimeout(profileFallback);
       subscription.unsubscribe();
       accountAbortRef.current?.abort();
     };
@@ -383,6 +415,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (import.meta.env.DEV) console.warn("[AuthProvider] signOut", e);
     }
     if (!mountedRef.current) return;
+    setAuthBootError(null);
     setSession(null);
     setUser(null);
     setRole(null);
@@ -409,6 +442,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profileReady,
         authReady,
         loading,
+        authBootError,
         signIn,
         signUp,
         resendSignupEmail,
@@ -432,6 +466,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profileReady,
       authReady,
       loading,
+      authBootError,
       signIn,
       signUp,
       resendSignupEmail,

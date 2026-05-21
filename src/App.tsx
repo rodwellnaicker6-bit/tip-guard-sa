@@ -1,8 +1,11 @@
-import { lazy, Suspense, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthProvider";
 import { ToastProvider } from "./context/ToastProvider";
+import { AppBootGate } from "./components/AppBootGate";
+import { BootBanner } from "./components/BootBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { bootLog, logBootHealth } from "./lib/bootDebug";
 // SessionIdleWatcher disabled until env/auth bootstrap is stable (re-enable post-MVP).
 // import { SessionIdleWatcher } from "./components/SessionIdleWatcher";
 import { RequireAdmin, RequireAuth, RequireGuard, RequireMerchant } from "./components/RequireAuth";
@@ -65,9 +68,19 @@ function Lazy({ children }: { children: ReactNode }) {
   return <Suspense fallback={<RouteFallback />}>{children}</Suspense>;
 }
 
+function RouterMountedProbe() {
+  useEffect(() => {
+    bootLog("router mounted");
+    logBootHealth("router mounted");
+  }, []);
+  return null;
+}
+
 function AppRoutes() {
   return (
-    <Routes>
+    <>
+      <RouterMountedProbe />
+      <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
@@ -386,16 +399,22 @@ function AppRoutes() {
       <Route path="/404" element={<NotFound />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </>
   );
 }
 
 export default function App() {
+  bootLog("App render");
+  logBootHealth("app shell");
   return (
     <ErrorBoundary>
       <BrowserRouter>
         <ToastProvider>
           <AuthProvider>
-            <AppRoutes />
+            <BootBanner />
+            <AppBootGate>
+              <AppRoutes />
+            </AppBootGate>
           </AuthProvider>
         </ToastProvider>
       </BrowserRouter>

@@ -22,6 +22,8 @@ export type AuthContextValue = {
   authReady: boolean;
   /** @deprecated Prefer `authReady`; kept as `!authReady` for existing consumers. */
   loading: boolean;
+  /** Set when session hydration fails; blocks app via AppBootGate. */
+  authBootError: string | null;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (
     email: string,
