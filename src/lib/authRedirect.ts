@@ -57,17 +57,6 @@ export async function navigateAfterAuth(
       return;
     }
 
-    if (isSupabaseBrowserConfigured) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      const { data: { session }, error: sessErr } = await supabase.auth.getSession();
-      if (sessErr || !session?.user?.id) {
-        console.error("[AuthCrash] navigateAfterAuth: no session before redirect", sessErr?.message);
-        authNavigate(navigate, "/login", "missing session");
-        return;
-      }
-      userId = session.user.id;
-    }
-
     if (opts?.snapshot) {
       const { role, hasGuardRow, hasMerchantRow } = opts.snapshot;
       authNavigate(
@@ -76,6 +65,27 @@ export async function navigateAfterAuth(
         "auth snapshot",
       );
       return;
+    }
+
+    if (isSupabaseBrowserConfigured) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      const { data: { session }, error: sessErr } = await supabase.auth.getSession();
+      if (sessErr || !session?.user?.id) {
+        if (userId) {
+          if (import.meta.env.DEV) {
+            console.warn(
+              "[AuthDebug] navigateAfterAuth: getSession empty; using userId from auth context",
+              sessErr?.message,
+            );
+          }
+        } else {
+          console.error("[AuthCrash] navigateAfterAuth: no session before redirect", sessErr?.message);
+          authNavigate(navigate, "/login", "missing session");
+          return;
+        }
+      } else {
+        userId = session.user.id;
+      }
     }
 
     await new Promise<void>((resolve) => setTimeout(resolve, 0));

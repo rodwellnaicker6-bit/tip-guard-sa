@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { navigateAfterAuth, type PostAuthNavigateOptions } from "../lib/authRedirect";
 
+/** Survives Login remount so a failed redirect does not re-trigger navigation loops. */
+let postAuthRedirectUserId: string | null = null;
+
 /**
  * Single post-login redirect coordinator for Login / Register.
  * Waits for `authReady` and passes profile snapshot to avoid duplicate Supabase reads.
@@ -29,15 +32,21 @@ export function usePostAuthRedirect(options: PostAuthNavigateOptions & { enabled
     if (!authReady) return;
     if (!user?.id) {
       redirectStarted.current = false;
+      postAuthRedirectUserId = null;
       return;
     }
-    if (redirectStarted.current) return;
+    if (redirectStarted.current || postAuthRedirectUserId === user.id) return;
     redirectStarted.current = true;
+    postAuthRedirectUserId = user.id;
     setRouting(true);
+    const snapshot = { role, hasGuardRow, hasMerchantRow };
+    if (import.meta.env.DEV) {
+      console.info(`[AuthDebug] usePostAuthRedirect start user=${user.id} from=${from ?? "none"}`);
+    }
     void navigateAfterAuth(user.id, navigate, {
       from,
       preferOnboarding,
-      snapshot: { role, hasGuardRow, hasMerchantRow },
+      snapshot,
     })
       .catch((e) => {
         console.error("[AuthCrash] usePostAuthRedirect failed", e);
@@ -46,17 +55,9 @@ export function usePostAuthRedirect(options: PostAuthNavigateOptions & { enabled
       .finally(() => {
         if (mountedRef.current) setRouting(false);
       });
-  }, [
-    enabled,
-    authReady,
-    user?.id,
-    navigate,
-    from,
-    preferOnboarding,
-    role,
-    hasGuardRow,
-    hasMerchantRow,
-  ]);
+    // Snapshot captured once per redirect; profile fields must not retrigger navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- role/hasGuardRow/hasMerchantRow read at redirect start only
+  }, [enabled, authReady, user?.id, navigate, from, preferOnboarding]);
 
   const showLoader = Boolean(user?.id && (routing || !authReady));
   return { routing, showLoader };

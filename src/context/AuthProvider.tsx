@@ -35,6 +35,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loading = !authReady;
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.info(
+      `[AuthDebug] authReady=${authReady} sessionReady=${sessionReady} profileReady=${profileReady} user=${user?.id ?? "none"}`,
+    );
+  }, [authReady, sessionReady, profileReady, user?.id]);
+
+  useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -114,12 +121,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionReadyRef.current = false;
     let effectCancelled = false;
 
-    queueMicrotask(() => {
-      if (effectCancelled || !mountedRef.current) return;
-      setSessionReady(false);
-      setProfileReady(true);
-    });
-
     if (!isSupabaseBrowserConfigured) {
       queueMicrotask(() => {
         if (effectCancelled || !mountedRef.current) return;
@@ -152,21 +153,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((event, next) => {
       if (!mountedRef.current) return;
       if (import.meta.env.DEV) {
-        console.info(`[AuthProvider] auth event: ${event}`);
+        console.info(`[AuthDebug] AuthProvider event: ${event} user=${next?.user?.id ?? "none"}`);
       }
       applySession(next);
       if (next?.user?.id) {
         scheduleLoadAccount(next.user.id);
       }
-      if (event === "INITIAL_SESSION" || event === "SIGNED_OUT") {
+      if (
+        event === "INITIAL_SESSION" ||
+        event === "SIGNED_IN" ||
+        event === "TOKEN_REFRESHED" ||
+        event === "SIGNED_OUT"
+      ) {
         markSessionReady();
       }
+    });
+
+    queueMicrotask(() => {
+      void supabase.auth.getSession().then(({ data: { session: next } }) => {
+        if (effectCancelled || !mountedRef.current) return;
+        if (next) {
+          applySession(next);
+          if (next.user?.id) scheduleLoadAccount(next.user.id);
+        } else {
+          applySession(null);
+        }
+        markSessionReady();
+      });
     });
 
     const bootFallback = window.setTimeout(() => {
       if (mountedRef.current && !sessionReadyRef.current) {
         if (import.meta.env.DEV) {
-          console.warn("[AuthProvider] boot fallback — forcing session ready");
+          console.warn("[AuthDebug] AuthProvider boot fallback — forcing session ready");
         }
         markSessionReady();
       }
