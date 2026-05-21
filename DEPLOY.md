@@ -34,6 +34,14 @@ In the Vercel project → **Settings → Environment Variables**, add these name
 
 Never put `SUPABASE_SERVICE_ROLE_KEY`, `PAYSTACK_SECRET_KEY`, or any `sk_*` key in Vercel **client** env. Set Paystack secret and service role in **Supabase Edge** secrets only (see [.env.example](.env.example)).
 
+### Blank / black screen on production
+
+Vite inlines `VITE_*` at **build** time. If any required variable was missing when Vercel last built, the browser throws before React mounts and `#root` stays empty (dark page, console: `Missing required production env: …`).
+
+1. Confirm all three **required** `VITE_*` names below exist for **Production** in Vercel (not only Preview).
+2. Trigger a **new production deploy** after saving env (redeploy alone is not enough if the prior build lacked keys).
+3. Deploy a build that includes commit `9a726aa` or later on `cursor/landing-login-polish` / `main` — those versions always mount Landing and only warn when env is incomplete.
+
 ## Supabase Auth
 
 - [ ] Redirect URLs: `https://<domain>/auth/callback`, `https://<domain>/auth/reset`
