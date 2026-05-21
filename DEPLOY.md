@@ -11,19 +11,28 @@ Short go-live list. Details: [docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md
 
 ## Vercel / hosting env (client)
 
-Copy from [.env.example](.env.example) — production build **requires**:
+In the Vercel project → **Settings → Environment Variables**, add these names exactly (Vite only exposes `VITE_*` to the browser). Apply to **Production** (and Preview/Development if you use those). Redeploy after saving.
 
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-- `VITE_PAYSTACK_PUBLIC_KEY` (`pk_test_*` or `pk_live_*` — never `sk_*`)
+**Required for production** (without them the live site shows a configuration screen instead of a blank page):
 
-Optional:
+| Variable | Example / notes |
+|----------|-----------------|
+| `VITE_SUPABASE_URL` | `https://YOUR_REF.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | Anon JWT or `sb_publishable_…` from Supabase → Settings → API |
+| `VITE_PAYSTACK_PUBLIC_KEY` | `pk_test_…` or `pk_live_…` — never `sk_*` |
 
-- `VITE_PAYSTACK_TEST_MODE` — `true` / `false`
-- `VITE_SENTRY_DSN` — error monitoring (stub in `src/lib/sentry.ts`; add `@sentry/react` post-MVP)
-- `VITE_SESSION_IDLE_MINUTES` — idle sign-out (0 or unset = disabled)
+**Optional:**
 
-Never put `SUPABASE_SERVICE_ROLE_KEY` or `PAYSTACK_SECRET_KEY` in Vite env.
+| Variable | Purpose |
+|----------|---------|
+| `VITE_PAYSTACK_TEST_MODE` | `true` / `false` (else inferred from `pk_test_`) |
+| `VITE_SENTRY_DSN` | Error monitoring (stub until `@sentry/react` is added) |
+| `VITE_SESSION_IDLE_MINUTES` | Idle sign-out; `0` or unset = disabled |
+| `VITE_TIP_PAYMENT_GATEWAY` | `paystack` (default), `payfast`, `yoco`, etc. |
+| `VITE_DEMO_MODE` | `true` for staging one-click demo login only |
+| `VITE_DEMO_PASSWORD` | Password for demo login when `VITE_DEMO_MODE=true` |
+
+Never put `SUPABASE_SERVICE_ROLE_KEY`, `PAYSTACK_SECRET_KEY`, or any `sk_*` key in Vercel **client** env. Set Paystack secret and service role in **Supabase Edge** secrets only (see [.env.example](.env.example)).
 
 ## Supabase Auth
 

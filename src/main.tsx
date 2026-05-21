@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import "./styles/fintech.css";
 import App from "./App.tsx";
+import { ClientEnvError } from "./components/ClientEnvError";
 import { validateClientEnv } from "./lib/env";
 import { initSentry } from "./lib/sentry";
 
@@ -18,11 +19,22 @@ if (typeof localStorage !== "undefined") {
   }
 }
 
-validateClientEnv();
+const envCheck = validateClientEnv();
 initSentry();
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+const rootEl = document.getElementById("root");
+if (!rootEl) {
+  throw new Error("TipGuard: #root element missing in index.html");
+}
+
+const root = createRoot(rootEl);
+
+if (!envCheck.ok) {
+  root.render(<ClientEnvError message={envCheck.message} missing={envCheck.missing} />);
+} else {
+  root.render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}

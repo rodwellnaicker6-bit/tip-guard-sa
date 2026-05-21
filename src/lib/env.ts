@@ -1,8 +1,12 @@
 import { isPaystackTestMode } from "./paystackMode";
 import { validatePaystackPublicKey } from "./paystackEnv";
 
-/** Validates Vite public env. In production, missing keys throw at startup. */
-export function validateClientEnv(): void {
+export type ClientEnvValidation =
+  | { ok: true }
+  | { ok: false; message: string; missing: string[] };
+
+/** Validates Vite public env. Never throws — callers render {@link ClientEnvError} or degrade gracefully. */
+export function validateClientEnv(): ClientEnvValidation {
   const prod = import.meta.env.PROD;
   const url = import.meta.env.VITE_SUPABASE_URL?.trim();
   const anon = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
@@ -19,7 +23,7 @@ export function validateClientEnv(): void {
     if (testModeRaw && !["true", "false", "1", "0", "yes", "no"].includes(testModeRaw.toLowerCase())) {
       console.warn("TipGuard (dev): VITE_PAYSTACK_TEST_MODE should be true/false (optional); deriving from public key.");
     }
-    return;
+    return { ok: true };
   }
 
   if (url && /127\.0\.0\.1|localhost/.test(url)) {
@@ -33,10 +37,17 @@ export function validateClientEnv(): void {
   if (!anon) missing.push("VITE_SUPABASE_ANON_KEY");
   if (!paystackPk) missing.push("VITE_PAYSTACK_PUBLIC_KEY");
   if (missing.length > 0) {
-    throw new Error(`Missing required production env: ${missing.join(", ")}`);
+    return {
+      ok: false,
+      message: `Missing required production env: ${missing.join(", ")}`,
+      missing,
+    };
   }
   const pkErr = validatePaystackPublicKey(paystackPk);
-  if (pkErr) throw new Error(pkErr);
+  if (pkErr) {
+    return { ok: false, message: pkErr, missing: ["VITE_PAYSTACK_PUBLIC_KEY"] };
+  }
+  return { ok: true };
 }
 
 /** Human-readable env summary for support / settings (no secrets). */
