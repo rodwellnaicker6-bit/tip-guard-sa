@@ -10,7 +10,7 @@ test.describe("Auth pages and route guards (no credentials)", () => {
   });
   test("login page renders and submit button is actionable", async ({ page }) => {
     await page.goto("/login");
-    await expect(page.getByRole("heading", { name: /sign in/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /welcome back/i })).toBeVisible();
     await expect(page.getByPlaceholder(/email address/i)).toBeVisible();
     await expect(page.getByRole("button", { name: /continue/i })).toBeEnabled();
   });
@@ -50,5 +50,14 @@ test.describe("Auth pages and route guards (no credentials)", () => {
   test("public guard listing is reachable without auth", async ({ page }) => {
     await page.goto("/customer");
     await expect(page.getByRole("heading", { name: /verified guards/i })).toBeVisible();
+  });
+
+  test("login and landing usable at mobile width", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/login");
+    await expect(page.getByRole("heading", { name: /welcome back/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /continue/i })).toBeEnabled();
+    await page.goto("/");
+    await expect(page.getByRole("link", { name: /sign in/i }).first()).toBeVisible();
   });
 });

@@ -7,6 +7,7 @@ Web app for digital tipping in South Africa: customers find guards and pay; guar
 - [Architecture](docs/ARCHITECTURE.md)
 - [Paystack (ZAR)](docs/PAYSTACK_SETUP.md)
 - [Supabase deploy](docs/SUPABASE_DEPLOY.md)
+- [Deploy checklist (short)](DEPLOY.md)
 - [Production checklist](docs/PRODUCTION_CHECKLIST.md)
 - [Auth smoke tests](docs/AUTH_SMOKE_TESTS.md)
 - [Migrations & RLS verification](docs/MIGRATIONS_AND_RLS.md)
