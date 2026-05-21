@@ -50,46 +50,75 @@ if (!isSupabaseBrowserConfigured) {
 /** Local Supabase CLI default; used only when env vars are missing so createClient does not throw. */
 export const SUPABASE_LOCAL_PLACEHOLDER_URL = "http://127.0.0.1:54321";
 
-const resolvedUrl = isSupabaseBrowserConfigured && rawUrl
-  ? normalizeSupabaseUrl(rawUrl)
-  : rawUrl || SUPABASE_LOCAL_PLACEHOLDER_URL;
-
-const resolvedAnon =
-  rawAnon ||
+const DEMO_ANON =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0";
 
-if (isSupabaseBrowserConfigured) {
-  reconcileSupabaseAuthStorage(resolvedUrl);
+function resolveSupabaseCredentials(): { url: string; anon: string; storageKey: string } {
+  const url =
+    isSupabaseBrowserConfigured && rawUrl
+      ? normalizeSupabaseUrl(rawUrl)
+      : rawUrl || SUPABASE_LOCAL_PLACEHOLDER_URL;
+  const anon = rawAnon || DEMO_ANON;
+  const projectRef = projectRefFromSupabaseUrl(url);
+  const storageKey = projectRef ? `tipguard-${projectRef}-auth` : "tipguard-auth";
+  return { url, anon, storageKey };
 }
-
-const projectRef = projectRefFromSupabaseUrl(resolvedUrl);
-const authStorageKey = projectRef ? `tipguard-${projectRef}-auth` : "tipguard-auth";
 
 let supabaseSingleton: SupabaseClient | null = null;
 
-/** Single browser Supabase client — never recreate after auth events. */
-export function getSupabaseClient(): SupabaseClient {
-  if (!supabaseSingleton) {
-    supabaseSingleton = createClient(resolvedUrl, resolvedAnon, {
+function createSupabaseBrowserClient(): SupabaseClient {
+  const { url, anon, storageKey } = resolveSupabaseCredentials();
+  if (isSupabaseBrowserConfigured) {
+    try {
+      reconcileSupabaseAuthStorage(url);
+    } catch (e) {
+      console.error("[TipGuard] reconcileSupabaseAuthStorage failed", e);
+    }
+  }
+  try {
+    return createClient(url, anon, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        storageKey: authStorageKey,
+        storageKey,
       },
     });
+  } catch (e) {
+    console.error("[TipGuard] createClient failed — using safe local placeholder", e);
+    return createClient(SUPABASE_LOCAL_PLACEHOLDER_URL, DEMO_ANON, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        storageKey: "tipguard-auth-fallback",
+      },
+    });
+  }
+}
+
+/** Single browser Supabase client — lazy init; never throws at module import. */
+export function getSupabaseClient(): SupabaseClient {
+  if (!supabaseSingleton) {
+    supabaseSingleton = createSupabaseBrowserClient();
+    if (import.meta.env.DEV && isSupabaseBrowserConfigured) {
+      try {
+        const { url } = resolveSupabaseCredentials();
+        const host = new URL(url).host;
+        console.info(`[TipGuard] Supabase → ${host}`);
+      } catch {
+        console.warn("[TipGuard] VITE_SUPABASE_URL is not a valid URL");
+      }
+    }
   }
   return supabaseSingleton;
 }
 
-export const supabase = getSupabaseClient();
-
-/** Dev-only: log resolved host (no secrets). Restart `npm run dev` after .env changes. */
-if (import.meta.env.DEV && isSupabaseBrowserConfigured) {
-  try {
-    const host = new URL(resolvedUrl).host;
-    console.info(`[TipGuard] Supabase → ${host} (storage: ${authStorageKey})`);
-  } catch {
-    console.warn("[TipGuard] VITE_SUPABASE_URL is not a valid URL");
-  }
-}
+/** Lazy proxy so importing `supabase` does not eagerly call createClient. */
+export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop, receiver) {
+    const client = getSupabaseClient();
+    const value = Reflect.get(client, prop, receiver);
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+});

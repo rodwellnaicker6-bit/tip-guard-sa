@@ -3,7 +3,8 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthProvider";
 import { ToastProvider } from "./context/ToastProvider";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { SessionIdleWatcher } from "./components/SessionIdleWatcher";
+// SessionIdleWatcher disabled until env/auth bootstrap is stable (re-enable post-MVP).
+// import { SessionIdleWatcher } from "./components/SessionIdleWatcher";
 import { RequireAdmin, RequireAuth, RequireGuard, RequireMerchant } from "./components/RequireAuth";
 import { HubLayout } from "./layouts/HubLayout";
 import { Skeleton } from "./components/Skeleton";
@@ -394,7 +395,6 @@ export default function App() {
       <BrowserRouter>
         <ToastProvider>
           <AuthProvider>
-            <SessionIdleWatcher />
             <AppRoutes />
           </AuthProvider>
         </ToastProvider>
