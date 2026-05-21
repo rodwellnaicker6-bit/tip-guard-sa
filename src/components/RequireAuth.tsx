@@ -1,4 +1,4 @@
-import { useEffect, type ReactElement } from "react";
+import type { ReactElement } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import PageLoader from "./PageLoader";
@@ -11,12 +11,6 @@ function loginRedirectState(pathname: string, search: string) {
 export function RequireAuth({ children }: { children: ReactElement }) {
   const { user, authReady } = useAuth();
   const location = useLocation();
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    console.info(
-      `[AuthDebug] RequireAuth ${location.pathname} authReady=${authReady} user=${user?.id ?? "none"}`,
-    );
-  }, [location.pathname, authReady, user?.id]);
   if (!authReady) return <PageLoader />;
   if (!user?.id) {
     return (

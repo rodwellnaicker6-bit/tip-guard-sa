@@ -36,13 +36,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loading = !authReady;
 
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    console.info(
-      `[AuthDebug] authReady=${authReady} sessionReady=${sessionReady} profileReady=${profileReady} user=${user?.id ?? "none"}`,
-    );
-  }, [authReady, sessionReady, profileReady, user?.id]);
-
-  useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -159,9 +152,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, next) => {
       if (!mountedRef.current) return;
-      if (import.meta.env.DEV) {
-        console.info(`[AuthDebug] AuthProvider event: ${event} user=${next?.user?.id ?? "none"}`);
-      }
       applySession(next);
       // TOKEN_REFRESHED can fire in a tight loop and abort in-flight profile loads,
       // leaving profileReady false and blocking post-login redirects.
@@ -196,9 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const bootFallback = window.setTimeout(() => {
       if (mountedRef.current && !sessionReadyRef.current) {
-        if (import.meta.env.DEV) {
-          console.warn("[AuthDebug] AuthProvider boot fallback — forcing session ready");
-        }
+        console.warn("[AuthProvider] session hydration timeout — marking session ready");
         markSessionReady();
       }
     }, 10_000);
@@ -281,13 +269,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         if (!mountedRef.current) return {};
         if (error) {
-          if (import.meta.env.DEV) {
-            console.error("[signUp] Supabase auth error", {
-              message: error.message,
-              status: error.status,
-              name: error.name,
-            });
-          }
           return { error: formatAuthUserFacingError(error) };
         }
         const needsEmailVerification = !data.session && !!data.user;

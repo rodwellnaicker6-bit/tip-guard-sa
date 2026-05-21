@@ -36,7 +36,6 @@ export default function Login() {
     if (!mountedRef.current) return;
     setSubmitting(false);
     if (err) setError(err);
-    else if (import.meta.env.DEV) console.info("[AuthDebug] Login signIn success");
   }
 
   if (user?.id && showLoader) {

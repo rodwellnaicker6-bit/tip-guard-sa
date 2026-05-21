@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { unwrapRpcSingle } from "../lib/rpcData";
 import { centsFromRandInput, zarFromCents } from "../lib/money";
@@ -17,7 +17,6 @@ const PRESETS = [10, 20, 50] as const;
 
 export default function TipCheckout() {
   const { guardId } = useParams();
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const toast = useToast();
   const [guard, setGuard] = useState<PublicGuardRow | null>(null);
@@ -26,7 +25,6 @@ export default function TipCheckout() {
   const [starting, setStarting] = useState(false);
   const [checkoutPhase, setCheckoutPhase] = useState<CheckoutPhase>("idle");
   const [loading, setLoading] = useState(true);
-  const sessionHint = searchParams.get("sid");
 
   const cents = useMemo(() => centsFromRandInput(amount), [amount]);
   const amountLabel = cents != null ? zarFromCents(cents) : "R 0.00";
@@ -61,9 +59,6 @@ export default function TipCheckout() {
     }
     setStarting(true);
     try {
-      if (sessionHint && import.meta.env.DEV) {
-        console.info("[TipCheckout] tip session hint", sessionHint);
-      }
       await startTipCheckout({
         kind: "tip",
         guardId,

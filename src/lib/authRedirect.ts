@@ -13,10 +13,7 @@ export type PostAuthNavigateOptions = {
   };
 };
 
-function authNavigate(navigate: NavigateFunction, to: string, reason: string): void {
-  if (import.meta.env.DEV) {
-    console.info(`[AuthDebug] authRedirect navigate → ${to} (${reason})`);
-  }
+function authNavigate(navigate: NavigateFunction, to: string): void {
   navigate(to, { replace: true });
 }
 
@@ -28,7 +25,7 @@ export async function navigateAfterAuth(
 ): Promise<void> {
   try {
     if (opts?.preferOnboarding) {
-      authNavigate(navigate, "/onboarding", "preferOnboarding");
+      authNavigate(navigate, "/onboarding");
       return;
     }
 
@@ -36,7 +33,7 @@ export async function navigateAfterAuth(
       typeof sessionStorage !== "undefined" ? sessionStorage.getItem("tipguard_redirect") : null;
     if (stored?.startsWith("/") && !stored.startsWith("//")) {
       sessionStorage.removeItem("tipguard_redirect");
-      authNavigate(navigate, stored, "stored redirect");
+      authNavigate(navigate, stored);
       return;
     }
 
@@ -48,12 +45,12 @@ export async function navigateAfterAuth(
       fromPath === "/forgot-password" ||
       fromPath === "/auth/callback";
     if (from?.startsWith("/") && !from.startsWith("//") && !skipFrom) {
-      authNavigate(navigate, from, "location.state.from");
+      authNavigate(navigate, from);
       return;
     }
 
     if (!isSupabaseBrowserConfigured) {
-      authNavigate(navigate, "/", "supabase not configured");
+      authNavigate(navigate, "/");
       return;
     }
 
@@ -62,7 +59,6 @@ export async function navigateAfterAuth(
       authNavigate(
         navigate,
         pathAfterSignIn(role ?? undefined, hasGuardRow, hasMerchantRow),
-        "auth snapshot",
       );
       return;
     }
@@ -71,16 +67,9 @@ export async function navigateAfterAuth(
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       const { data: { session }, error: sessErr } = await supabase.auth.getSession();
       if (sessErr || !session?.user?.id) {
-        if (userId) {
-          if (import.meta.env.DEV) {
-            console.warn(
-              "[AuthDebug] navigateAfterAuth: getSession empty; using userId from auth context",
-              sessErr?.message,
-            );
-          }
-        } else {
+        if (!userId) {
           console.error("[AuthCrash] navigateAfterAuth: no session before redirect", sessErr?.message);
-          authNavigate(navigate, "/login", "missing session");
+          authNavigate(navigate, "/login");
           return;
         }
       } else {
@@ -104,11 +93,10 @@ export async function navigateAfterAuth(
     authNavigate(
       navigate,
       pathAfterSignIn(profile?.role as string | undefined, !!guard?.id, !!merchant?.id),
-      "profile lookup",
     );
   } catch (e) {
     console.error("[AuthCrash] navigateAfterAuth", e);
-    authNavigate(navigate, "/login", "unexpected error");
+    authNavigate(navigate, "/login");
   }
 }
 

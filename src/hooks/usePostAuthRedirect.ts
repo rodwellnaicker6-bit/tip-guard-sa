@@ -45,9 +45,6 @@ export function usePostAuthRedirect(options: PostAuthNavigateOptions & { enabled
     postAuthRedirectUserId = user.id;
     setRouting(true);
     const snapshot = { role, hasGuardRow, hasMerchantRow };
-    if (import.meta.env.DEV) {
-      console.info(`[AuthDebug] usePostAuthRedirect start user=${user.id} from=${from ?? "none"}`);
-    }
     void navigateAfterAuth(user.id, navigate, {
       from,
       preferOnboarding,

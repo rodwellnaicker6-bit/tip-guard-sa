@@ -15,9 +15,6 @@ export default function CustomerDashboard() {
   const loyalty = getLoyaltySnapshot();
 
   useEffect(() => {
-    if (import.meta.env.DEV && user?.id) {
-      console.info(`[AuthDebug] CustomerDashboard mount user=${user.id}`);
-    }
     if (!user?.id) return;
     let c = false;
     (async () => {
