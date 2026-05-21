@@ -51,6 +51,7 @@ export function usePostAuthRedirect(options: PostAuthNavigateOptions & { enabled
       .catch((e) => {
         console.error("[AuthCrash] usePostAuthRedirect failed", e);
         redirectStarted.current = false;
+        postAuthRedirectUserId = null;
       })
       .finally(() => {
         if (mountedRef.current) setRouting(false);

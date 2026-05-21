@@ -15,7 +15,7 @@ export type PostAuthNavigateOptions = {
 
 function authNavigate(navigate: NavigateFunction, to: string, reason: string): void {
   if (import.meta.env.DEV) {
-    console.info(`[authRedirect] navigate → ${to} (${reason})`);
+    console.info(`[AuthDebug] authRedirect navigate → ${to} (${reason})`);
   }
   navigate(to, { replace: true });
 }

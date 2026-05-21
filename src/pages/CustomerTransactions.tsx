@@ -55,7 +55,9 @@ export default function CustomerTransactions() {
   }, []);
 
   useEffect(() => {
-    void load();
+    queueMicrotask(() => {
+      void load();
+    });
     const onVis = () => {
       if (document.visibilityState === "visible") void load();
     };
