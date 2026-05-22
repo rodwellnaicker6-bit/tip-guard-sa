@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -33,6 +34,23 @@ serve(async (req) => {
       });
     }
 
+    const service = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    );
+
+    const allowed = await checkRateLimit(service, { userId: user.id, route: "request-payout" }, {
+      max: 10,
+      windowSec: 300,
+    });
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "Too many payout requests. Try later.", code: "rate_limit" }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    await recordRateLimitHit(service, { userId: user.id, route: "request-payout" });
+
     const body = await req.json().catch(() => null) as { amount_cents?: number } | null;
     const amountCents = body?.amount_cents;
     if (typeof amountCents !== "number" || amountCents < 100) {
@@ -55,8 +73,26 @@ serve(async (req) => {
       });
     }
 
-    if (amountCents > (guard.balance_cents ?? 0)) {
+    const { data: wallet } = await supabase
+      .from("wallet_accounts")
+      .select("available_cents")
+      .eq("guard_id", guard.id)
+      .maybeSingle();
+
+    const available = (wallet?.available_cents as number | undefined) ?? (guard.balance_cents ?? 0);
+    if (amountCents > available) {
       return new Response(JSON.stringify({ error: "Amount exceeds available balance" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: held, error: holdErr } = await service.rpc("hold_guard_payout", {
+      p_guard_id: guard.id,
+      p_amount_cents: amountCents,
+    });
+    if (holdErr || held !== true) {
+      return new Response(JSON.stringify({ error: "Could not reserve balance for payout" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -64,7 +100,12 @@ serve(async (req) => {
 
     const { data: inserted, error: insErr } = await supabase
       .from("payout_requests")
-      .insert({ user_id: user.id, amount_cents: amountCents, status: "pending" })
+      .insert({
+        user_id: user.id,
+        guard_id: guard.id,
+        amount_cents: amountCents,
+        status: "pending",
+      })
       .select("id")
       .maybeSingle();
 
@@ -80,7 +121,7 @@ serve(async (req) => {
       JSON.stringify({
         ok: true,
         id: inserted?.id,
-        message: "Payout request recorded (processing is not wired in this stub).",
+        message: "Payout request recorded — funds moved to pending until operator processes transfer.",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

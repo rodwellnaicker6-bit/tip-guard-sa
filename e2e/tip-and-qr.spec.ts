@@ -1,6 +1,13 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("QR resolve and checkout shell", () => {
+  test("invalid qr alias route shows error", async ({ page }) => {
+    await page.goto("/qr/not-a-real-token-xxxxxxxx");
+    await expect(page.getByRole("heading", { name: /tip link unavailable/i })).toBeVisible({
+      timeout: 15000,
+    });
+  });
+
   test("invalid tip token shows error", async ({ page }) => {
     await page.goto("/t/not-a-real-token-xxxxxxxx");
     await expect(page.getByRole("heading", { name: /tip link unavailable/i })).toBeVisible({

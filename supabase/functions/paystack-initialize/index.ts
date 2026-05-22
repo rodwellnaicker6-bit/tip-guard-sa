@@ -1,9 +1,10 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
 
-const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 30;
+const RATE_WINDOW_SEC = 60;
 
 function randomRef(prefix: string): string {
   const bytes = new Uint8Array(16);
@@ -17,6 +18,8 @@ type InitBody = {
   amount_cents?: number;
   plan_code?: string;
   channels?: string[];
+  device_fingerprint?: string;
+  qr_code_id?: string;
 };
 
 serve(async (req) => {
@@ -63,36 +66,31 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
     );
 
-    const since = new Date(Date.now() - RATE_WINDOW_MS).toISOString();
-    const { count, error: rateErr } = await service
-      .from("api_rate_log")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .eq("route", "paystack-initialize")
-      .gte("created_at", since);
-
-    if (rateErr) console.error("rate_log_count", rateErr);
-    if ((count ?? 0) >= RATE_MAX) {
+    const allowed = await checkRateLimit(service, { userId: user.id, route: "paystack-initialize" }, {
+      max: RATE_MAX,
+      windowSec: RATE_WINDOW_SEC,
+    });
+    if (!allowed) {
       await service.from("fraud_events").insert({
         user_id: user.id,
         kind: "rate_limit",
-        detail: { route: "paystack-initialize", count },
-      });
+        detail: { route: "paystack-initialize" },
+      }).catch(() => undefined);
       return new Response(JSON.stringify({ error: "Too many payment attempts. Try again shortly.", code: "rate_limit" }), {
         status: 429,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    await service.from("api_rate_log").insert({
-      user_id: user.id,
-      route: "paystack-initialize",
-    });
+    await recordRateLimitHit(service, { userId: user.id, route: "paystack-initialize" });
 
     const body = await req.json().catch(() => null) as InitBody | null;
     const kind = body?.kind;
     const amountCents = body?.amount_cents;
     const guardId = body?.guard_id;
+    const deviceHash = typeof body?.device_fingerprint === "string"
+      ? body.device_fingerprint.slice(0, 64)
+      : null;
+    const qrCodeId = typeof body?.qr_code_id === "string" ? body.qr_code_id : null;
     const channels = Array.isArray(body?.channels) && body!.channels!.length > 0
       ? body!.channels!
       : ["card", "bank", "apple_pay"];
@@ -132,6 +130,8 @@ serve(async (req) => {
       paystack_test: paystackTest ? "true" : "false",
     };
 
+    let transactionId: string | null = null;
+
     if (kind === "tip") {
       if (!guardId) {
         return new Response(JSON.stringify({ error: "guard_id required for tips", code: "validation" }), {
@@ -163,10 +163,19 @@ serve(async (req) => {
       metadata.guard_id = guard.id;
       metadata.guard_display_name = String(guard.display_name ?? "").slice(0, 120);
 
+      const { data: feeRow } = await service.rpc("get_platform_fee_bps");
+      const feeBps = typeof feeRow === "number" ? feeRow : 250;
+      const commissionCents = Math.max(0, Math.round((amountCents * feeBps) / 10000));
+      const netCents = amountCents - commissionCents;
+
       const { error: tipErr } = await service.from("tips").insert({
         guard_id: guard.id,
         payer_id: user.id,
         amount_cents: amountCents,
+        commission_cents: commissionCents,
+        net_amount_cents: netCents,
+        payer_device_hash: deviceHash,
+        qr_code_id: qrCodeId,
         paystack_reference: reference,
         status: "pending",
       });
@@ -179,15 +188,23 @@ serve(async (req) => {
         });
       }
 
-      const { error: txErr } = await service.from("transactions").insert({
+      const { data: txRow, error: txErr } = await service.from("transactions").insert({
         user_id: user.id,
         type: "tip",
         amount_cents: amountCents,
+        commission_cents: commissionCents,
+        payer_device_hash: deviceHash,
+        guard_id: guard.id,
         currency: "ZAR",
         status: "pending",
         paystack_reference: reference,
-        metadata: { guard_id: guard.id, guard_display_name: metadata.guard_display_name },
-      });
+        metadata: {
+          guard_id: guard.id,
+          guard_display_name: metadata.guard_display_name,
+          fee_bps: feeBps,
+          device_fingerprint: deviceHash,
+        },
+      }).select("id").maybeSingle();
 
       if (txErr) {
         console.error(txErr);
@@ -197,16 +214,18 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      transactionId = (txRow as { id?: string } | null)?.id ?? null;
     } else {
-      const { error: txErr } = await service.from("transactions").insert({
+      const { data: txRow, error: txErr } = await service.from("transactions").insert({
         user_id: user.id,
         type: "wallet_topup",
         amount_cents: amountCents,
         currency: "ZAR",
         status: "pending",
         paystack_reference: reference,
-        metadata: {},
-      });
+        metadata: { device_fingerprint: deviceHash },
+        payer_device_hash: deviceHash,
+      }).select("id").maybeSingle();
 
       if (txErr) {
         console.error(txErr);
@@ -215,6 +234,7 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      transactionId = (txRow as { id?: string } | null)?.id ?? null;
     }
 
     const paystackBody: Record<string, unknown> = {
@@ -266,6 +286,16 @@ serve(async (req) => {
     if (kind === "tip") {
       await service.from("tips").update({ paystack_access_code: accessCode }).eq("paystack_reference", reference);
     }
+
+    await service.from("payment_events").insert({
+      provider: "paystack",
+      provider_event_id: `init:${reference}`,
+      event_type: "transaction.initialize",
+      paystack_reference: reference,
+      transaction_id: transactionId,
+      status: "received",
+      payload: { kind, amount_cents: amountCents, device_fingerprint: deviceHash },
+    }).catch((e) => console.error("payment_events_init", e));
 
     return new Response(
       JSON.stringify({

@@ -99,7 +99,7 @@ serve(async (req) => {
   const metaType = typeof metadata.type === "string" ? metadata.type : null;
   const amount = typeof data.amount === "number" ? data.amount : null;
 
-  if (event === "charge.success" && reference) {
+  if ((event === "charge.success" || event === "paymentrequest.success") && reference) {
     if (metaType === "wallet_topup") {
       const uid = typeof metadata.user_id === "string" ? metadata.user_id : null;
       if (uid && amount != null && amount > 0) {
@@ -133,7 +133,10 @@ serve(async (req) => {
     }
   }
 
-  if ((event === "charge.failed" || event === "subscription.not_renew") && reference) {
+  if (
+    (event === "charge.failed" || event === "subscription.not_renew" || event === "paymentrequest.failed") &&
+    reference
+  ) {
     const { error: tErr } = await service.from("tips").update({ status: "failed" }).eq("paystack_reference", reference);
     if (tErr) log("tip_fail_update_error", { error: tErr.message, reference });
     const { error: xErr } = await service.from("transactions").update({ status: "failed" }).eq(
@@ -169,10 +172,38 @@ serve(async (req) => {
     }
   }
 
+  if (event.startsWith("transfer.")) {
+    const transferCode = typeof data.transfer_code === "string"
+      ? data.transfer_code
+      : typeof data.reference === "string"
+      ? data.reference
+      : null;
+    const transferStatus = event === "transfer.success"
+      ? "paid"
+      : event === "transfer.failed" || event === "transfer.reversed"
+      ? "rejected"
+      : "processing";
+
+    if (transferCode) {
+      const { error: pErr } = await service
+        .from("payout_requests")
+        .update({ status: transferStatus, updated_at: new Date().toISOString() })
+        .eq("provider_reference", transferCode);
+      if (pErr) log("payout_transfer_update_error", { error: pErr.message, transferCode });
+    } else {
+      log("transfer_event_no_code", { event });
+    }
+  }
+
+  const terminalFailed = event === "charge.failed" ||
+    event === "paymentrequest.failed" ||
+    event === "transfer.failed" ||
+    event === "transfer.reversed";
+
   await service
     .from("payment_events")
     .update({
-      status: event === "charge.failed" ? "failed" : "processed",
+      status: terminalFailed ? "failed" : "processed",
     })
     .eq("provider", "paystack")
     .eq("provider_event_id", dedupeId);

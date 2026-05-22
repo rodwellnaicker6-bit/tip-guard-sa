@@ -32,9 +32,17 @@
 - `VITE_SENTRY_DSN` — production errors
 - `VITE_PLAUSIBLE_DOMAIN` or `VITE_POSTHOG_KEY` — traffic (no crash if unset)
 
+## PWA
+
+- [x] `public/manifest.webmanifest` — standalone, theme_color, SVG icon
+- [x] `OfflineBanner` — non-blocking when `navigator.onLine === false`
+- [ ] Add PNG icons 192/512 for install prompts (post-MVP)
+
 ## E2E smoke
 
 ```bash
 npm run build && npm run lint
-npx playwright test e2e/auth-public-and-guards.spec.ts
+npx playwright test e2e/
 ```
+
+Critical paths: `e2e/boot-startup.spec.ts`, `e2e/tip-and-qr.spec.ts`, `e2e/auth-public-and-guards.spec.ts`.

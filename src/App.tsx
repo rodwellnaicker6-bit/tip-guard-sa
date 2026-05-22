@@ -130,6 +130,14 @@ function AppRoutes() {
           </Lazy>
         }
       />
+      <Route
+        path="/qr/:token"
+        element={
+          <Lazy>
+            <QrTipLanding />
+          </Lazy>
+        }
+      />
       <Route path="/payment/success" element={<PaymentSuccess />} />
       <Route path="/payment/failure" element={<PaymentFailure />} />
       <Route

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -38,6 +39,23 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => null) as { reference?: string } | null;
+    const service = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    );
+
+    const allowed = await checkRateLimit(service, { userId: user.id, route: "paystack-verify" }, {
+      max: 60,
+      windowSec: 60,
+    });
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "Too many verify attempts", code: "rate_limit" }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    await recordRateLimitHit(service, { userId: user.id, route: "paystack-verify" });
+
     const reference = body?.reference?.trim();
     if (!reference) {
       return new Response(JSON.stringify({ error: "reference required" }), {
@@ -57,11 +75,6 @@ serve(async (req) => {
 
     const paystackStatus = verifyJson?.data?.status ?? "unknown";
     const success = verifyJson?.status === true && paystackStatus === "success";
-
-    const service = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-    );
 
     const { data: tip } = await service
       .from("tips")
@@ -106,6 +119,18 @@ serve(async (req) => {
       .select("status, amount_cents")
       .eq("paystack_reference", reference)
       .maybeSingle();
+
+    await service.from("payment_events").upsert(
+      {
+        provider: "paystack",
+        provider_event_id: `verify:${reference}:${paystackStatus}`,
+        event_type: "transaction.verify",
+        paystack_reference: reference,
+        status: success ? "processed" : paystackStatus === "failed" ? "failed" : "received",
+        payload: { paystack_status: paystackStatus, verified: success },
+      },
+      { onConflict: "provider,provider_event_id", ignoreDuplicates: true },
+    ).catch((e) => console.error("payment_events_verify", e));
 
     return new Response(
       JSON.stringify({

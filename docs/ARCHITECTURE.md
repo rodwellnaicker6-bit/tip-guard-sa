@@ -22,11 +22,45 @@
 | [DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md) | Go-live verification |
 | [COMPLIANCE_LAUNCH_READINESS.md](./COMPLIANCE_LAUNCH_READINESS.md) | POPIA / payments preparation (non-legal) |
 
+## Entity relationship (production fintech)
+
+```mermaid
+erDiagram
+  profiles ||--o| guards : "user_id"
+  profiles ||--o| merchants : "user_id"
+  merchants ||--o{ merchant_locations : "merchant_id"
+  merchants ||--o{ guards : "merchant_id"
+  guards ||--o| wallet_accounts : "guard_id"
+  guards ||--o{ tips : "guard_id"
+  guards ||--o{ qr_codes : "guard_id"
+  profiles ||--o{ tips : "payer_id"
+  tips ||--o| transactions : "paystack_reference"
+  payment_events }o--|| tips : "tip_id"
+  guards ||--o{ payout_requests : "guard_id"
+  merchants {
+    uuid id PK
+    text business_name
+  }
+  venues {
+    uuid id
+    note "view over merchants"
+  }
+  wallet_accounts {
+    bigint available_cents
+    bigint pending_cents
+  }
+  platform_settings {
+    int fee_bps
+  }
+```
+
+`venues` is a read-only view on `merchants`. `wallet_accounts` holds guard available/pending balances; `platform_settings.fee_bps` drives tip commission at settlement.
+
 ## Runtime flow
 
 1. **Auth** — Supabase Auth; `profiles` row created on signup (`role = customer`, hardened in migrations). Role elevation only via admin or `service_role`.
 2. **Customer browse** — RPC `list_public_guards` (security definer) returns verified guards for anon/auth users.
-3. **QR / deep link** — `/t/:token` resolves `tip_links.token` via `resolve_tip_link`; `touch_tip_link` / `touch_qr_code` record scan analytics.
+3. **QR / deep link** — `/tip/:token`, `/qr/:token`, and `/t/:token` resolve via `resolve_tip_target` (qr_codes + tip_links); `touch_qr_code` records scans.
 4. **Checkout** — `startTipCheckout()` in `src/payments/checkoutFlow.ts` picks gateway from `VITE_TIP_PAYMENT_GATEWAY` (default `paystack`) and calls the adapter. Paystack path invokes Edge `paystack-initialize` then opens inline JS.
 5. **Settlement** — Edge `paystack-webhook` (service role) finalizes tips / wallet; idempotency tables per migration; **`post_tip_settlement_hooks`** applies server loyalty, `analytics_events`, and `activity_logs`.
 6. **Guard dashboard** — Reads `guards` + `tips` under RLS; payout requests via Edge `request-payout`.

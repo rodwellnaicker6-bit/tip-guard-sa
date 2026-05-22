@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import { VerificationStatusBadge } from "../components/VerificationStatusBadge";
+import { zarFromCents } from "../lib/money";
 
 type GuardSelf = {
   id: string;
@@ -21,6 +22,7 @@ export default function GuardProfile() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
+  const [earnings, setEarnings] = useState<{ volume_cents?: number; tips_succeeded?: number; available_cents?: number; pending_cents?: number } | null>(null);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -54,6 +56,9 @@ export default function GuardProfile() {
         .limit(1)
         .maybeSingle();
       if (!cancelled) setKycStatus((kyc?.status as string) ?? null);
+
+      const { data: earn } = await supabase.rpc("guard_earnings_summary", { p_guard_id: g.id });
+      if (!cancelled && earn) setEarnings(earn as typeof earnings);
     })();
     return () => {
       cancelled = true;
@@ -118,6 +123,17 @@ export default function GuardProfile() {
       <p>{guard?.display_name}</p>
       {guard && (
         <VerificationStatusBadge verified={guard.verified} kycStatus={kycStatus} entityLabel="Guard verification" />
+      )}
+      {earnings && (
+        <div className="card stack rounded-xl border border-white/10 p-3 text-sm">
+          <strong className="text-slate-200">Earnings</strong>
+          <p className="text-slate-400">
+            {earnings.tips_succeeded ?? 0} tips · {zarFromCents(earnings.volume_cents ?? 0)} volume
+          </p>
+          <p className="text-amber-300">
+            Available {zarFromCents(earnings.available_cents ?? 0)} · Pending {zarFromCents(earnings.pending_cents ?? 0)}
+          </p>
+        </div>
       )}
       <p className="text-xs text-slate-500">
         Verification is set by your operator (see docs/KYC_VERIFICATION.md in the repo).

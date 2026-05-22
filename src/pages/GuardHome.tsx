@@ -31,6 +31,8 @@ export default function GuardHome() {
   const [payoutBusy, setPayoutBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [sparkValues, setSparkValues] = useState<number[]>([]);
+  const [walletAvail, setWalletAvail] = useState<number | null>(null);
+  const [walletPending, setWalletPending] = useState(0);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -49,6 +51,15 @@ export default function GuardHome() {
       const g = (data as GuardRow) ?? null;
       setGuard(g);
       if (g?.id) {
+        const { data: w } = await supabase
+          .from("wallet_accounts")
+          .select("available_cents, pending_cents")
+          .eq("guard_id", g.id)
+          .maybeSingle();
+        if (!cancelled) {
+          setWalletAvail((w?.available_cents as number | undefined) ?? g.balance_cents ?? 0);
+          setWalletPending((w?.pending_cents as number | undefined) ?? 0);
+        }
         const { data: tips, error: tErr } = await supabase
           .from("tips")
           .select("id, amount_cents, status, created_at")
@@ -189,8 +200,12 @@ export default function GuardHome() {
       <section className="grid grid-cols-2 gap-3">
         <GlassPanel glow="amber" className="fx-fade-up">
           <p className="text-xs font-semibold uppercase text-slate-500">Wallet</p>
-          <p className="mt-1 text-2xl font-black text-amber-400">{zarFromCents(guard.balance_cents)}</p>
-          <p className="mt-1 text-[10px] text-slate-500">Secured ledger · payouts reviewed</p>
+          <p className="mt-1 text-2xl font-black text-amber-400">
+            {zarFromCents(walletAvail ?? guard.balance_cents)}
+          </p>
+          <p className="mt-1 text-[10px] text-slate-500">
+            Pending {zarFromCents(walletPending)} · payouts reviewed
+          </p>
         </GlassPanel>
         <GlassPanel glow="slate" className="fx-fade-up">
           <p className="text-xs font-semibold uppercase text-slate-500">Tips</p>

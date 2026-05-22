@@ -7,6 +7,7 @@ import { Skeleton } from "../components/Skeleton";
 import { StatCardsSkeleton } from "../components/StatCardsSkeleton";
 import { ProfileCompletionCard } from "../components/ProfileCompletionCard";
 import { FetchError } from "../components/FetchError";
+import { MerchantAnalyticsPanel } from "../components/MerchantAnalyticsPanel";
 
 type MerchRow = {
   id: string;
@@ -101,6 +102,14 @@ export default function MerchantDashboard() {
       </header>
 
       <ProfileCompletionCard fields={profileFields} />
+
+      <div className="card min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4 fx-fade-up">
+        <strong className="text-slate-200">Tips &amp; volume</strong>
+        <p className="mt-1 text-sm text-slate-400">Real aggregates from your guards&apos; tips (not demo data).</p>
+        <div className="mt-4">
+          <MerchantAnalyticsPanel />
+        </div>
+      </div>
 
       <div className="card stack min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4 fx-fade-up">
         <strong className="text-slate-200">Venue status</strong>

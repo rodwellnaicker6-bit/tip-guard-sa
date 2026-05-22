@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { openPaystackInline, zarSubunitsFromCents } from "../lib/paystack";
 import { getPaystackPublicKey, isPaystackConfigured, paystackEnvIssue } from "../lib/paystackEnv";
 import { isTransientNetworkError } from "../lib/networkUtils";
+import { getDeviceFingerprintHash } from "../lib/deviceFingerprint";
 
 /** Prevents double-invoke (double-tap) opening two Paystack sessions. */
 let tipCheckoutInFlight = false;
@@ -24,8 +25,11 @@ export async function initializePaystackTransaction(body: {
   kind: "tip" | "wallet_topup";
   guard_id?: string;
   amount_cents: number;
+  qr_code_id?: string;
 }): Promise<{ data: PaystackInitResponse | null; errorMessage: string | null }> {
-  const attempt = async () => supabase.functions.invoke("paystack-initialize", { body });
+  const device_fingerprint = await getDeviceFingerprintHash();
+  const attempt = async () =>
+    supabase.functions.invoke("paystack-initialize", { body: { ...body, device_fingerprint } });
   let { data, error } = await attempt();
   for (let i = 0; i < 2 && error && isTransientInvokeError(error.message); i++) {
     await new Promise((r) => setTimeout(r, 350 * (i + 1)));
