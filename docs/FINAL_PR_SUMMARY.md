@@ -1,7 +1,7 @@
 # TipGuard SA — release summary (`main`)
 
 **Branch:** `main`  
-**HEAD:** `5772966` — Fix P0 fintech integrity issues found in final audit.  
+**HEAD:** `9ccc88a` — docs: finalize v2.100.1 migration tag and deployment bundle.  
 **Date:** 21 May 2026
 
 ## Latest production commits
