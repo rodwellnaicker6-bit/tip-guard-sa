@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
 import { isMaintenanceMode, maintenanceResponse } from "../_shared/maintenance.ts";
+import { runFraudChecks } from "../_shared/fraudCheck.ts";
 
 const RATE_MAX = 30;
 const RATE_WINDOW_SEC = 60;
@@ -125,6 +126,19 @@ serve(async (req) => {
     const email = user.email ?? `${user.id}@customers.tipguard.local`;
     const reference = randomRef(kind === "tip" ? "tg_" : "wl_");
     const paystackTest = secret.startsWith("sk_test_");
+
+    const fraud = await runFraudChecks(service, {
+      userId: user.id,
+      amountCents,
+      reference,
+      route: "paystack-initialize",
+    });
+    if (fraud.blocked) {
+      return new Response(
+        JSON.stringify({ error: "Payment blocked by fraud policy", code: "fraud_blocked", rules: fraud.triggered }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     const metadata: Record<string, string> = {
       user_id: user.id,
@@ -290,15 +304,18 @@ serve(async (req) => {
       await service.from("tips").update({ paystack_access_code: accessCode }).eq("paystack_reference", reference);
     }
 
-    await service.from("payment_events").insert({
-      provider: "paystack",
-      provider_event_id: `init:${reference}`,
-      event_type: "transaction.initialize",
-      paystack_reference: reference,
-      transaction_id: transactionId,
-      status: "received",
-      payload: { kind, amount_cents: amountCents, device_fingerprint: deviceHash },
-    }).catch((e) => console.error("payment_events_init", e));
+    await service.from("payment_events").upsert(
+      {
+        provider: "paystack",
+        provider_event_id: `init:${reference}`,
+        event_type: "transaction.initialize",
+        paystack_reference: reference,
+        transaction_id: transactionId,
+        status: "received",
+        payload: { kind, amount_cents: amountCents, device_fingerprint: deviceHash, user_id: user.id },
+      },
+      { onConflict: "provider,provider_event_id", ignoreDuplicates: true },
+    ).catch((e) => console.error("payment_events_init", e));
 
     return new Response(
       JSON.stringify({

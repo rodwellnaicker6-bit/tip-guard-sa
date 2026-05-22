@@ -13,7 +13,7 @@ Failed Paystack webhook **claims** are enqueued in `public.webhook_retry_queue` 
 | `event_id`, `event_type` | Dedupe key (`event:dataId`) |
 | `payload` | Full webhook JSON |
 | `attempts`, `max_attempts` | Default max 5 |
-| `status` | `pending` → `processing` → `pending` (stub) or `failed` |
+| `status` | `pending` → `processing` → `pending` (stub), or `dead_letter` after max attempts |
 | `next_retry_at` | Exponential backoff schedule |
 
 ## Processor (cron-ready stub)
@@ -36,8 +36,8 @@ from public.webhook_retry_queue
 where status = 'pending'
 order by next_retry_at;
 
--- Failed after max attempts
-select * from public.webhook_retry_queue where status = 'failed' order by updated_at desc limit 20;
+-- Dead letter (admin UI: /admin/fraud)
+select * from public.webhook_retry_queue where status = 'dead_letter' order by updated_at desc limit 20;
 ```
 
 ## Related

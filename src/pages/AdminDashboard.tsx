@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
 import PageLoader from "../components/PageLoader";
 import { useToast } from "../context/useToast";
+import { logAdminAction } from "../lib/adminAudit";
 
 type Metrics = {
   tips_succeeded: number;
@@ -26,6 +27,7 @@ type Tab = "overview" | "guards" | "payouts" | "payments" | "activity" | "fraud"
 type GuardRow = { id: string; display_name: string; verified: boolean; user_id: string | null; location: string | null };
 type PayoutRow = { id: string; user_id: string; amount_cents: number; status: string; created_at: string };
 type LogRow = { id: number; action: string; entity_type: string | null; created_at: string; meta: unknown };
+type AuditRow = { id: string; action: string; entity_type: string | null; entity_id: string | null; created_at: string; metadata: unknown };
 type FraudRow = { id: string; kind: string; created_at: string; detail: unknown };
 type FailedTxRow = {
   id: string;
@@ -46,6 +48,7 @@ export default function AdminDashboard() {
   const [pendingGuards, setPendingGuards] = useState<GuardRow[]>([]);
   const [payouts, setPayouts] = useState<PayoutRow[]>([]);
   const [logs, setLogs] = useState<LogRow[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditRow[]>([]);
   const [fraud, setFraud] = useState<FraudRow[]>([]);
   const [failedTx, setFailedTx] = useState<FailedTxRow[]>([]);
   const [payoutsFrozen, setPayoutsFrozen] = useState(false);
@@ -78,16 +81,18 @@ export default function AdminDashboard() {
   }, []);
 
   const loadLists = useCallback(async () => {
-    const [gRes, pRes, lRes, fRes, txRes] = await Promise.all([
+    const [gRes, pRes, lRes, aRes, fRes, txRes] = await Promise.all([
       supabase.from("guards").select("id, display_name, verified, user_id, location").eq("verified", false).order("created_at", { ascending: false }).limit(50),
       supabase.from("payout_requests").select("id, user_id, amount_cents, status, created_at").order("created_at", { ascending: false }).limit(50),
       supabase.from("activity_logs").select("id, action, entity_type, created_at, meta").order("created_at", { ascending: false }).limit(40),
+      supabase.from("admin_audit_log").select("id, action, entity_type, entity_id, created_at, metadata").order("created_at", { ascending: false }).limit(40),
       supabase.from("fraud_events").select("id, kind, created_at, detail").order("created_at", { ascending: false }).limit(30),
       supabase.from("transactions").select("id, user_id, type, amount_cents, paystack_reference, created_at").eq("status", "failed").order("created_at", { ascending: false }).limit(30),
     ]);
     if (!gRes.error && gRes.data) setPendingGuards(gRes.data as GuardRow[]);
     if (!pRes.error && pRes.data) setPayouts(pRes.data as PayoutRow[]);
     if (!lRes.error && lRes.data) setLogs(lRes.data as LogRow[]);
+    if (!aRes.error && aRes.data) setAuditLogs(aRes.data as AuditRow[]);
     if (!fRes.error && fRes.data) setFraud(fRes.data as FraudRow[]);
     if (!txRes.error && txRes.data) setFailedTx(txRes.data as FailedTxRow[]);
   }, []);
@@ -129,6 +134,7 @@ export default function AdminDashboard() {
       return;
     }
     setPayoutsFrozen(next);
+    void logAdminAction("payouts_freeze_toggle", "platform_settings", "1", { payouts_frozen: next });
     toast.success(next ? "Payouts frozen." : "Payouts enabled.");
   }
 
@@ -138,6 +144,7 @@ export default function AdminDashboard() {
       toast.error(uErr.message);
       return;
     }
+    void logAdminAction("guard_approve", "guards", id);
     toast.success("Guard verified.");
     setPendingGuards((prev) => prev.filter((g) => g.id !== id));
     void loadMetrics();
@@ -152,6 +159,7 @@ export default function AdminDashboard() {
       toast.error(fErr.message);
       return;
     }
+    void logAdminAction("guard_reject", "guards", id, { display_name: name });
     toast.success("Verification rejected (logged).");
     setPendingGuards((prev) => prev.filter((g) => g.id !== id));
   }
@@ -165,6 +173,7 @@ export default function AdminDashboard() {
       toast.error(fErr.message);
       return;
     }
+    void logAdminAction("guard_flag", "guards", id, { display_name: name });
     toast.success("Guard flagged for review.");
     void loadLists();
   }
@@ -175,6 +184,7 @@ export default function AdminDashboard() {
       toast.error(uErr.message);
       return;
     }
+    void logAdminAction("payout_status", "payout_requests", id, { status });
     toast.success(`Payout marked ${status}.`);
     void loadLists();
   }
@@ -360,17 +370,33 @@ export default function AdminDashboard() {
       )}
 
       {tab === "activity" && (
-        <section className="space-y-2 overflow-x-auto">
-          <h2 className="text-sm font-bold uppercase text-slate-500">Activity log</h2>
-          {logs.length === 0 ? (
-            <p className="text-sm text-slate-500">No rows (service_role writes from Edge recommended).</p>
-          ) : (
-            logs.map((l) => (
-              <div key={l.id} className="rounded-lg border border-white/5 bg-black/30 px-3 py-2 text-xs text-slate-400">
-                <span className="font-mono text-amber-200/80">{l.action}</span> · {l.entity_type ?? "—"} · {new Date(l.created_at).toLocaleString()}
-              </div>
-            ))
-          )}
+        <section className="space-y-4 overflow-x-auto">
+          <div className="space-y-2">
+            <h2 className="text-sm font-bold uppercase text-slate-500">Admin audit trail</h2>
+            {auditLogs.length === 0 ? (
+              <p className="text-sm text-slate-500">No admin actions logged yet.</p>
+            ) : (
+              auditLogs.map((l) => (
+                <div key={l.id} className="rounded-lg border border-amber-500/10 bg-amber-500/5 px-3 py-2 text-xs text-slate-400">
+                  <span className="font-mono text-amber-200/80">{l.action}</span> · {l.entity_type ?? "—"}{" "}
+                  {l.entity_id ? `· ${l.entity_id.slice(0, 8)}…` : ""} · {new Date(l.created_at).toLocaleString()}
+                </div>
+              ))
+            )}
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-sm font-bold uppercase text-slate-500">Activity log</h2>
+            {logs.length === 0 ? (
+              <p className="text-sm text-slate-500">No rows (service_role writes from Edge recommended).</p>
+            ) : (
+              logs.map((l) => (
+                <div key={l.id} className="rounded-lg border border-white/5 bg-black/30 px-3 py-2 text-xs text-slate-400">
+                  <span className="font-mono text-amber-200/80">{l.action}</span> · {l.entity_type ?? "—"} ·{" "}
+                  {new Date(l.created_at).toLocaleString()}
+                </div>
+              ))
+            )}
+          </div>
         </section>
       )}
 
@@ -390,8 +416,14 @@ export default function AdminDashboard() {
       )}
 
       <div className="flex flex-col gap-2 sm:flex-row">
+        <Link className="rounded-xl border border-white/10 py-3 text-center text-sm font-semibold text-amber-400" to="/admin/metrics">
+          Production metrics
+        </Link>
+        <Link className="rounded-xl border border-white/10 py-3 text-center text-sm font-semibold text-amber-400" to="/admin/fraud">
+          Fraud & DLQ
+        </Link>
         <Link className="rounded-xl border border-white/10 py-3 text-center text-sm font-semibold text-amber-400" to="/admin/security">
-          Security & fraud
+          Security
         </Link>
         <Link className="rounded-xl border border-white/10 py-3 text-center text-sm font-semibold text-amber-400" to="/admin/transactions">
           Transactions

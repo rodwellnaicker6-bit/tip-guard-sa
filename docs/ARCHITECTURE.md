@@ -62,7 +62,7 @@ erDiagram
 2. **Customer browse** — RPC `list_public_guards` (security definer) returns verified guards for anon/auth users.
 3. **QR / deep link** — `/tip/:token`, `/qr/:token`, and `/t/:token` resolve via `resolve_tip_target` (qr_codes + tip_links); `touch_qr_code` records scans.
 4. **Checkout** — `startTipCheckout()` in `src/payments/checkoutFlow.ts` picks gateway from `VITE_TIP_PAYMENT_GATEWAY` (default `paystack`) and calls the adapter. Paystack path invokes Edge `paystack-initialize` then opens inline JS.
-5. **Settlement** — Edge `paystack-webhook` (service role) finalizes tips / wallet; idempotency tables per migration; **`post_tip_settlement_hooks`** applies server loyalty, `analytics_events`, and `activity_logs`.
+5. **Settlement** — Edge `paystack-webhook` (service role) finalizes tips / wallet; idempotency via unique `(provider, provider_event_id)` on `payment_events`, partial unique on `payment_events.paystack_reference`, and partial unique on `tips.paystack_reference`; Edge writes use `upsert` / `ON CONFLICT` where applicable; **`post_tip_settlement_hooks`** applies server loyalty, `analytics_events`, and `activity_logs`.
 6. **Guard dashboard** — Reads `guards` + `tips` under RLS; payout requests via Edge `request-payout`.
 7. **Admin** — `is_admin()` SQL helper; dashboards query metrics RPC + tables with admin policies.
 
@@ -77,6 +77,17 @@ erDiagram
 | `supabase/migrations/` | Ordered SQL; **apply all** on each environment |
 | `supabase/functions/` | Paystack + payout Edge handlers |
 | `docs/` | Operator runbooks |
+
+## Transaction idempotency
+
+| Surface | Constraint / pattern |
+|---------|----------------------|
+| `payment_events` | `UNIQUE (provider, provider_event_id)`; optional `UNIQUE (paystack_reference)` where set |
+| `tips` | `UNIQUE (paystack_reference)` where not null |
+| Edge init/verify | `payment_events.upsert(..., { onConflict: "provider,provider_event_id" })` |
+| Webhooks | `claim_provider_webhook_event` insert-first dedupe |
+
+Duplicate Paystack references for succeeded tips are blocked by `run_fraud_checks` (`duplicate_reference` rule).
 
 ## Security model
 

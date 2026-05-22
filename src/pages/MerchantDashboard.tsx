@@ -14,6 +14,7 @@ type MerchRow = {
   business_name: string;
   location: string | null;
   verified: boolean;
+  risk_score?: number;
 };
 
 export default function MerchantDashboard() {
@@ -31,7 +32,7 @@ export default function MerchantDashboard() {
       setError(null);
       const { data, error: err } = await supabase
         .from("merchants")
-        .select("id, business_name, location, verified")
+        .select("id, business_name, location, verified, risk_score")
         .eq("user_id", user.id)
         .maybeSingle();
       if (cancelled) return;
@@ -99,6 +100,17 @@ export default function MerchantDashboard() {
         <p className="muted-label">Venue hub</p>
         <h2 className="font-black text-white break-words">{merchant.business_name}</h2>
         <p className="text-slate-400">{merchant.location ?? "South Africa"}</p>
+        {(merchant.risk_score ?? 0) > 0 && (
+          <span
+            className={`mt-2 inline-block rounded-full px-3 py-1 text-xs font-bold ${
+              (merchant.risk_score ?? 0) >= 50
+                ? "bg-red-500/20 text-red-300"
+                : "bg-amber-500/20 text-amber-300"
+            }`}
+          >
+            Risk score {merchant.risk_score}/100
+          </span>
+        )}
       </header>
 
       <ProfileCompletionCard fields={profileFields} />
@@ -155,6 +167,9 @@ export default function MerchantDashboard() {
           </Link>
           <Link className="hub-nav-link bg-white/10 text-amber-200" to="/merchant/guards">
             Guards
+          </Link>
+          <Link className="hub-nav-link bg-white/10 text-amber-200" to="/merchant/disputes">
+            Disputes
           </Link>
         </div>
       </div>

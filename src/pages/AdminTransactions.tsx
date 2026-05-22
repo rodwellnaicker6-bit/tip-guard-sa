@@ -49,6 +49,7 @@ export default function AdminTransactions() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [recon, setRecon] = useState<ReconRow[]>([]);
+  const [payoutReport, setPayoutReport] = useState<Record<string, unknown> | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,11 +72,18 @@ export default function AdminTransactions() {
     setLoading(false);
   }, []);
 
+  const loadPayoutReport = useCallback(async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const { data, error: rpcErr } = await supabase.rpc("payout_reconciliation_report", { p_day: day });
+    if (!rpcErr && data) setPayoutReport(data as Record<string, unknown>);
+  }, []);
+
   useEffect(() => {
     queueMicrotask(() => {
       void load();
+      void loadPayoutReport();
     });
-  }, [load]);
+  }, [load, loadPayoutReport]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -193,9 +201,31 @@ export default function AdminTransactions() {
         )}
       </div>
       <section className="stack mt" style={{ marginTop: 24 }}>
+        <h3 style={{ fontSize: 16, margin: 0 }}>Payout reconciliation (today)</h3>
+        <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>
+          RPC <code>payout_reconciliation_report(day)</code> — sample in docs/RECONCILIATION.md.
+        </p>
+        {payoutReport ? (
+          <pre
+            style={{
+              fontSize: 11,
+              overflow: "auto",
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid var(--border)",
+              maxHeight: 200,
+            }}
+          >
+            {JSON.stringify(payoutReport, null, 2)}
+          </pre>
+        ) : (
+          <p style={{ fontSize: 13, color: "var(--muted)" }}>No payout report (apply migration).</p>
+        )}
+      </section>
+      <section className="stack mt" style={{ marginTop: 24 }}>
         <h3 style={{ fontSize: 16, margin: 0 }}>Reconciliation log</h3>
         <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>
-          Batch runs from <code>paystack-reconcile</code>. See docs/RECONCILIATION.md.
+          Batch runs from <code>reconcile-daily</code> / <code>paystack-reconcile</code>. See docs/RECONCILIATION.md and docs/CRON.md.
         </p>
         {recon.length === 0 ? (
           <p style={{ fontSize: 13, color: "var(--muted)" }}>No reconciliation_log rows yet.</p>

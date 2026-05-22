@@ -8,14 +8,25 @@
 | `transactions` | User-facing ledger rows |
 | `reconciliation_log` | Batch run summary (admin-readable) |
 
-## Edge function
+## Edge functions
+
+**Daily (date range):** `reconcile-daily`
+
+```bash
+curl -X POST "https://<ref>.supabase.co/functions/v1/reconcile-daily" \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"from_date":"2026-05-20","to_date":"2026-05-20"}'
+```
+
+**Rolling 24h:** `paystack-reconcile`
 
 ```bash
 curl -X POST "https://<ref>.supabase.co/functions/v1/paystack-reconcile" \
   -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"
 ```
 
-Compares counts in the last **24 hours**:
+Compares counts in the window:
 
 - `payment_events` where `status = 'processed'`
 - `transactions` where `status = 'succeeded'`
@@ -27,6 +38,13 @@ Writes one `reconciliation_log` row with `matched_count`, `mismatch_count`, and 
 ## Admin UI
 
 `/admin/transactions` includes a **Reconciliation** section listing recent `reconciliation_log` rows.
+
+## Payout reconciliation report
+
+```sql
+select public.payout_reconciliation_report(current_date);
+-- Or export JSON in Admin → Transactions (today's report panel).
+```
 
 ## Manual SQL (support)
 

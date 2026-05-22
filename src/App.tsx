@@ -53,6 +53,9 @@ const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const AdminSecurity = lazy(() => import("./pages/AdminSecurity"));
 const AdminTransactions = lazy(() => import("./pages/AdminTransactions"));
 const AdminAnalytics = lazy(() => import("./pages/AdminAnalytics"));
+const AdminMetrics = lazy(() => import("./pages/AdminMetrics"));
+const AdminFraud = lazy(() => import("./pages/AdminFraud"));
+const MerchantDisputes = lazy(() => import("./pages/MerchantDisputes"));
 
 function RouteFallback() {
   return (
@@ -362,6 +365,18 @@ function AppRoutes() {
             </RequireAuth>
           }
         />
+        <Route
+          path="/merchant/disputes"
+          element={
+            <RequireAuth>
+              <RequireMerchant>
+                <Lazy>
+                  <MerchantDisputes />
+                </Lazy>
+              </RequireMerchant>
+            </RequireAuth>
+          }
+        />
       </Route>
 
       <Route
@@ -400,6 +415,26 @@ function AppRoutes() {
           <RequireAdmin>
             <Lazy>
               <AdminAnalytics />
+            </Lazy>
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/admin/metrics"
+        element={
+          <RequireAdmin>
+            <Lazy>
+              <AdminMetrics />
+            </Lazy>
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/admin/fraud"
+        element={
+          <RequireAdmin>
+            <Lazy>
+              <AdminFraud />
             </Lazy>
           </RequireAdmin>
         }

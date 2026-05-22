@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
 import { isMaintenanceMode, maintenanceResponse } from "../_shared/maintenance.ts";
+import { runFraudChecks } from "../_shared/fraudCheck.ts";
 
 async function enqueueWebhookRetry(
   service: SupabaseClient,
@@ -140,6 +141,15 @@ serve(async (req) => {
   const amount = typeof data.amount === "number" ? data.amount : null;
 
   if ((event === "charge.success" || event === "paymentrequest.success") && reference) {
+    const uid = typeof metadata.user_id === "string" ? metadata.user_id : null;
+    if (uid && amount != null) {
+      await runFraudChecks(service, {
+        userId: uid,
+        amountCents: amount,
+        reference,
+        route: "paystack-webhook",
+      });
+    }
     if (metaType === "wallet_topup") {
       const uid = typeof metadata.user_id === "string" ? metadata.user_id : null;
       if (uid && amount != null && amount > 0) {
@@ -218,18 +228,39 @@ serve(async (req) => {
       : typeof data.reference === "string"
       ? data.reference
       : null;
-    const transferStatus = event === "transfer.success"
-      ? "paid"
-      : event === "transfer.failed" || event === "transfer.reversed"
-      ? "rejected"
-      : "processing";
-
     if (transferCode) {
-      const { error: pErr } = await service
-        .from("payout_requests")
-        .update({ status: transferStatus, updated_at: new Date().toISOString() })
-        .eq("provider_reference", transferCode);
-      if (pErr) log("payout_transfer_update_error", { error: pErr.message, transferCode });
+      if (event === "transfer.success") {
+        const { error: pErr } = await service
+          .from("payout_requests")
+          .update({ status: "paid", updated_at: new Date().toISOString() })
+          .eq("provider_reference", transferCode);
+        if (pErr) log("payout_transfer_update_error", { error: pErr.message, transferCode });
+      } else if (event === "transfer.failed" || event === "transfer.reversed") {
+        const { data: payout } = await service
+          .from("payout_requests")
+          .select("id")
+          .eq("provider_reference", transferCode)
+          .maybeSingle();
+        if (payout?.id) {
+          const { data: scheduled } = await service.rpc("schedule_payout_retry", {
+            p_payout_id: payout.id,
+            p_error: event,
+          });
+          if (!scheduled) {
+            await service
+              .from("payout_requests")
+              .update({ status: "failed", last_error: event, updated_at: new Date().toISOString() })
+              .eq("id", payout.id);
+          }
+        } else {
+          log("transfer_event_no_payout", { event, transferCode });
+        }
+      } else {
+        await service
+          .from("payout_requests")
+          .update({ status: "processing", updated_at: new Date().toISOString() })
+          .eq("provider_reference", transferCode);
+      }
     } else {
       log("transfer_event_no_code", { event });
     }

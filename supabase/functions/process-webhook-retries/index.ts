@@ -56,7 +56,7 @@ serve(async (req) => {
     const maxAttempts = row.max_attempts ?? 5;
     if (nextAttempt >= maxAttempts) {
       await service.from("webhook_retry_queue").update({
-        status: "failed",
+        status: "dead_letter",
         error_message: "max_attempts_exceeded",
         updated_at: new Date().toISOString(),
       }).eq("id", row.id);
@@ -89,8 +89,8 @@ serve(async (req) => {
       ok: true,
       scanned: rows?.length ?? 0,
       rescheduled: processed,
-      failed,
-      note: "Replay to paystack-webhook is post-MVP; rows are rescheduled for operator review.",
+      dead_letter: failed,
+      note: "Rows exceeding max_attempts move to dead_letter; replay to paystack-webhook is post-MVP.",
     }),
     { headers: { "Content-Type": "application/json" } },
   );

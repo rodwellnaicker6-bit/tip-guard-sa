@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
 import { isMaintenanceMode, maintenanceResponse } from "../_shared/maintenance.ts";
+import { runFraudChecks } from "../_shared/fraudCheck.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -65,6 +66,25 @@ serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    const { data: tipPre } = await service
+      .from("tips")
+      .select("amount_cents")
+      .eq("paystack_reference", reference)
+      .maybeSingle();
+
+    const fraud = await runFraudChecks(service, {
+      userId: user.id,
+      amountCents: (tipPre as { amount_cents?: number } | null)?.amount_cents,
+      reference,
+      route: "paystack-verify",
+    });
+    if (fraud.blocked) {
+      return new Response(
+        JSON.stringify({ error: "Verify blocked by fraud policy", code: "fraud_blocked" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
     const verifyRes = await fetch(
