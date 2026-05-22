@@ -6,6 +6,7 @@ Short go-live list. Details: [docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md
 
 - [ ] Migrations applied on Supabase (`supabase db push` or `npm run db:push`)
 - [ ] Edge functions deployed: `paystack-initialize`, `paystack-webhook`, `paystack-verify`, `request-payout`
+- [ ] Optional scaffold: `notify-payment` (no email until `RESEND_API_KEY` + `NOTIFY_FROM_EMAIL` in Supabase secrets)
 - [ ] Optional post-MVP: `paystack-reconcile` (stub only)
 - [ ] Supabase secrets: `PAYSTACK_SECRET_KEY`, `PUBLIC_APP_URL` (service role for ops scripts only)
 
@@ -34,6 +35,24 @@ In the Vercel project → **Settings → Environment Variables**, add these name
 | `VITE_DEBUG_BOOT` | `true` for verbose `[TipGuard:boot]` logs on one prod deploy cycle (unset after tracing) |
 
 Never put `SUPABASE_SERVICE_ROLE_KEY`, `PAYSTACK_SECRET_KEY`, or any `sk_*` key in Vercel **client** env. Set Paystack secret and service role in **Supabase Edge** secrets only (see [.env.example](.env.example)).
+
+## Live Paystack go-live
+
+Use this checklist when switching from `pk_test_` to production charges:
+
+- [ ] Paystack dashboard: live mode enabled; webhook URL `https://<project-ref>.supabase.co/functions/v1/paystack-webhook` with live secret
+- [ ] Supabase secrets: `PAYSTACK_SECRET_KEY=sk_live_…` (not test secret)
+- [ ] Vercel **Production**: `VITE_PAYSTACK_PUBLIC_KEY=pk_live_…`
+- [ ] Vercel **Production**: `VITE_PAYSTACK_TEST_MODE=false` (removes test banner; otherwise inferred from key prefix)
+- [ ] Staging/preview still uses `pk_test_` and optional `VITE_PAYSTACK_TEST_MODE=true`
+- [ ] Local dev: keep `pk_test_`; `paystackEnv` warns if `pk_live_` is used with `npm run dev` (does not block prod builds)
+- [ ] Smoke: one live tip ≤ R5, confirm `tips.status=succeeded` and `transactions.status=succeeded` in Supabase
+- [ ] Paystack dashboard: charge appears; webhook delivery 200
+
+## QR links & demo seed
+
+- **Production guards:** `/guard/qr` → **Generate new link & QR** writes `tip_links.token` and `qr_codes.code_token`.
+- **Staging demo data:** `npm run seed:demo` (needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`) — creates demo guard with token `demo-staging-qr-01` and sample tips. See [docs/CONNECT_SUPABASE.md](docs/CONNECT_SUPABASE.md).
 
 ### Blank / black screen on production
 

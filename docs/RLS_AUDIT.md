@@ -68,6 +68,11 @@ Migration `20260521120000_guards_public_directory_view.sql` adds:
 
 **Breaking change (future):** revoking direct `SELECT` on `guards` for `authenticated` and requiring `list_public_guards()` or `guards_public_directory` for customers. Coordinate with mobile/web releases before applying.
 
+## Transactions & tips inserts (21 May 2026)
+
+- **`transactions`**: RLS enabled; policies are **SELECT only** (`transactions_select_own`, `transactions_admin_select`). No client INSERT/UPDATE — rows created by Edge (`paystack-initialize`) and updated by webhook / `paystack-verify` via service_role.
+- **`tips`**: `tips_require_privileged_writer` trigger blocks client writes; settlement via `finalize_tip_from_paystack_reference` (service_role only).
+
 ## Post-MVP
 
 - Revoke broad `guards_select_authenticated` after all clients use RPC/view

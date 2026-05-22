@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
 import PageLoader from "../components/PageLoader";
 import EmptyState from "../components/EmptyState";
+import { FetchError } from "../components/FetchError";
 
 type TxRow = {
   id: string;
@@ -39,23 +40,26 @@ export default function AdminTransactions() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      const { data, error: qErr } = await supabase.from("transactions").select("*").order("created_at", { ascending: false }).limit(500);
-      if (cancelled) return;
-      if (qErr) setError(qErr.message);
-      else {
-        setError(null);
-        setRows((data as TxRow[]) ?? []);
-      }
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data, error: qErr } = await supabase
+      .from("transactions")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (qErr) setError("Could not load transactions. Check admin RLS.");
+    else {
+      setError(null);
+      setRows((data as TxRow[]) ?? []);
+    }
+    setLoading(false);
   }, []);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void load();
+    });
+  }, [load]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -85,7 +89,7 @@ export default function AdminTransactions() {
         Paystack-backed ledger rows (tips, wallet top-ups, future subscriptions). Webhook updates status to succeeded or
         failed.
       </p>
-      {error && <div className="error">{error}</div>}
+      {error ? <FetchError message={error} onRetry={() => void load()} /> : null}
       <div className="stack mt" style={{ gap: 10 }}>
         <label>
           <span style={{ fontSize: 13, color: "var(--muted)" }}>Search</span>

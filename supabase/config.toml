@@ -17,3 +17,6 @@ verify_jwt = true
 
 [functions.paystack-verify]
 verify_jwt = true
+
+[functions.notify-payment]
+verify_jwt = false

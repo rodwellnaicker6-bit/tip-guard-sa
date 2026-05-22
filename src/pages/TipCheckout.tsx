@@ -115,7 +115,7 @@ export default function TipCheckout() {
   }
 
   return (
-    <div className="shell mx-auto flex min-h-screen max-w-md flex-col gap-5 px-5 py-8 pb-28">
+    <div className="shell mx-auto flex min-h-screen max-w-md flex-col gap-5 px-5 py-8 pb-[max(7rem,env(safe-area-inset-bottom))]">
       {checkoutPhase !== "idle" && overlayMsg ? <CheckoutLoadingOverlay message={overlayMsg} /> : null}
       <div className="fx-fade-up">
         <p className="muted-label">Tip checkout</p>

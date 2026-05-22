@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
 
 const log = (msg: string, extra?: Record<string, unknown>) => {
   console.log(JSON.stringify({ msg, ts: new Date().toISOString(), ...extra }));
@@ -31,6 +32,24 @@ serve(async (req) => {
     return new Response("Missing PAYSTACK_SECRET_KEY", { status: 500 });
   }
 
+  const service = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+  );
+
+  const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    req.headers.get("x-real-ip")?.trim() ??
+    "unknown";
+  const rateKey = { userId: `webhook:${clientIp}`, route: "paystack-webhook" };
+  const allowed = await checkRateLimit(service, rateKey, { max: 200, windowSec: 60 });
+  if (!allowed) {
+    return new Response(JSON.stringify({ error: "rate_limit" }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  await recordRateLimitHit(service, rateKey);
+
   const rawBody = await req.text();
   const sig = req.headers.get("x-paystack-signature");
   const ok = await verifySignature(rawBody, sig, secret);
@@ -50,11 +69,6 @@ serve(async (req) => {
   const data = payload.data ?? {};
   const dataId = data.id != null ? String(data.id) : "na";
   const dedupeId = `${event}:${dataId}`;
-
-  const service = createClient(
-    Deno.env.get("SUPABASE_URL") ?? "",
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-  );
 
   let claimed: boolean;
   const { data: providerClaimed, error: providerClaimErr } = await service.rpc("claim_provider_webhook_event", {

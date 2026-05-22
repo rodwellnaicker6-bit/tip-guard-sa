@@ -21,12 +21,20 @@ type Metrics = {
   analytics_24h?: number;
 };
 
-type Tab = "overview" | "guards" | "payouts" | "activity" | "fraud";
+type Tab = "overview" | "guards" | "payouts" | "payments" | "activity" | "fraud";
 
 type GuardRow = { id: string; display_name: string; verified: boolean; user_id: string | null; location: string | null };
 type PayoutRow = { id: string; user_id: string; amount_cents: number; status: string; created_at: string };
 type LogRow = { id: number; action: string; entity_type: string | null; created_at: string; meta: unknown };
 type FraudRow = { id: string; kind: string; created_at: string; detail: unknown };
+type FailedTxRow = {
+  id: string;
+  user_id: string;
+  type: string;
+  amount_cents: number;
+  paystack_reference: string | null;
+  created_at: string;
+};
 
 export default function AdminDashboard() {
   const toast = useToast();
@@ -39,6 +47,7 @@ export default function AdminDashboard() {
   const [payouts, setPayouts] = useState<PayoutRow[]>([]);
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [fraud, setFraud] = useState<FraudRow[]>([]);
+  const [failedTx, setFailedTx] = useState<FailedTxRow[]>([]);
 
   const loadMetrics = useCallback(async () => {
     const { data, error: rpcErr } = await supabase.rpc("admin_dashboard_metrics");
@@ -62,16 +71,18 @@ export default function AdminDashboard() {
   }, []);
 
   const loadLists = useCallback(async () => {
-    const [gRes, pRes, lRes, fRes] = await Promise.all([
+    const [gRes, pRes, lRes, fRes, txRes] = await Promise.all([
       supabase.from("guards").select("id, display_name, verified, user_id, location").eq("verified", false).order("created_at", { ascending: false }).limit(50),
       supabase.from("payout_requests").select("id, user_id, amount_cents, status, created_at").order("created_at", { ascending: false }).limit(50),
       supabase.from("activity_logs").select("id, action, entity_type, created_at, meta").order("created_at", { ascending: false }).limit(40),
       supabase.from("fraud_events").select("id, kind, created_at, detail").order("created_at", { ascending: false }).limit(30),
+      supabase.from("transactions").select("id, user_id, type, amount_cents, paystack_reference, created_at").eq("status", "failed").order("created_at", { ascending: false }).limit(30),
     ]);
     if (!gRes.error && gRes.data) setPendingGuards(gRes.data as GuardRow[]);
     if (!pRes.error && pRes.data) setPayouts(pRes.data as PayoutRow[]);
     if (!lRes.error && lRes.data) setLogs(lRes.data as LogRow[]);
     if (!fRes.error && fRes.data) setFraud(fRes.data as FraudRow[]);
+    if (!txRes.error && txRes.data) setFailedTx(txRes.data as FailedTxRow[]);
   }, []);
 
   useEffect(() => {
@@ -107,6 +118,32 @@ export default function AdminDashboard() {
     void loadMetrics();
   }
 
+  async function rejectGuard(id: string, name: string) {
+    const { error: fErr } = await supabase.from("fraud_events").insert({
+      kind: "verification_rejected",
+      detail: { guard_id: id, display_name: name },
+    });
+    if (fErr) {
+      toast.error(fErr.message);
+      return;
+    }
+    toast.success("Verification rejected (logged).");
+    setPendingGuards((prev) => prev.filter((g) => g.id !== id));
+  }
+
+  async function flagGuard(id: string, name: string) {
+    const { error: fErr } = await supabase.from("fraud_events").insert({
+      kind: "admin_flag",
+      detail: { guard_id: id, display_name: name },
+    });
+    if (fErr) {
+      toast.error(fErr.message);
+      return;
+    }
+    toast.success("Guard flagged for review.");
+    void loadLists();
+  }
+
   async function setPayoutStatus(id: string, status: "processing" | "paid" | "rejected") {
     const { error: uErr } = await supabase.from("payout_requests").update({ status }).eq("id", id);
     if (uErr) {
@@ -123,6 +160,7 @@ export default function AdminDashboard() {
     { id: "overview", label: "Overview" },
     { id: "guards", label: "Guards" },
     { id: "payouts", label: "Payouts" },
+    { id: "payments", label: "Failed" },
     { id: "activity", label: "Activity" },
     { id: "fraud", label: "Fraud" },
   ];
@@ -187,16 +225,58 @@ export default function AdminDashboard() {
                   <p className="font-bold text-white">{g.display_name}</p>
                   <p className="text-xs text-slate-500">{g.location ?? "—"}</p>
                 </div>
-                <button
-                  type="button"
-                  className="rounded-xl bg-emerald-500/20 px-4 py-2 text-sm font-bold text-emerald-300"
-                  onClick={() => void approveGuard(g.id)}
-                >
-                  Approve
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-xl bg-emerald-500/20 px-4 py-2 text-sm font-bold text-emerald-300"
+                    onClick={() => void approveGuard(g.id)}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl bg-red-500/20 px-4 py-2 text-sm font-bold text-red-300"
+                    onClick={() => void rejectGuard(g.id, g.display_name)}
+                  >
+                    Reject
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl border border-amber-500/30 px-4 py-2 text-sm font-bold text-amber-300"
+                    onClick={() => void flagGuard(g.id, g.display_name)}
+                  >
+                    Flag
+                  </button>
+                </div>
               </div>
             ))
           )}
+        </section>
+      )}
+
+      {tab === "payments" && (
+        <section className="space-y-2 overflow-x-auto">
+          <h2 className="text-sm font-bold uppercase text-slate-500">Recent failed payments</h2>
+          {failedTx.length === 0 ? (
+            <p className="text-sm text-slate-500">No failed transaction rows.</p>
+          ) : (
+            failedTx.map((t) => (
+              <div key={t.id} className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-sm">
+                <p className="font-bold text-red-200/90">
+                  {zarFromCents(Number(t.amount_cents))} · {t.type}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {new Date(t.created_at).toLocaleString()} · user {t.user_id.slice(0, 8)}…
+                </p>
+                {t.paystack_reference && (
+                  <p className="mt-1 truncate font-mono text-[11px] text-amber-200/70">{t.paystack_reference}</p>
+                )}
+              </div>
+            ))
+          )}
+          <Link className="block text-center text-sm font-semibold text-amber-400" to="/admin/transactions">
+            Full transaction ledger →
+          </Link>
         </section>
       )}
 

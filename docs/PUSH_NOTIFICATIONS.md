@@ -6,7 +6,21 @@ Full FCM / Web Push is **not** enabled in this repo — no VAPID or Firebase key
 
 1. **Web Push** — service worker + `push` event (see `public/sw-push.stub.js`, commented)
 2. **Supabase** — `notifications` table + Edge Function to fan out (migration `20260620120000_mvp_phase2_sessions_notifications.sql`)
-3. **FCM** — optional native wrapper post-MVP
+3. **Email** — `notify-payment` Edge Function (Resend); returns `{ sent: false, reason: "notifications_disabled" }` until secrets are set
+4. **FCM** — optional native wrapper post-MVP
+
+### `notify-payment` (scaffold)
+
+Deploy: `supabase functions deploy notify-payment`
+
+Secrets (optional until go-live):
+
+```bash
+RESEND_API_KEY=re_...
+NOTIFY_FROM_EMAIL=payments@yourdomain.com
+```
+
+Invoke with `{ "reference": "<paystack_ref>", "event": "tip_succeeded" }`. Wire from `post_tip_settlement_hooks` when ready — not called automatically in MVP.
 
 ## Env vars (future)
 

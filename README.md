@@ -5,12 +5,15 @@ Web app for digital tipping in South Africa: customers find guards and pay; guar
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Production architecture](docs/PRODUCTION_ARCHITECTURE.md)
 - [Paystack (ZAR)](docs/PAYSTACK_SETUP.md)
 - [Supabase deploy](docs/SUPABASE_DEPLOY.md)
 - [Deploy checklist (short)](DEPLOY.md)
 - [Production checklist](docs/PRODUCTION_CHECKLIST.md)
 - [Auth smoke tests](docs/AUTH_SMOKE_TESTS.md)
 - [Migrations & RLS verification](docs/MIGRATIONS_AND_RLS.md)
+- [RLS audit](docs/RLS_AUDIT.md)
+- [Push / email scaffold](docs/PUSH_NOTIFICATIONS.md)
 
 ## Quick start
 
@@ -52,15 +55,30 @@ See `src/components/RequireAuth.tsx`: `RequireAuth`, `RequireGuard`, `RequireMer
 
 RLS on customer/guard/admin paths; service role only in Edge. Never commit `.env` (gitignored).
 
+## Production quickstart
+
+1. **Database** — `supabase link` → `supabase db push` (includes wallets, `merchant_payment_analytics_v2`, Paystack RPCs). See [MIGRATIONS_AND_RLS.md](docs/MIGRATIONS_AND_RLS.md).
+2. **Edge** — `supabase secrets set PAYSTACK_SECRET_KEY=… PUBLIC_APP_URL=https://your.app` then deploy:
+   `paystack-initialize paystack-verify paystack-webhook request-payout` (optional: `notify-payment`).
+3. **Vercel** — Production env (build-time):
+
+   | Variable | Notes |
+   |----------|--------|
+   | `VITE_SUPABASE_URL` | Project API URL |
+   | `VITE_SUPABASE_ANON_KEY` | Anon / publishable key |
+   | `VITE_PAYSTACK_PUBLIC_KEY` | `pk_test_` staging · `pk_live_` production |
+   | `VITE_PAYSTACK_TEST_MODE` | Optional; set `false` for live go-live |
+
+   Never expose `SUPABASE_SERVICE_ROLE_KEY` or `PAYSTACK_SECRET_KEY` in Vercel client env.
+4. **Redeploy** — Save env → trigger new **Production** build (see [DEPLOY.md](DEPLOY.md) live Paystack section).
+5. **Auth** — Supabase redirect URLs: `https://<domain>/auth/callback`, `/auth/reset`.
+6. **Verify** — `npm run lint && npm run build && npm run test:e2e` · login → tip with `pk_test_` · admin `/admin` queues.
+
+Full checklist: [PRODUCTION_CHECKLIST.md](docs/PRODUCTION_CHECKLIST.md) · [PRODUCTION_ARCHITECTURE.md](docs/PRODUCTION_ARCHITECTURE.md).
+
 ## Deploy (Vercel)
 
-1. Copy `.env.example` → Vercel **Production** env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PAYSTACK_PUBLIC_KEY` (never `SUPABASE_SERVICE_ROLE_KEY` or `PAYSTACK_SECRET_KEY` in the client).
-2. Framework preset **Vite**; set `VITE_*` env vars in Vercel (see `DEPLOY.md`). If they are missing at runtime, the app shows a configuration screen instead of a blank page.
-3. `vercel.json` SPA rewrite sends all routes to `index.html` (client routes like `/guard`, `/t/:token`).
-4. After deploy: add `https://<domain>/auth/callback` and `/auth/reset` to Supabase Auth redirect URLs (see [Supabase deploy](docs/SUPABASE_DEPLOY.md)).
-5. Smoke: login → role dashboard → test Paystack with `pk_test_` on staging first.
-
-Full checklist: [Production checklist](docs/PRODUCTION_CHECKLIST.md) · [Roadmap & deployment](docs/ROADMAP_AND_DEPLOYMENT.md).
+`vercel.json` rewrites all routes to `index.html` and sets security/cache headers on `/assets/*`. Framework preset: **Vite**.
 
 ## Legacy UI note
 
