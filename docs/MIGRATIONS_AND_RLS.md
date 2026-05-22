@@ -105,4 +105,32 @@ These are enforced in React (`RequireAuth`, `RequireGuard`, `RequireAdmin`, `Req
 
 ## Launch pass (2026-05-21)
 
+- `20260625150000_payout_schedule_preferences.sql` — guard/merchant payout schedule columns.
 - `20260625160000_launch_qr_hardening.sql` — `qr_codes.expires_at`, merchant verification in `resolve_tip_target`, QR scan audit via `payment_events` (`provider=tipguard`), `claim_tip_link_session` for checkout anti-replay.
+- `20260625170000_merchant_ops_launch.sql` — `qr_type`, `regenerate_qr_code_token`, merchant invites scaffold, extended `resolve_tip_target`.
+
+### Drift repair (production validation)
+
+If `supabase db push` fails:
+
+1. **Orphan remote version** not in repo (e.g. `20260521192141`):
+   ```bash
+   supabase migration repair --status reverted 20260521192141
+   ```
+2. **History ahead of schema** (only `20260625140000` in history but missing tables/RPCs): apply SQL per file:
+   ```bash
+   supabase db query --linked -f supabase/migrations/20260624130000_missing_payment_qr_rpcs.sql
+   supabase db query --linked -f supabase/migrations/20260625150000_payout_schedule_preferences.sql
+   supabase db query --linked -f supabase/migrations/20260625160000_launch_qr_hardening.sql
+   supabase db query --linked "drop function if exists public.resolve_tip_target(text)"
+   supabase db query --linked -f supabase/migrations/20260625170000_merchant_ops_launch.sql
+   ```
+3. **`profiles_select_own` duplicate** on push: run conflicting file with `db query --linked -f` (policies use `drop policy if exists` in repair migrations).
+4. **`payment_events` anon readable**: after `20260624130000`, revoke anon SELECT and add admin policy:
+   ```sql
+   revoke select on public.payment_events from anon;
+   create policy payment_events_admin_select on public.payment_events
+     for select to authenticated using (public.is_admin());
+   ```
+5. Mark history: `supabase migration repair --status applied <version>` for each applied file, then `supabase migration list` — local and remote columns should match.
+6. Verify: `npm run verify:supabase` (must exit **0** for GO).

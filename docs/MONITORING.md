@@ -61,7 +61,7 @@ Run after migrations:
 npx tsx scripts/stress-qr-resolve.ts <token> 50
 ```
 
-**21 May 2026** (`demo-staging-qr-01`, remote): p50 **281ms**, p95 **354ms**, 0/50 errors. Alert if p95 &gt; 800ms sustained or error rate &gt; 10%.
+**21 May 2026** (`demo-staging-qr-01`, remote, post-70000): p50 **254ms**, p95 **363ms**, 0/50 errors (`npm run stress:qr`). Alert if p95 &gt; 800ms sustained or error rate &gt; 10%.
 
 Edge functions: log `webhook_claim` / `payment_events_init` errors in Supabase Dashboard → Edge → Logs.
 
