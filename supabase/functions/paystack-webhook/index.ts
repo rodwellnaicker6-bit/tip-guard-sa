@@ -230,6 +230,17 @@ serve(async (req) => {
       : null;
     if (transferCode) {
       if (event === "transfer.success") {
+        const { data: payout } = await service
+          .from("payout_requests")
+          .select("id")
+          .eq("provider_reference", transferCode)
+          .maybeSingle();
+        if (payout?.id) {
+          const { error: settleErr } = await service.rpc("settle_guard_payout_hold", {
+            p_payout_id: payout.id,
+          });
+          if (settleErr) log("settle_payout_hold_error", { error: settleErr.message, payoutId: payout.id });
+        }
         const { error: pErr } = await service
           .from("payout_requests")
           .update({ status: "paid", updated_at: new Date().toISOString() })
@@ -250,7 +261,8 @@ serve(async (req) => {
             await service
               .from("payout_requests")
               .update({ status: "failed", last_error: event, updated_at: new Date().toISOString() })
-              .eq("id", payout.id);
+              .eq("id", payout.id)
+              .neq("status", "failed");
           }
         } else {
           log("transfer_event_no_payout", { event, transferCode });

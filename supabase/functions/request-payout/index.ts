@@ -126,6 +126,11 @@ serve(async (req) => {
 
     if (insErr) {
       console.error(insErr);
+      const { error: rollbackErr } = await service.rpc("reverse_guard_payout_hold", {
+        p_guard_id: guard.id,
+        p_amount_cents: amountCents,
+      });
+      if (rollbackErr) console.error("payout_hold_rollback_failed", rollbackErr);
       return new Response(JSON.stringify({ error: "Could not record payout request" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
