@@ -15,6 +15,10 @@ Web app for digital tipping in South Africa: customers find guards and pay; guar
 - [RLS audit](docs/RLS_AUDIT.md)
 - [Push / email scaffold](docs/PUSH_NOTIFICATIONS.md)
 
+## Demo mode
+
+Set `VITE_DEMO_MODE=true` in `.env` for staging walkthroughs (seed users, demo QR). See [docs/DEMO_ENVIRONMENT.md](docs/DEMO_ENVIRONMENT.md). Leave unset in production.
+
 ## Quick start
 
 ```bash
@@ -36,6 +40,9 @@ npm run dev
 | `npm run dev` | Vite dev server |
 | `npm run build` | Production bundle (validates env in prod mode) |
 | `npm run lint` | ESLint |
+| `npm run verify:supabase` | RPC + RLS smoke checks |
+| `npm run verify:paystack` | Paystack env + init smoke |
+| `npm run seed:demo` | Staging demo data |
 | `npm run test:e2e` | Playwright (starts dev server via `playwright.config.ts`) |
 
 ## Migrations

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import PageLoader from "../components/PageLoader";
+import { FetchError } from "../components/FetchError";
 import { sanitizeDisplayName } from "../lib/sanitize";
 
 type LocationRow = {
@@ -22,6 +23,7 @@ export default function MerchantLocations() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -47,7 +49,7 @@ export default function MerchantLocations() {
     return () => {
       c = true;
     };
-  }, [user?.id]);
+  }, [user?.id, reload]);
 
   async function onAdd(e: FormEvent) {
     e.preventDefault();
@@ -85,7 +87,10 @@ export default function MerchantLocations() {
         <h1 className="text-2xl font-black text-white">Locations</h1>
         <p className="mt-1 text-sm text-slate-400">Sites where your guards operate. QR codes can be tied to a location.</p>
       </header>
-      {error && <div className="error">{error}</div>}
+      {error ? <FetchError message={error} onRetry={() => setReload((n) => n + 1)} /> : null}
+      <Link className="text-sm text-amber-400" to="/merchant/qr">
+        Manage QR codes for locations →
+      </Link>
       <form className="space-y-2 rounded-2xl border border-white/10 bg-white/5 p-4" onSubmit={onAdd}>
         <input
           className="field tap-target w-full"

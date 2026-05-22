@@ -8,6 +8,7 @@ export type ResolvedTipTarget = {
   guard_display_name: string;
   default_amount_cents: number | null;
   scan_count: number;
+  qr_type?: string | null;
 };
 
 function mapRow(row: Record<string, unknown>): ResolvedTipTarget | null {
@@ -20,6 +21,7 @@ function mapRow(row: Record<string, unknown>): ResolvedTipTarget | null {
     guard_display_name: String(row.guard_display_name ?? "Guard"),
     default_amount_cents: (row.default_amount_cents as number | null) ?? null,
     scan_count: Number(row.scan_count ?? 0),
+    qr_type: (row.qr_type as string | null) ?? null,
   };
 }
 

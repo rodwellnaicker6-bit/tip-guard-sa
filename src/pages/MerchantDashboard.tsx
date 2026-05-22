@@ -200,6 +200,9 @@ export default function MerchantDashboard() {
           <Link className="hub-nav-link bg-white/10 text-amber-200" to="/merchant/locations">
             Locations
           </Link>
+          <Link className="hub-nav-link bg-white/10 text-amber-200" to="/merchant/qr">
+            QR codes
+          </Link>
           <Link className="hub-nav-link bg-white/10 text-amber-200" to="/merchant/guards">
             Guards
           </Link>

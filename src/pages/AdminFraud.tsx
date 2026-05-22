@@ -16,6 +16,14 @@ type DlqRow = {
 
 type FraudRow = { id: string; kind: string; created_at: string; detail: unknown };
 type DisputeRow = { id: string; merchant_id: string; status: string; reason: string | null; created_at: string };
+type PaymentEventRow = {
+  id: string;
+  provider: string;
+  event_type: string;
+  status: string;
+  created_at: string;
+  paystack_reference: string | null;
+};
 
 export default function AdminFraud() {
   const toast = useToast();
@@ -23,10 +31,12 @@ export default function AdminFraud() {
   const [pending, setPending] = useState<DlqRow[]>([]);
   const [fraud, setFraud] = useState<FraudRow[]>([]);
   const [disputes, setDisputes] = useState<DisputeRow[]>([]);
+  const [paymentEvents, setPaymentEvents] = useState<PaymentEventRow[]>([]);
+  const [qrScans, setQrScans] = useState<PaymentEventRow[]>([]);
   const [ready, setReady] = useState(false);
 
   const load = useCallback(async () => {
-    const [dlqRes, pendRes, fRes, dRes] = await Promise.all([
+    const [dlqRes, pendRes, fRes, dRes, peRes, scanRes] = await Promise.all([
       supabase
         .from("webhook_retry_queue")
         .select("id, event_id, event_type, attempts, error_message, updated_at")
@@ -46,11 +56,24 @@ export default function AdminFraud() {
         .eq("status", "open")
         .order("created_at", { ascending: false })
         .limit(30),
+      supabase
+        .from("payment_events")
+        .select("id, provider, event_type, status, created_at, paystack_reference")
+        .order("created_at", { ascending: false })
+        .limit(25),
+      supabase
+        .from("payment_events")
+        .select("id, provider, event_type, status, created_at, paystack_reference")
+        .eq("event_type", "qr.scan")
+        .order("created_at", { ascending: false })
+        .limit(20),
     ]);
     if (!dlqRes.error && dlqRes.data) setDlq(dlqRes.data as DlqRow[]);
     if (!pendRes.error && pendRes.data) setPending(pendRes.data as DlqRow[]);
     if (!fRes.error && fRes.data) setFraud(fRes.data as FraudRow[]);
     if (!dRes.error && dRes.data) setDisputes(dRes.data as DisputeRow[]);
+    if (!peRes.error && peRes.data) setPaymentEvents(peRes.data as PaymentEventRow[]);
+    if (!scanRes.error && scanRes.data) setQrScans(scanRes.data as PaymentEventRow[]);
   }, []);
 
   async function resolveDispute(id: string) {
@@ -151,6 +174,40 @@ export default function AdminFraud() {
               >
                 Resolve
               </button>
+            </div>
+          ))
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-bold uppercase text-slate-500">QR scans (payment_events)</h2>
+        {qrScans.length === 0 ? (
+          <p className="text-sm text-slate-500">No qr.scan events in audit log.</p>
+        ) : (
+          qrScans.map((e) => (
+            <div key={e.id} className="rounded-lg border border-amber-500/10 px-3 py-2 text-xs text-slate-400">
+              {e.status} · {new Date(e.created_at).toLocaleString()}
+            </div>
+          ))
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-bold uppercase text-slate-500">Recent payment_events</h2>
+        {paymentEvents.length === 0 ? (
+          <p className="text-sm text-slate-500">No payment events (admin RLS or migration).</p>
+        ) : (
+          paymentEvents.map((e) => (
+            <div key={e.id} className="rounded-lg border border-white/5 px-3 py-2 text-xs">
+              <strong className="text-slate-300">{e.provider}</strong> · {e.event_type} · {e.status}
+              <br />
+              <span className="text-slate-500">{new Date(e.created_at).toLocaleString()}</span>
+              {e.paystack_reference ? (
+                <>
+                  <br />
+                  <span className="font-mono text-amber-200/70">{e.paystack_reference}</span>
+                </>
+              ) : null}
             </div>
           ))
         )}

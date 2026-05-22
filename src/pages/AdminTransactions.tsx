@@ -50,6 +50,8 @@ export default function AdminTransactions() {
   const [dateTo, setDateTo] = useState("");
   const [recon, setRecon] = useState<ReconRow[]>([]);
   const [payoutReport, setPayoutReport] = useState<Record<string, unknown> | null>(null);
+  const [reconBusy, setReconBusy] = useState(false);
+  const [reconMsg, setReconMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,6 +79,37 @@ export default function AdminTransactions() {
     const { data, error: rpcErr } = await supabase.rpc("payout_reconciliation_report", { p_day: day });
     if (!rpcErr && data) setPayoutReport(data as Record<string, unknown>);
   }, []);
+
+  async function runDailyReconcile() {
+    setReconBusy(true);
+    setReconMsg(null);
+    const base = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, "");
+    const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+    if (!base || !token) {
+      setReconMsg("Sign in as admin with a valid session.");
+      setReconBusy(false);
+      return;
+    }
+    const res = await fetch(`${base}/functions/v1/reconcile-daily`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: anon ?? "",
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    });
+    const json = await res.json().catch(() => ({}));
+    setReconBusy(false);
+    if (!res.ok) {
+      setReconMsg((json as { error?: string }).error ?? `Reconcile failed (${res.status})`);
+      return;
+    }
+    setReconMsg("Reconcile run queued/completed. Refresh log below.");
+    await load();
+  }
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -223,9 +256,24 @@ export default function AdminTransactions() {
         )}
       </section>
       <section className="stack mt" style={{ marginTop: 24 }}>
+        <h3 style={{ fontSize: 16, margin: 0 }}>Settlement reconciliation</h3>
+        <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>
+          Trigger <code>reconcile-daily</code> (admin session). Cron: docs/CRON.md · details: docs/RECONCILIATION.md.
+        </p>
+        <button
+          type="button"
+          className="btn-gold mt-2 rounded-xl px-4 py-2 text-sm font-bold"
+          disabled={reconBusy}
+          onClick={() => void runDailyReconcile()}
+        >
+          {reconBusy ? "Running…" : "Run daily reconcile"}
+        </button>
+        {reconMsg ? <p style={{ fontSize: 13, margin: "8px 0 0", color: "var(--muted)" }}>{reconMsg}</p> : null}
+      </section>
+      <section className="stack mt" style={{ marginTop: 24 }}>
         <h3 style={{ fontSize: 16, margin: 0 }}>Reconciliation log</h3>
         <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>
-          Batch runs from <code>reconcile-daily</code> / <code>paystack-reconcile</code>. See docs/RECONCILIATION.md and docs/CRON.md.
+          Batch results from <code>reconcile-daily</code> / <code>paystack-reconcile</code>.
         </p>
         {recon.length === 0 ? (
           <p style={{ fontSize: 13, color: "var(--muted)" }}>No reconciliation_log rows yet.</p>

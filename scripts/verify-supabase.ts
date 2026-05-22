@@ -93,13 +93,22 @@ async function main() {
       pass("RPC claim_tip_link_session (launch QR hardening)");
     }
 
-    const { error: qrColErr } = await admin.from("qr_codes").select("expires_at, revoked_at").limit(1);
+    const { error: qrColErr } = await admin.from("qr_codes").select("expires_at, revoked_at, qr_type").limit(1);
     if (qrColErr?.message.includes("expires_at") || qrColErr?.code === "42703") {
-      fail("qr_codes.expires_at", "column missing — apply 20260625160000_launch_qr_hardening.sql");
+      fail("qr_codes columns", "missing — apply launch migrations");
     } else if (qrColErr) {
-      warn(`qr_codes.expires_at: ${qrColErr.message}`);
+      warn(`qr_codes columns: ${qrColErr.message}`);
     } else {
-      pass("qr_codes.expires_at + revoked_at columns");
+      pass("qr_codes expires_at, revoked_at, qr_type");
+    }
+
+    const { error: regenErr } = await admin.rpc("regenerate_qr_code_token", {
+      p_qr_id: "00000000-0000-0000-0000-000000000001",
+    });
+    if (regenErr?.code === "PGRST202" || regenErr?.message.includes("Could not find the function")) {
+      fail("RPC regenerate_qr_code_token", "missing — apply 20260625170000_merchant_ops_launch.sql");
+    } else {
+      pass("RPC regenerate_qr_code_token (exists)");
     }
     const { data: buckets, error: bErr } = await admin.storage.listBuckets();
     if (bErr) fail("Storage listBuckets", bErr.message);

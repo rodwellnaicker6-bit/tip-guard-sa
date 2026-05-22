@@ -12,6 +12,8 @@ type OpsMetrics = {
   reconciliation_mismatches_7d?: number;
   pending_webhook_retries?: number;
   open_disputes?: number;
+  qr_scans_24h?: number;
+  payment_events_24h?: number;
 };
 
 export default function AdminMetrics() {
@@ -49,6 +51,8 @@ export default function AdminMetrics() {
     { label: "Recon mismatches (7d)", value: String(metrics?.reconciliation_mismatches_7d ?? 0) },
     { label: "Pending retries", value: String(metrics?.pending_webhook_retries ?? 0) },
     { label: "Open disputes", value: String(metrics?.open_disputes ?? 0) },
+    { label: "QR scans (24h)", value: String(metrics?.qr_scans_24h ?? 0) },
+    { label: "Payment events (24h)", value: String(metrics?.payment_events_24h ?? 0) },
   ];
 
   return (
@@ -70,6 +74,14 @@ export default function AdminMetrics() {
         <Link className="rounded-xl border border-white/10 py-3 text-center text-sm font-semibold text-amber-400" to="/admin/fraud">
           Fraud & DLQ
         </Link>
+        <a
+          className="rounded-xl border border-white/10 py-3 text-center text-sm font-semibold text-amber-400"
+          href={`${import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, "")}/functions/v1/health`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Health endpoint
+        </a>
         <Link className="rounded-xl border border-white/10 py-3 text-center text-sm font-semibold text-amber-400" to="/admin">
           Admin hub
         </Link>

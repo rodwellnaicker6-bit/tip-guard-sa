@@ -37,6 +37,8 @@ const QrTipLanding = lazy(() => import("./pages/QrTipLanding"));
 const MerchantDashboard = lazy(() => import("./pages/MerchantDashboard"));
 const MerchantSetup = lazy(() => import("./pages/MerchantSetup"));
 const MerchantLocations = lazy(() => import("./pages/MerchantLocations"));
+const MerchantQr = lazy(() => import("./pages/MerchantQr"));
+const MerchantQrPrint = lazy(() => import("./pages/MerchantQrPrint"));
 const MerchantGuards = lazy(() => import("./pages/MerchantGuards"));
 const MerchantKyc = lazy(() => import("./pages/MerchantKyc"));
 const GuardHome = lazy(() => import("./pages/GuardHome"));
@@ -336,6 +338,30 @@ function AppRoutes() {
               <RequireMerchant>
                 <Lazy>
                   <MerchantLocations />
+                </Lazy>
+              </RequireMerchant>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/merchant/qr"
+          element={
+            <RequireAuth>
+              <RequireMerchant>
+                <Lazy>
+                  <MerchantQr />
+                </Lazy>
+              </RequireMerchant>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/merchant/qr/print"
+          element={
+            <RequireAuth>
+              <RequireMerchant>
+                <Lazy>
+                  <MerchantQrPrint />
                 </Lazy>
               </RequireMerchant>
             </RequireAuth>

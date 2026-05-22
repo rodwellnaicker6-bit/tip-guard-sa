@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
@@ -79,6 +79,33 @@ export default function GuardHistory() {
     setLoadingMore(false);
   }
 
+  const tipsByDay = useMemo(() => {
+    const map = new Map<string, TipRow[]>();
+    for (const t of tips) {
+      const day = new Date(t.created_at).toLocaleDateString(undefined, {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+      const list = map.get(day) ?? [];
+      list.push(t);
+      map.set(day, list);
+    }
+    return [...map.entries()];
+  }, [tips]);
+
+  const dayTotals = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const [day, rows] of tipsByDay) {
+      out.set(
+        day,
+        rows.filter((r) => r.status === "succeeded").reduce((s, r) => s + r.amount_cents, 0),
+      );
+    }
+    return out;
+  }, [tipsByDay]);
+
   if (loading && tips.length === 0) return <PageLoader />;
 
   return (
@@ -111,19 +138,33 @@ export default function GuardHistory() {
       {error ? <FetchError message={error} onRetry={() => setReload((n) => n + 1)} /> : null}
 
       {tips.length > 0 ? (
-        <ul className="stack fx-fade-up" style={{ listStyle: "none", padding: 0, margin: 0, gap: 10 }}>
-          {tips.map((t) => (
-            <li key={t.id} className="tx-row">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <strong className="text-lg text-white">{zarFromCents(t.amount_cents)}</strong>
-                  <TxStatusBadge status={t.status} />
-                </div>
-                <p className="mt-1 text-xs text-slate-500">{new Date(t.created_at).toLocaleString()}</p>
+        <div className="stack fx-fade-up" style={{ gap: 16 }}>
+          {tipsByDay.map(([day, dayTips]) => (
+            <section key={day}>
+              <div className="mb-2 flex items-baseline justify-between gap-2">
+                <h3 className="text-sm font-bold text-slate-300">{day}</h3>
+                {(dayTotals.get(day) ?? 0) > 0 ? (
+                  <span className="text-xs font-semibold text-amber-400">
+                    {zarFromCents(dayTotals.get(day) ?? 0)} succeeded
+                  </span>
+                ) : null}
               </div>
-            </li>
+              <ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0, gap: 10 }}>
+                {dayTips.map((t) => (
+                  <li key={t.id} className="tx-row">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <strong className="text-lg text-white">{zarFromCents(t.amount_cents)}</strong>
+                        <TxStatusBadge status={t.status} />
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">{new Date(t.created_at).toLocaleTimeString()}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       ) : (
         !error && (
           <EmptyState

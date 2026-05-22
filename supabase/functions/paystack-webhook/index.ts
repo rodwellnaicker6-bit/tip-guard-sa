@@ -180,6 +180,30 @@ serve(async (req) => {
         reference,
       );
       if (uErr) log("transaction_update_error", { error: uErr.message, reference });
+
+      const notifyUrl = `${Deno.env.get("SUPABASE_URL") ?? ""}/functions/v1/notify-payment`;
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+      if (notifyUrl && serviceKey) {
+        const guardId = typeof metadata.guard_id === "string" ? metadata.guard_id : null;
+        if (guardId) {
+          const { data: guardRow } = await service.from("guards").select("user_id").eq("id", guardId).maybeSingle();
+          const guardUserId = guardRow?.user_id as string | undefined;
+          if (guardUserId) {
+            fetch(notifyUrl, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${serviceKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                reference,
+                user_id: guardUserId,
+                event: "tip_received",
+              }),
+            }).catch((e) => log("notify_payment_invoke_error", { error: String(e) }));
+          }
+        }
+      }
     }
   }
 

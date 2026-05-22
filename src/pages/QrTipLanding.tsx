@@ -48,8 +48,9 @@ export default function QrTipLanding() {
       } else {
         setTarget(resolved);
         const preset = searchParams.get("amount");
-        if (preset && PRESETS.includes(Number(preset) as (typeof PRESETS)[number])) {
-          setAmount(preset);
+        const presetNum = preset ? Number(preset) : NaN;
+        if (preset && Number.isFinite(presetNum) && presetNum >= 1 && presetNum <= 5000) {
+          setAmount(String(Math.round(presetNum)));
         } else if (resolved.default_amount_cents) {
           setAmount(String(Math.round(resolved.default_amount_cents / 100)));
         }
