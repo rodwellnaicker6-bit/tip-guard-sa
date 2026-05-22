@@ -20,6 +20,18 @@ Requires `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 
 Run against staging only. High volume may inflate `payment_events` qr.scan rows (service-side audit).
 
+## Beta production target
+
+Controlled beta exit criteria ([BETA_ROLLOUT_PLAN.md](./BETA_ROLLOUT_PLAN.md)):
+
+| Metric | Target |
+|--------|--------|
+| Iterations | **100** (`npx tsx scripts/stress-qr-resolve.ts <prod-token> 100`) |
+| p95 latency | **&lt; 500ms** |
+| Error rate | **&lt; 5%** (revoked/expired tokens excluded from denominator if documented) |
+
+Run against a **live** merchant QR token during Phase 1; avoid demo/staging tokens on production.
+
 ## Indexes
 
 If p95 > 200ms, confirm indexes from `20260625160000_launch_qr_hardening.sql` and `qr_codes_token_idx` are applied.

@@ -60,6 +60,9 @@ export default function AdminMetrics() {
       <header>
         <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Operations</p>
         <h1 className="text-2xl font-black text-white">Production metrics</h1>
+        <p className="mt-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+          Controlled beta — daily checks in <span className="font-mono text-xs">docs/BETA_ROLLOUT_PLAN.md</span>
+        </p>
         {error && <p className="mt-1 text-sm text-amber-400">{error}</p>}
       </header>
       <div className="grid gap-3 sm:grid-cols-2">

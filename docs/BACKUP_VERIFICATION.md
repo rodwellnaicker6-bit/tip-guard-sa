@@ -9,6 +9,16 @@ On **Pro** (or higher) plans:
 
 Free tier: rely on manual exports before risky migrations; upgrade before production go-live.
 
+## Beta weekly check (production)
+
+During [BETA_ROLLOUT_PLAN.md](./BETA_ROLLOUT_PLAN.md) Phases 0–1, every **Monday**:
+
+- [ ] Supabase Dashboard → **Database** → **Backups** — latest snapshot &lt; 24h old
+- [ ] PITR window documented (target ≥ 7 days)
+- [ ] Record backup timestamp in operator log (date + retention)
+- [ ] If migration applied past week: confirm pre-migration backup exists
+- [ ] Spot-check: `select count(*) from public.tips where status = 'succeeded'` vs prior week (sanity, not a backup test)
+
 ## Weekly checklist (operator)
 
 - [ ] Confirm backups enabled in Supabase Dashboard → **Database** → **Backups**

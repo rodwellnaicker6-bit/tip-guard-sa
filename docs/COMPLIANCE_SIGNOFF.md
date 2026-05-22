@@ -15,6 +15,7 @@ Complete before public marketing launch. Engineering cannot obtain counsel sign-
 | 9 | Cookie / analytics disclosure if Sentry or analytics enabled in prod | Engineering | ☐ |
 | 10 | Beta production sign-off ([BETA_TESTER_CHECKLIST.md](./BETA_TESTER_CHECKLIST.md)) | Product | ☐ |
 | 11 | P0 financial integrity smoke on **live** ([PRODUCTION_RISK_REPORT.md](./PRODUCTION_RISK_REPORT.md)) | Engineering / Ops | ☐ |
+| 12 | **Beta `pk_live` gate:** items 1–5, 7, 10, 11 ticked before `pk_test` → `pk_live` ([BETA_ROLLOUT_PLAN.md](./BETA_ROLLOUT_PLAN.md)) | Ops / Legal | ☐ |
 
 ## Route smoke (engineering)
 

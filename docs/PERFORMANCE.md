@@ -27,6 +27,16 @@
 - `build.target: 'es2022'`
 - `manualChunks` for `react-router` + `@supabase/supabase-js` (optional split)
 
+## Beta load test schedule
+
+Per [BETA_ROLLOUT_PLAN.md](./BETA_ROLLOUT_PLAN.md):
+
+| Week | Activity |
+|------|----------|
+| 0 (pilot) | `npm run stress:qr` × 50 daily on production QR token |
+| 1–2 (limited beta) | `stress:qr` × **100**; target p95 &lt; 500ms ([STRESS_TEST.md](./STRESS_TEST.md)) |
+| Before scale | Re-run Lighthouse on `/` and `/login`; compare to baselines below |
+
 ## Monitoring
 
 - `VITE_SENTRY_DSN` — production errors

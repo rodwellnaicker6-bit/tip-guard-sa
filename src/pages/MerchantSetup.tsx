@@ -116,19 +116,19 @@ export default function MerchantSetup() {
   return (
     <div className="shell mx-auto max-w-lg space-y-4 px-5 py-10 pb-16">
       <p className="muted-label" style={{ marginBottom: 0 }}>
-        Onboarding · Step {step} of 3
+        Merchant setup · Step {step} of 3
       </p>
-      <ol className="flex gap-2 text-xs text-slate-500">
-        <li className={step === 1 ? "font-bold text-amber-400" : ""}>1 Venue</li>
-        <li className={step === 2 ? "font-bold text-amber-400" : ""}>2 Locations</li>
-        <li className={step === 3 ? "font-bold text-amber-400" : ""}>3 QR</li>
+      <ol className="flex flex-wrap gap-2 text-xs text-slate-500" aria-label="Setup steps">
+        <li className={step === 1 ? "font-bold text-amber-400" : ""}>1 Venue profile</li>
+        <li className={step === 2 ? "font-bold text-amber-400" : ""}>2 Sites & branches</li>
+        <li className={step === 3 ? "font-bold text-amber-400" : ""}>3 Payment QR</li>
       </ol>
 
       {step === 1 && (
         <>
-          <h2 className="text-2xl font-bold text-white">Register your business</h2>
+          <h2 className="text-2xl font-bold text-white">Venue profile</h2>
           <p className="text-sm leading-relaxed text-slate-400">
-            Creates your TipGuard venue record. Complete verification from the dashboard before go-live.
+            Register your business on TipGuard. You can accept tips after venue verification is approved.
           </p>
           <form className="stack mt-4 space-y-3" onSubmit={saveBusiness}>
             <input
@@ -154,8 +154,8 @@ export default function MerchantSetup() {
 
       {step === 2 && (
         <>
-          <h2 className="text-2xl font-bold text-white">Add your first site</h2>
-          <p className="text-sm text-slate-400">Optional now — you can add more later under Locations.</p>
+          <h2 className="text-2xl font-bold text-white">Sites & branches</h2>
+          <p className="text-sm text-slate-400">Add your first site now, or skip and manage locations from your dashboard later.</p>
           <form className="stack mt-4 space-y-3" onSubmit={saveLocation}>
             <input
               className="field w-full"
@@ -182,8 +182,8 @@ export default function MerchantSetup() {
 
       {step === 3 && (
         <>
-          <h2 className="text-2xl font-bold text-white">Create your venue QR</h2>
-          <p className="text-sm text-slate-400">Generate a permanent QR for your venue, then print or assign to guards.</p>
+          <h2 className="text-2xl font-bold text-white">Payment QR</h2>
+          <p className="text-sm text-slate-400">Create a permanent QR for your venue. Print it or assign codes to your team from the QR manager.</p>
           {error && <div className="error">{error}</div>}
           <button className="btn-gold w-full rounded-2xl py-3 font-black" type="button" disabled={busy} onClick={() => void createStarterQr()}>
             {busy ? "Creating…" : "Create venue QR"}
