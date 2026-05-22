@@ -67,4 +67,13 @@ Never set `SUPABASE_SERVICE_ROLE_KEY` or `PAYSTACK_SECRET_KEY` on Vercel.
 
 ## 7. Cron (post-launch)
 
-Schedule `process-webhook-retries` (15 min) and `reconcile-daily` (daily). See [CRON.md](./CRON.md).
+Schedule `process-webhook-retries` (15 min) and `reconcile-daily` (daily 02:00 SAST). See [CRON.md](./CRON.md) and run `scripts/schedule-cron-jobs.sql` after Vault `service_role_key` is set.
+
+If deploy fails (not logged in or network):
+
+```bash
+supabase login
+supabase link --project-ref fyjmujhlqpvfryelnfum
+supabase functions deploy paystack-webhook paystack-initialize paystack-verify process-webhook-retries reconcile-daily request-payout health notify-payment
+npm run verify:supabase && npm run verify:paystack && npm run build && npm run lint
+```

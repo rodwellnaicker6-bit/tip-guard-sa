@@ -178,13 +178,20 @@ export default function AdminDashboard() {
     void loadLists();
   }
 
-  async function setPayoutStatus(id: string, status: "processing" | "paid" | "rejected") {
-    const { error: uErr } = await supabase.from("payout_requests").update({ status }).eq("id", id);
-    if (uErr) {
-      toast.error(uErr.message);
+  async function setPayoutStatus(id: string, status: "processing" | "paid" | "rejected" | "failed") {
+    const { data, error: rpcErr } = await supabase.rpc("admin_update_payout_status", {
+      p_payout_id: id,
+      p_status: status,
+    });
+    if (rpcErr) {
+      toast.error(rpcErr.message);
       return;
     }
-    void logAdminAction("payout_status", "payout_requests", id, { status });
+    const result = data as { ok?: boolean; error?: string } | null;
+    if (result?.ok === false) {
+      toast.error(result.error ?? "Payout update failed");
+      return;
+    }
     toast.success(`Payout marked ${status}.`);
     void loadLists();
   }
@@ -361,6 +368,9 @@ export default function AdminDashboard() {
                   </button>
                   <button type="button" className="rounded-lg bg-red-500/20 px-3 py-1 text-xs font-bold text-red-300" onClick={() => void setPayoutStatus(p.id, "rejected")}>
                     Reject
+                  </button>
+                  <button type="button" className="rounded-lg bg-red-500/10 px-3 py-1 text-xs font-bold text-red-400" onClick={() => void setPayoutStatus(p.id, "failed")}>
+                    Failed
                   </button>
                 </div>
               </div>

@@ -3,7 +3,12 @@
 **Project ref:** `fyjmujhlqpvfryelnfum`  
 **Base URL:** `https://fyjmujhlqpvfryelnfum.supabase.co`
 
-Enable **pg_cron** in the Supabase Dashboard (Database → Extensions) if you run jobs in Postgres. For Edge invocations, use **Dashboard → Integrations → Cron** (or Database → Cron, depending on dashboard version).
+Enable **pg_cron** and **pg_net** in the Supabase Dashboard (Database → Extensions) if you run jobs in Postgres. For Edge invocations, use either:
+
+1. **Dashboard → Integrations → Cron** — [Cron overview](https://supabase.com/dashboard/project/fyjmujhlqpvfryelnfum/integrations/cron/overview) (create HTTP POST jobs below), or  
+2. **SQL** — run `scripts/schedule-cron-jobs.sql` after storing `service_role_key` in Vault (see file header).
+
+Migration `20260625200000_launch_cron_admin_payout.sql` enables extensions on push; scheduling still requires Vault secret + SQL or Dashboard UI.
 
 ## Supabase Dashboard — Cron job URLs
 
@@ -47,7 +52,9 @@ Uptime tools may **GET** (no auth):
 
 See [MONITORING.md](./MONITORING.md).
 
-## pg_cron SQL stub (optional)
+## pg_cron SQL (executable)
+
+After `supabase db push`, store the service role key in Vault, then run **`scripts/schedule-cron-jobs.sql`** in the SQL Editor. Or use the commented stubs below (same schedules).
 
 After enabling `pg_cron`, store secrets in Vault and call Edge via `net.http_post` (requires `pg_net`). Example stub only — replace secret name if different:
 
