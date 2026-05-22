@@ -8,6 +8,8 @@ import { StatCardsSkeleton } from "../components/StatCardsSkeleton";
 import { ProfileCompletionCard } from "../components/ProfileCompletionCard";
 import { FetchError } from "../components/FetchError";
 import { MerchantAnalyticsPanel } from "../components/MerchantAnalyticsPanel";
+import { PayoutSchedulePanel } from "../components/PayoutSchedulePanel";
+import { isPayoutSchedule, type PayoutSchedule } from "../lib/payoutSchedule";
 
 type MerchRow = {
   id: string;
@@ -23,6 +25,9 @@ export default function MerchantDashboard() {
   const [loading, setLoading] = useState(() => Boolean(user?.id));
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const [payoutSchedule, setPayoutSchedule] = useState<PayoutSchedule>("weekly");
+  const [nextPayoutAt, setNextPayoutAt] = useState<string | null>(null);
+  const [minPayoutCents, setMinPayoutCents] = useState(10000);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -32,7 +37,9 @@ export default function MerchantDashboard() {
       setError(null);
       const { data, error: err } = await supabase
         .from("merchants")
-        .select("id, business_name, location, verified, risk_score")
+        .select(
+          "id, business_name, location, verified, risk_score, payout_schedule, next_payout_at, minimum_payout_threshold_cents",
+        )
         .eq("user_id", user.id)
         .maybeSingle();
       if (cancelled) return;
@@ -40,7 +47,18 @@ export default function MerchantDashboard() {
         setError("We could not load your venue. Please try again.");
         setMerchant(null);
       } else {
-        setMerchant((data as MerchRow) ?? null);
+        const row = data as MerchRow & {
+          payout_schedule?: string;
+          next_payout_at?: string | null;
+          minimum_payout_threshold_cents?: number;
+        };
+        setMerchant((row as MerchRow) ?? null);
+        if (row?.id) {
+          const sched = row.payout_schedule ?? "";
+          setPayoutSchedule(isPayoutSchedule(sched) ? sched : "weekly");
+          setNextPayoutAt(row.next_payout_at ?? null);
+          setMinPayoutCents(row.minimum_payout_threshold_cents ?? 10000);
+        }
       }
       setLoading(false);
     })();
@@ -141,6 +159,17 @@ export default function MerchantDashboard() {
         >
           Venue verification
         </Link>
+      </div>
+
+      <div className="card stack min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+        <PayoutSchedulePanel
+          table="merchants"
+          entityId={merchant.id}
+          schedule={payoutSchedule}
+          nextPayoutAt={nextPayoutAt}
+          minimumPayoutThresholdCents={minPayoutCents}
+          onSaved={() => setReload((n) => n + 1)}
+        />
       </div>
 
       <div className="card stack min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4">

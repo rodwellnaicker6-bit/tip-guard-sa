@@ -12,6 +12,8 @@ import { FetchError } from "../components/FetchError";
 import { ProfileCompletionCard } from "../components/ProfileCompletionCard";
 import { StatCardsSkeleton } from "../components/StatCardsSkeleton";
 import { VerificationStatusBadge } from "../components/VerificationStatusBadge";
+import { PayoutSchedulePanel } from "../components/PayoutSchedulePanel";
+import { isPayoutSchedule, type PayoutSchedule } from "../lib/payoutSchedule";
 
 type TipRow = {
   id: string;
@@ -33,6 +35,9 @@ export default function GuardHome() {
   const [sparkValues, setSparkValues] = useState<number[]>([]);
   const [walletAvail, setWalletAvail] = useState<number | null>(null);
   const [walletPending, setWalletPending] = useState(0);
+  const [payoutSchedule, setPayoutSchedule] = useState<PayoutSchedule>("weekly");
+  const [nextPayoutAt, setNextPayoutAt] = useState<string | null>(null);
+  const [minPayoutCents, setMinPayoutCents] = useState(10000);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -48,8 +53,18 @@ export default function GuardHome() {
         setLoading(false);
         return;
       }
-      const g = (data as GuardRow) ?? null;
+      const g = (data as GuardRow & {
+        payout_schedule?: string;
+        next_payout_at?: string | null;
+        minimum_payout_threshold_cents?: number;
+      }) ?? null;
       setGuard(g);
+      if (g) {
+        const sched = g.payout_schedule ?? "";
+        setPayoutSchedule(isPayoutSchedule(sched) ? sched : "weekly");
+        setNextPayoutAt(g.next_payout_at ?? null);
+        setMinPayoutCents(g.minimum_payout_threshold_cents ?? 10000);
+      }
       if (g?.id) {
         const { data: w } = await supabase
           .from("wallet_accounts")
@@ -262,6 +277,19 @@ export default function GuardHome() {
           Transactions
         </Link>
       </nav>
+
+      <GlassPanel className="fx-fade-up" glow="slate">
+        <PayoutSchedulePanel
+          table="guards"
+          entityId={guard.id}
+          schedule={payoutSchedule}
+          nextPayoutAt={nextPayoutAt}
+          minimumPayoutThresholdCents={minPayoutCents}
+          availableCents={walletAvail ?? guard.balance_cents}
+          pendingCents={walletPending}
+          onSaved={() => setReload((n) => n + 1)}
+        />
+      </GlassPanel>
 
       <GlassPanel className="fx-fade-up" glow="emerald">
         <h3 className="text-base font-bold text-white">Request payout</h3>

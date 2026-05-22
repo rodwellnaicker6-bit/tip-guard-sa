@@ -6,6 +6,8 @@ import { DEFAULT_ADMIN_MFA_SETTINGS } from "../lib/mfaTypes";
 import { supabase } from "../lib/supabase";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { profileCompletionPercent, profileChecklist } from "../lib/profileCompletion";
+import { PayoutSchedulePanel } from "../components/PayoutSchedulePanel";
+import { isPayoutSchedule, type PayoutSchedule } from "../lib/payoutSchedule";
 
 const THEME_KEY = "tipguard_theme";
 const DARK_KEY = "tipguard_dark";
@@ -15,8 +17,18 @@ function applyDarkClass(on: boolean) {
   document.documentElement.classList.toggle("dark", on);
 }
 
+type PayoutEntity = {
+  table: "guards" | "merchants";
+  id: string;
+  schedule: PayoutSchedule;
+  nextPayoutAt: string | null;
+  minCents: number;
+  availableCents?: number;
+  pendingCents?: number;
+};
+
 export default function Settings() {
-  const { user, role, profileFields, refreshProfile, signOut } = useAuth();
+  const { user, role, profileFields, refreshProfile, signOut, isGuardUser, isMerchantUser } = useAuth();
   const mfa = DEFAULT_ADMIN_MFA_SETTINGS;
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSaved, setProfileSaved] = useState(false);
@@ -25,6 +37,66 @@ export default function Settings() {
   const [highContrast, setHighContrast] = useState(
     () => typeof document !== "undefined" && document.documentElement.dataset.theme === "hc",
   );
+  const [payoutEntity, setPayoutEntity] = useState<PayoutEntity | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    (async () => {
+      if (isGuardUser) {
+        const { data } = await supabase
+          .from("guards")
+          .select("id, payout_schedule, next_payout_at, minimum_payout_threshold_cents")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (cancelled || !data?.id) return;
+        const sched = (data.payout_schedule as string | undefined) ?? "";
+        let avail: number | undefined;
+        let pending: number | undefined;
+        const { data: w } = await supabase
+          .from("wallet_accounts")
+          .select("available_cents, pending_cents")
+          .eq("guard_id", data.id)
+          .maybeSingle();
+        if (w) {
+          avail = w.available_cents as number;
+          pending = w.pending_cents as number;
+        }
+        setPayoutEntity({
+          table: "guards",
+          id: data.id,
+          schedule: isPayoutSchedule(sched) ? sched : "weekly",
+          nextPayoutAt: (data.next_payout_at as string | null) ?? null,
+          minCents: (data.minimum_payout_threshold_cents as number) ?? 10000,
+          availableCents: avail,
+          pendingCents: pending,
+        });
+        return;
+      }
+      if (isMerchantUser) {
+        const { data } = await supabase
+          .from("merchants")
+          .select("id, payout_schedule, next_payout_at, minimum_payout_threshold_cents")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (cancelled || !data?.id) return;
+        const sched = (data.payout_schedule as string | undefined) ?? "";
+        setPayoutEntity({
+          table: "merchants",
+          id: data.id,
+          schedule: isPayoutSchedule(sched) ? sched : "weekly",
+          nextPayoutAt: (data.next_payout_at as string | null) ?? null,
+          minCents: (data.minimum_payout_threshold_cents as number) ?? 10000,
+        });
+        return;
+      }
+      if (!cancelled) setPayoutEntity(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, isGuardUser, isMerchantUser]);
+
   const [darkUi, setDarkUi] = useState(() => {
     if (typeof localStorage === "undefined") return true;
     const v = localStorage.getItem(DARK_KEY);
@@ -141,6 +213,20 @@ export default function Settings() {
           {profileBusy ? "Saving…" : "Save profile"}
         </button>
       </form>
+
+      {user && payoutEntity && (
+        <div className="card stack rounded-2xl border border-white/10 bg-white/5 p-4">
+          <PayoutSchedulePanel
+            table={payoutEntity.table}
+            entityId={payoutEntity.id}
+            schedule={payoutEntity.schedule}
+            nextPayoutAt={payoutEntity.nextPayoutAt}
+            minimumPayoutThresholdCents={payoutEntity.minCents}
+            availableCents={payoutEntity.availableCents}
+            pendingCents={payoutEntity.pendingCents}
+          />
+        </div>
+      )}
 
       <div className="card stack rounded-2xl border border-white/10 bg-white/5 p-4">
         <p className="text-xs font-semibold uppercase text-slate-500">Email</p>
