@@ -17,7 +17,7 @@ Create **HTTP POST** jobs with header `Authorization: Bearer <SUPABASE_SERVICE_R
 | Job name | Schedule (suggested) | URL |
 |----------|----------------------|-----|
 | TipGuard webhook retries | Every **15 minutes** (`*/15 * * * *`) | `https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/process-webhook-retries` |
-| TipGuard daily reconcile | Daily **02:00 SAST** (`0 0 2 * * *` in SAST; use UTC offset in dashboard) | `https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/reconcile-daily` |
+| TipGuard daily reconcile | Daily **02:00 SAST** = **00:00 UTC** (`0 0 * * *` in pg_cron; Durban has no DST) | `https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/reconcile-daily` |
 
 ### Webhook retry drain
 
@@ -74,7 +74,7 @@ After enabling `pg_cron`, store secrets in Vault and call Edge via `net.http_pos
 
 -- select cron.schedule(
 --   'tipguard-reconcile-daily',
---   '0 2 * * *',
+--   '0 0 * * *',  -- 00:00 UTC = 02:00 SAST (Africa/Johannesburg)
 --   $$ select net.http_post(
 --     url := 'https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/reconcile-daily',
 --     headers := jsonb_build_object(

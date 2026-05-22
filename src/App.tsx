@@ -6,8 +6,7 @@ import { ToastProvider } from "./context/ToastProvider";
 import { AppBootGate } from "./components/AppBootGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { bootLog, logBootHealth } from "./lib/bootDebug";
-// SessionIdleWatcher disabled until env/auth bootstrap is stable (re-enable post-MVP).
-// import { SessionIdleWatcher } from "./components/SessionIdleWatcher";
+import { SessionIdleWatcher } from "./components/SessionIdleWatcher";
 import { RequireAdmin, RequireAuth, RequireGuard, RequireMerchant } from "./components/RequireAuth";
 import { HubLayout } from "./layouts/HubLayout";
 import { Skeleton } from "./components/Skeleton";
@@ -481,6 +480,7 @@ export default function App() {
         <RouteAnalytics />
         <ToastProvider>
           <AuthProvider>
+            <SessionIdleWatcher />
             <AppBootGate>
               <AppRoutes />
             </AppBootGate>

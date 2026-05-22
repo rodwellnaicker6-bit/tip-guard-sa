@@ -236,7 +236,9 @@ export default function AdminTransactions() {
       <section className="stack mt" style={{ marginTop: 24 }}>
         <h3 style={{ fontSize: 16, margin: 0 }}>Payout reconciliation (today)</h3>
         <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>
-          RPC <code>payout_reconciliation_report(day)</code> — sample in docs/RECONCILIATION.md.
+          Status changes (Processing → Paid / Rejected) use <code>admin_update_payout_status</code> on{" "}
+          <Link to="/admin">Admin → Payouts</Link> only — not on this page. Report:{" "}
+          <code>payout_reconciliation_report(day)</code>. Procedure: docs/OPERATOR_PAYOUT_PROCEDURES.md.
         </p>
         {payoutReport ? (
           <pre

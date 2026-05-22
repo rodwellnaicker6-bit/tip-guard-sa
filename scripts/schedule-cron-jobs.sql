@@ -1,4 +1,5 @@
 -- TipGuard SA — schedule Edge cron jobs (run once in Supabase SQL Editor)
+-- Operator steps: docs/CRON_OPERATOR_RUNBOOK.md · schedules: docs/CRON.md (02:00 SAST = 00:00 UTC)
 -- Prerequisites:
 --   1. Extensions pg_cron + pg_net enabled (migration 20260625200000 or Dashboard → Database → Extensions)
 --   2. Vault secret `service_role_key` = your project service role key (Dashboard → Project Settings → API)

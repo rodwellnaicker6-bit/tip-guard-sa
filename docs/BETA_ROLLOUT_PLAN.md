@@ -1,6 +1,14 @@
 # TipGuard SA — controlled production beta rollout
 
-**Baseline:** `main` @ `f11d2a8` (verification green). **Principle:** reliability over rapid growth. Yield Core = scalable SA fintech infrastructure; beta validates ops before scale.
+**Baseline:** `main` @ `21ce6c6` (verification green). **Principle:** reliability over rapid growth. Yield Core = scalable SA fintech infrastructure; beta validates ops before scale.
+
+## Durban-first, invite-only (operational rule)
+
+- **Geography:** Phase 0–1 merchants and guards are **Durban / KZN venues only** unless operator explicitly approves an exception.
+- **Access:** **Invite-only** — no public self-serve merchant signup; operator creates account, assigns merchant role, enables `verified` after KYC ([PHASE0_MERCHANT_PACK_DURBAN.md](./PHASE0_MERCHANT_PACK_DURBAN.md)).
+- **Scale cap:** Do **not** raise merchant cap or marketing reach until **payout settlement** (`admin_update_payout_status` + Paystack transfer webhooks) and **webhook reconciliation** (`reconcile-daily`, DLQ = 0) are stable for **7 consecutive days** in Phase 0.
+- **Session security:** Production admin sessions may set `VITE_SESSION_IDLE_MINUTES=30` ([SESSION_SECURITY.md](./SESSION_SECURITY.md)); unset or `0` keeps idle logout off.
+- **Alerts:** Beta thresholds in [MONITORING.md](./MONITORING.md) — health down, reconcile mismatch &gt; 0, webhook DLQ &gt; 5.
 
 ## Phase model
 
@@ -160,6 +168,11 @@ Execute [ROLLBACK_PLAN.md](./ROLLBACK_PLAN.md) and **pause new merchant onboardi
 
 ## Related docs
 
+- [MONITORING.md](./MONITORING.md) — beta alert thresholds (health, DLQ, reconcile)
+- [LIVE_KEY_CUTOVER.md](./LIVE_KEY_CUTOVER.md) — `pk_test` → `pk_live` checklist
+- [OPERATOR_DAILY_CHECKLIST.md](./OPERATOR_DAILY_CHECKLIST.md) — daily operator routine
+- [OPERATOR_PAYOUT_PROCEDURES.md](./OPERATOR_PAYOUT_PROCEDURES.md) — payout state machine
+- [CRON_OPERATOR_RUNBOOK.md](./CRON_OPERATOR_RUNBOOK.md) — schedule webhook retry + reconcile
 - [BETA_TESTER_CHECKLIST.md](./BETA_TESTER_CHECKLIST.md) — external testers
 - [BETA_LAUNCH.md](./BETA_LAUNCH.md) — pre-flight commands
 - [PRODUCTION_CHECKLIST.md](./PRODUCTION_CHECKLIST.md) — full go-live

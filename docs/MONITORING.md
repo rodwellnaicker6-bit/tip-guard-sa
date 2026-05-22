@@ -65,18 +65,19 @@ When `VITE_SENTRY_DSN` is set:
 - **Alert:** non-200 or `ok: false` / `supabase: "degraded"` for 2 consecutive checks.
 - **Beta:** same URL linked from `/admin/metrics`.
 
-## Webhook failure thresholds
+## Webhook failure thresholds (beta)
 
 | Metric | Beta threshold | Action |
 |--------|----------------|--------|
+| `webhook_retry_queue` **DLQ** (`dead_letter`) | &gt; **5** rows | Page on-call; `/admin/fraud`; [INCIDENT_RESPONSE.md](./INCIDENT_RESPONSE.md) |
 | `webhook_retry_queue.status = failed` | &gt; 0 for 1h | `/admin/fraud`; Edge logs `paystack-webhook` |
-| `pending` rows | &gt; **10** | Run `process-webhook-retries` ([CRON.md](./CRON.md)) |
+| `pending` rows | &gt; **10** | Run `process-webhook-retries` ([CRON.md](./CRON.md), [CRON_OPERATOR_RUNBOOK.md](./CRON_OPERATOR_RUNBOOK.md)) |
 | `dead_letter` | any growth day-over-day | Manual replay or mark resolved; [WEBHOOK_RETRY_QUEUE.md](./WEBHOOK_RETRY_QUEUE.md) |
 | Paystack dashboard | 3+ consecutive non-200 | Verify HMAC secret + function deploy |
 
-## Reconcile mismatch alerts
+## Reconcile mismatch alerts (beta)
 
-- **`admin_ops_metrics.reconciliation_mismatches_7d`** (via `/admin/metrics`) — alert if &gt; **0** after daily `reconcile-daily` cron.
+- **`admin_ops_metrics.reconciliation_mismatches_7d`** (via `/admin/metrics`) — **alert if &gt; 0** after daily `reconcile-daily` cron; hold new merchant invites until cleared ([BETA_ROLLOUT_PLAN.md](./BETA_ROLLOUT_PLAN.md)).
 - SQL spot-check:
 
 ```sql
@@ -86,13 +87,13 @@ order by run_at desc
 limit 7;
 ```
 
-## Failure alerts (launch)
+## Failure alerts (beta)
 
 | Signal | Threshold | Action |
 |--------|-----------|--------|
-| `health` Edge | Non-200 or `supabase: "degraded"` | Page on-call; check DB connections |
+| `health` Edge | Non-200 or `supabase: "degraded"` for **2 consecutive** checks (1–5 min ping) | Page on-call; check DB connections; [INCIDENT_RESPONSE.md](./INCIDENT_RESPONSE.md) |
 | Paystack webhook dashboard | Repeated 4xx/5xx to `paystack-webhook` | Inspect Edge logs; check `claim_*` RPCs exist |
-| `webhook_retry_queue` | `pending` &gt; 10 or `dead_letter` growing | `/admin/fraud`; run `process-webhook-retries` |
+| `webhook_retry_queue` | DLQ &gt; **5** or `pending` &gt; 10 or `dead_letter` growing | `/admin/fraud`; run `process-webhook-retries` |
 | Sentry | Spike on `TipCheckout` / `paystack` | [INCIDENT_RESPONSE.md](./INCIDENT_RESPONSE.md) |
 | Reconcile mismatches | `reconciliation_mismatches_7d` &gt; 0 | [RECONCILIATION.md](./RECONCILIATION.md); hold merchant cap increase |
 | `npm run verify:paystack` | Exit non-zero | HMAC secret mismatch or Edge not deployed |
@@ -142,7 +143,9 @@ having count(*) > 1;
 
 ## Runbook links
 
-- [BETA_ROLLOUT_PLAN.md](./BETA_ROLLOUT_PLAN.md) — controlled beta phases, daily playbook, rollback triggers
+- [BETA_ROLLOUT_PLAN.md](./BETA_ROLLOUT_PLAN.md) — Durban-first controlled beta, daily playbook, rollback triggers
+- [CRON_OPERATOR_RUNBOOK.md](./CRON_OPERATOR_RUNBOOK.md) — Supabase Dashboard cron setup
+- [OPERATOR_DAILY_CHECKLIST.md](./OPERATOR_DAILY_CHECKLIST.md) — morning verify routine
 - [INCIDENT_RESPONSE.md](./INCIDENT_RESPONSE.md)
 - [ROLLBACK_PLAN.md](./ROLLBACK_PLAN.md)
 - [BACKUP_VERIFICATION.md](./BACKUP_VERIFICATION.md)
