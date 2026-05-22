@@ -13,6 +13,8 @@ See [ROADMAP_AND_DEPLOYMENT.md](./ROADMAP_AND_DEPLOYMENT.md), [AUTH_SMOKE_TESTS.
 - [ ] Maintenance: `VITE_MAINTENANCE_MODE` (Vercel) + `MAINTENANCE_MODE` (Supabase Edge secret)
 - [ ] Payout freeze tested: Admin → Freeze payouts; `request-payout` returns 503 when frozen
 - [ ] Migration `20260521140000_prelaunch_operational_systems.sql` applied
+- [ ] Launch SQL `20260625140000_payment_qr_rpc_hotfix.sql` + `20260625160000_launch_qr_hardening.sql` applied on production
+- [ ] Cron: `process-webhook-retries` (15m) + `reconcile-daily` (daily) — [CRON.md](./CRON.md) reliability section
 
 ## UX & quality (MVP pass)
 
@@ -52,7 +54,8 @@ See [ROADMAP_AND_DEPLOYMENT.md](./ROADMAP_AND_DEPLOYMENT.md), [AUTH_SMOKE_TESTS.
 - [ ] `paystack-initialize` records `metadata.paystack_test` from the secret key prefix (`sk_test_` → `true`) for support and dashboards.
 - [ ] Apple Pay / Google Pay: enable in Paystack where supported for ZAR; still depends on customer device and dashboard settings.
 - [ ] Bank / EFT channels: enable in Paystack dashboard if you offer them.
-- [ ] Rate limiting: function uses `api_rate_log` (see migration `20250513000000_production.sql`). Ensure that table exists on the project; limits are per-user per minute for initialize calls.
+- [ ] Rate limiting: `paystack-initialize` and `paystack-webhook` use `api_rate_log`; per-user init limit + per-IP webhook limit.
+- [ ] Duplicate tip init: `paystack-initialize` rejects pending duplicate (same payer/guard/amount, 15m) and replayed QR sessions (`claim_tip_link_session`).
 
 ## Security
 

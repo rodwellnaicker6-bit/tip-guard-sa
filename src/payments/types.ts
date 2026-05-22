@@ -19,6 +19,8 @@ export type CheckoutPhase = "idle" | "initializing" | "opening_checkout";
 export type TipCheckoutContext = {
   kind: CheckoutKind;
   guardId?: string;
+  /** QR / tip link token for session anti-replay (paystack-initialize). */
+  sourceLinkToken?: string;
   amountCents: number;
   navigate: NavigateFunction;
   onError: (message: string) => void;

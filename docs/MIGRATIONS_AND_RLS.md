@@ -102,3 +102,7 @@ These are enforced in React (`RequireAuth`, `RequireGuard`, `RequireAdmin`, `Req
 - `/guard`, `/guard/qr`, … → login if anonymous; onboarding if not a guard user.
 - `/merchant` → login; `/merchant/setup` if not yet a merchant user.
 - `/customer/dashboard` → login if anonymous.
+
+## Launch pass (2026-05-21)
+
+- `20260625160000_launch_qr_hardening.sql` — `qr_codes.expires_at`, merchant verification in `resolve_tip_target`, QR scan audit via `payment_events` (`provider=tipguard`), `claim_tip_link_session` for checkout anti-replay.

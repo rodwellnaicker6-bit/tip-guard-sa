@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
 import { Skeleton } from "./Skeleton";
 import { FetchError } from "./FetchError";
+import { downloadCsv } from "../lib/exportCsv";
 
 type Analytics = {
   period?: string;
@@ -99,6 +100,25 @@ export function MerchantAnalyticsPanel() {
           </button>
         ))}
       </div>
+
+      {(data.guard_leaderboard ?? []).length > 0 ? (
+        <button
+          type="button"
+          className="tap-target w-full rounded-xl border border-white/15 py-2 text-xs font-semibold text-amber-300"
+          onClick={() =>
+            downloadCsv(
+              `tipguard-merchant-${period}-${new Date().toISOString().slice(0, 10)}.csv`,
+              (data.guard_leaderboard ?? []).map((g) => ({
+                guard: g.name,
+                tip_count: g.tip_count,
+                volume_zar: ((g.volume_cents ?? 0) / 100).toFixed(2),
+              })),
+            )
+          }
+        >
+          Export leaderboard CSV
+        </button>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3">
         <Stat label="Tips" value={String(data.tips_succeeded ?? 0)} />

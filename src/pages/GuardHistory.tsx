@@ -8,6 +8,7 @@ import EmptyState from "../components/EmptyState";
 import { FetchError } from "../components/FetchError";
 import { TxStatusBadge } from "../components/TxStatusBadge";
 import { GlassPanel } from "../components/fintech/GlassPanel";
+import { downloadCsv } from "../lib/exportCsv";
 
 type TipRow = {
   id: string;
@@ -86,6 +87,25 @@ export default function GuardHistory() {
         <p className="muted-label">Earnings</p>
         <h2 className="font-black text-white">Tip history</h2>
         <p className="mt-1 text-sm text-slate-400">Succeeded tips credit your wallet after Paystack settlement.</p>
+        {tips.length > 0 ? (
+          <button
+            type="button"
+            className="tap-target mt-3 rounded-xl border border-white/15 px-4 py-2 text-xs font-semibold text-amber-300"
+            onClick={() =>
+              downloadCsv(
+                `tipguard-tips-${new Date().toISOString().slice(0, 10)}.csv`,
+                tips.map((t) => ({
+                  id: t.id,
+                  amount_zar: (t.amount_cents / 100).toFixed(2),
+                  status: t.status,
+                  created_at: t.created_at,
+                })),
+              )
+            }
+          >
+            Export CSV
+          </button>
+        ) : null}
       </header>
 
       {error ? <FetchError message={error} onRetry={() => setReload((n) => n + 1)} /> : null}

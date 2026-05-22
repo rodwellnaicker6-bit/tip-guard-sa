@@ -22,6 +22,7 @@ type InitBody = {
   channels?: string[];
   device_fingerprint?: string;
   qr_code_id?: string;
+  source_link_token?: string;
 };
 
 serve(async (req) => {
@@ -95,6 +96,9 @@ serve(async (req) => {
       ? body.device_fingerprint.slice(0, 64)
       : null;
     const qrCodeId = typeof body?.qr_code_id === "string" ? body.qr_code_id : null;
+    const sourceLinkToken = typeof body?.source_link_token === "string"
+      ? body.source_link_token.trim().slice(0, 128)
+      : null;
     const channels = Array.isArray(body?.channels) && body!.channels!.length > 0
       ? body!.channels!
       : ["card", "bank", "apple_pay"];
@@ -177,8 +181,47 @@ serve(async (req) => {
         });
       }
 
+      if (sourceLinkToken) {
+        const { data: claimed, error: claimErr } = await service.rpc("claim_tip_link_session", {
+          p_link_token: sourceLinkToken,
+          p_guard_id: guard.id,
+          p_payer_id: user.id,
+        });
+        if (claimErr) console.error("claim_tip_link_session", claimErr);
+        if (claimed === false) {
+          return new Response(
+            JSON.stringify({
+              error: "This tip link was already used for checkout. Scan a fresh QR or open a new link.",
+              code: "session_replay",
+            }),
+            { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      }
+
+      const dupWindow = new Date(Date.now() - 15 * 60_000).toISOString();
+      const { data: pendingDup } = await service
+        .from("tips")
+        .select("id")
+        .eq("guard_id", guard.id)
+        .eq("payer_id", user.id)
+        .eq("amount_cents", amountCents)
+        .eq("status", "pending")
+        .gte("created_at", dupWindow)
+        .limit(1);
+      if (pendingDup && pendingDup.length > 0) {
+        return new Response(
+          JSON.stringify({
+            error: "A payment for this amount is already in progress. Complete or cancel it before starting another.",
+            code: "duplicate_pending",
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
       metadata.guard_id = guard.id;
       metadata.guard_display_name = String(guard.display_name ?? "").slice(0, 120);
+      if (sourceLinkToken) metadata.source_link_token = sourceLinkToken;
 
       const { data: feeRow } = await service.rpc("get_platform_fee_bps");
       const feeBps = typeof feeRow === "number" ? feeRow : 250;

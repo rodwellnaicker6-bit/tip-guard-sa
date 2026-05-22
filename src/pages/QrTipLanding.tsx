@@ -11,6 +11,8 @@ import type { CheckoutPhase } from "../payments/types";
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import { TrustRibbon } from "../components/fintech/TrustRibbon";
 import { Skeleton } from "../components/Skeleton";
+import { FetchError } from "../components/FetchError";
+import { useOnlineStatus } from "../hooks/useOnlineStatus";
 
 const PRESETS = [10, 20, 50] as const;
 
@@ -26,6 +28,8 @@ export default function QrTipLanding() {
   const [amount, setAmount] = useState("20");
   const [paying, setPaying] = useState(false);
   const [checkoutPhase, setCheckoutPhase] = useState<CheckoutPhase>("idle");
+  const [reload, setReload] = useState(0);
+  const online = useOnlineStatus();
 
   const cents = useMemo(() => centsFromRandInput(amount), [amount]);
   const amountLabel = cents != null ? zarFromCents(cents) : "R 0.00";
@@ -55,7 +59,7 @@ export default function QrTipLanding() {
     return () => {
       cancelled = true;
     };
-  }, [token, searchParams]);
+  }, [token, searchParams, reload]);
 
   function pickPreset(rands: number) {
     setAmount(String(rands));
@@ -85,6 +89,7 @@ export default function QrTipLanding() {
       await startTipCheckout({
         kind: "tip",
         guardId: target.guard_id,
+        sourceLinkToken: token,
         amountCents: cents,
         navigate,
         onError: (msg) => setError(msg),
@@ -125,11 +130,30 @@ export default function QrTipLanding() {
     );
   }
 
+  if (!online && !loading) {
+    return (
+      <PageWrap>
+        <h1 className="text-xl font-black text-white">You are offline</h1>
+        <p className="mt-2 text-sm text-slate-400">Reconnect to load this tip page and pay securely.</p>
+        <button
+          type="button"
+          className="btn-ghost tap-target mt-4 w-full"
+          onClick={() => setReload((n) => n + 1)}
+        >
+          Try again
+        </button>
+      </PageWrap>
+    );
+  }
+
   if (error || !target) {
     return (
       <PageWrap>
         <h1 className="text-xl font-black text-white">Tip link unavailable</h1>
-        <p className="error mt-2">{error ?? "This QR code could not be loaded."}</p>
+        <FetchError
+          message={error ?? "This QR code could not be loaded."}
+          onRetry={() => setReload((n) => n + 1)}
+        />
         <p className="mt-2 text-xs text-slate-500">
           Check the code is current, the guard is verified, and your venue has finished setup.
         </p>

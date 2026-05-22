@@ -26,6 +26,7 @@ export async function initializePaystackTransaction(body: {
   guard_id?: string;
   amount_cents: number;
   qr_code_id?: string;
+  source_link_token?: string;
 }): Promise<{ data: PaystackInitResponse | null; errorMessage: string | null }> {
   const device_fingerprint = await getDeviceFingerprintHash();
   const attempt = async () =>
@@ -58,6 +59,7 @@ function setPhase(opts: { onCheckoutPhase?: (p: CheckoutPhase) => void }, phase:
 
 export async function payTipWithPaystack(opts: {
   guardId: string;
+  sourceLinkToken?: string;
   amountCents: number;
   navigate: NavigateFunction;
   onError: (msg: string) => void;
@@ -89,6 +91,7 @@ export async function payTipWithPaystack(opts: {
     kind: "tip",
     guard_id: opts.guardId,
     amount_cents: opts.amountCents,
+    source_link_token: opts.sourceLinkToken,
   });
   if (errorMessage || !data) {
     tipCheckoutInFlight = false;

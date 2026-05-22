@@ -12,6 +12,7 @@ export const paystackAdapter: PaymentAdapter = {
     }
     await payTipWithPaystack({
       guardId: ctx.guardId,
+      sourceLinkToken: ctx.sourceLinkToken,
       amountCents: ctx.amountCents,
       navigate: ctx.navigate,
       onError: ctx.onError,

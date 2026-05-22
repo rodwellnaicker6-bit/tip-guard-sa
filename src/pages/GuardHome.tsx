@@ -22,6 +22,13 @@ type TipRow = {
   created_at: string;
 };
 
+type PayoutRow = {
+  id: string;
+  amount_cents: number;
+  status: string;
+  created_at: string;
+};
+
 export default function GuardHome() {
   const { user, profileFields, signOut } = useAuth();
   const [guard, setGuard] = useState<GuardRow | null>(null);
@@ -38,6 +45,7 @@ export default function GuardHome() {
   const [payoutSchedule, setPayoutSchedule] = useState<PayoutSchedule>("weekly");
   const [nextPayoutAt, setNextPayoutAt] = useState<string | null>(null);
   const [minPayoutCents, setMinPayoutCents] = useState(10000);
+  const [recentPayouts, setRecentPayouts] = useState<PayoutRow[]>([]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -83,8 +91,18 @@ export default function GuardHome() {
           .limit(12);
         if (!cancelled && !tErr && tips) setRecentTips(tips as TipRow[]);
         else if (!cancelled) setRecentTips([]);
+        if (!cancelled && user?.id) {
+          const { data: payouts } = await supabase
+            .from("payouts")
+            .select("id, amount_cents, status, created_at")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(5);
+          if (!cancelled) setRecentPayouts((payouts as PayoutRow[]) ?? []);
+        }
       } else if (!cancelled) {
         setRecentTips([]);
+        setRecentPayouts([]);
       }
       if (!cancelled) setLoading(false);
     })();
@@ -290,6 +308,23 @@ export default function GuardHome() {
           onSaved={() => setReload((n) => n + 1)}
         />
       </GlassPanel>
+
+      {recentPayouts.length > 0 ? (
+        <GlassPanel className="fx-fade-up" glow="slate">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-400">Payout status</h3>
+          <ul className="mt-2 space-y-2">
+            {recentPayouts.map((p) => (
+              <li
+                key={p.id}
+                className="flex items-center justify-between rounded-xl border border-white/5 bg-white/5 px-3 py-2 text-sm"
+              >
+                <span className="font-semibold text-white">{zarFromCents(p.amount_cents)}</span>
+                <span className="text-xs font-bold uppercase text-slate-400">{p.status}</span>
+              </li>
+            ))}
+          </ul>
+        </GlassPanel>
+      ) : null}
 
       <GlassPanel className="fx-fade-up" glow="emerald">
         <h3 className="text-base font-bold text-white">Request payout</h3>

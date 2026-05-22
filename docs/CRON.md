@@ -45,6 +45,14 @@ After enabling `pg_cron`, store secrets in Vault and call Edge via `net.http_pos
 -- );
 ```
 
+## Cron reliability (production)
+
+- **Idempotency:** `reconcile-daily` and `process-webhook-retries` are safe to re-run; reconciliation rows append to `reconciliation_log`, webhook retries use row-level status (`pending` → `processing` → `completed` / `dead_letter`).
+- **Auth:** Schedule with the **service role** key in the `Authorization: Bearer` header only (never expose in the client). Rotate keys if a cron secret leaks.
+- **Monitoring:** After scheduling, confirm at least one successful run in Edge Function logs within 24h. Alert on `webhook_retry_queue` depth (`status = pending` for >1h) and `reconciliation_log.mismatch_count > 0`.
+- **Failure handling:** If `process-webhook-retries` fails repeatedly, inspect `webhook_retry_queue.error_message` in Admin → Payments; replay stuck Paystack events manually after fixing root cause.
+- **Timezone:** Reconcile for **SAST** business dates; adjust cron UTC offset when DST changes.
+
 ## Payout report (SQL, no cron)
 
 ```sql
