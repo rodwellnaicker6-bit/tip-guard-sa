@@ -37,6 +37,21 @@ export function computeNextPayoutAt(schedule: PayoutSchedule, from = new Date())
   return next.toISOString();
 }
 
+/** True when Supabase/Postgres reports missing payout_schedule columns (migration not applied). */
+export function isMissingPayoutScheduleSchema(err: { code?: string; message?: string } | null | undefined): boolean {
+  if (!err) return false;
+  const msg = (err.message ?? "").toLowerCase();
+  if (err.code === "42703" || err.code === "PGRST204") return true;
+  return (
+    msg.includes("payout_schedule") ||
+    msg.includes("next_payout_at") ||
+    msg.includes("minimum_payout_threshold")
+  );
+}
+
+export const PAYOUT_SCHEMA_UPDATE_HINT =
+  "Apply database update: run `supabase db push` (migration 20260625150000_payout_schedule_preferences.sql), then refresh.";
+
 export function formatNextPayoutAt(iso: string | null | undefined): string {
   if (!iso) return "On demand when you request a payout";
   const d = new Date(iso);

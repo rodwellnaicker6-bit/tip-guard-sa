@@ -3,8 +3,10 @@ import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
 import {
   PAYOUT_SCHEDULE_OPTIONS,
+  PAYOUT_SCHEMA_UPDATE_HINT,
   computeNextPayoutAt,
   formatNextPayoutAt,
+  isMissingPayoutScheduleSchema,
   isPayoutSchedule,
   type PayoutSchedule,
 } from "../lib/payoutSchedule";
@@ -53,7 +55,11 @@ export function PayoutSchedulePanel({
     const { error: uErr } = await supabase.from(table).update(payload).eq("id", entityId);
     setBusy(false);
     if (uErr) {
-      setError("Could not save payout schedule. Try again.");
+      setError(
+        isMissingPayoutScheduleSchema(uErr)
+          ? PAYOUT_SCHEMA_UPDATE_HINT
+          : "Could not save payout schedule. Try again.",
+      );
       return;
     }
     setSavedNext(nextAt);
@@ -65,8 +71,11 @@ export function PayoutSchedulePanel({
   const minZar = zarFromCents(minimumPayoutThresholdCents);
 
   return (
-    <form className="space-y-3" onSubmit={(ev) => void onSave(ev)}>
+    <form id="payout-preferences" className="scroll-mt-24 space-y-3" onSubmit={(ev) => void onSave(ev)}>
       <div>
+        <span className="mb-2 inline-block rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+          Payout preferences
+        </span>
         <h3 className="text-base font-bold text-white">Payout schedule</h3>
         <p className="mt-1 text-xs text-slate-500">
           Choose how often accumulated tips are batched for bank transfer. You can still request a manual payout below

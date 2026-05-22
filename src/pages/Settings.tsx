@@ -7,7 +7,12 @@ import { supabase } from "../lib/supabase";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { profileCompletionPercent, profileChecklist } from "../lib/profileCompletion";
 import { PayoutSchedulePanel } from "../components/PayoutSchedulePanel";
-import { isPayoutSchedule, type PayoutSchedule } from "../lib/payoutSchedule";
+import {
+  PAYOUT_SCHEMA_UPDATE_HINT,
+  isMissingPayoutScheduleSchema,
+  isPayoutSchedule,
+  type PayoutSchedule,
+} from "../lib/payoutSchedule";
 
 const THEME_KEY = "tipguard_theme";
 const DARK_KEY = "tipguard_dark";
@@ -38,18 +43,25 @@ export default function Settings() {
     () => typeof document !== "undefined" && document.documentElement.dataset.theme === "hc",
   );
   const [payoutEntity, setPayoutEntity] = useState<PayoutEntity | null>(null);
+  const [payoutSchemaHint, setPayoutSchemaHint] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
     (async () => {
       if (isGuardUser) {
-        const { data } = await supabase
+        const { data, error: gErr } = await supabase
           .from("guards")
           .select("id, payout_schedule, next_payout_at, minimum_payout_threshold_cents")
           .eq("user_id", user.id)
           .maybeSingle();
-        if (cancelled || !data?.id) return;
+        if (cancelled) return;
+        if (gErr && isMissingPayoutScheduleSchema(gErr)) {
+          setPayoutEntity(null);
+          setPayoutSchemaHint(PAYOUT_SCHEMA_UPDATE_HINT);
+          return;
+        }
+        if (!data?.id) return;
         const sched = (data.payout_schedule as string | undefined) ?? "";
         let avail: number | undefined;
         let pending: number | undefined;
@@ -62,6 +74,7 @@ export default function Settings() {
           avail = w.available_cents as number;
           pending = w.pending_cents as number;
         }
+        setPayoutSchemaHint(null);
         setPayoutEntity({
           table: "guards",
           id: data.id,
@@ -74,13 +87,20 @@ export default function Settings() {
         return;
       }
       if (isMerchantUser) {
-        const { data } = await supabase
+        const { data, error: mErr } = await supabase
           .from("merchants")
           .select("id, payout_schedule, next_payout_at, minimum_payout_threshold_cents")
           .eq("user_id", user.id)
           .maybeSingle();
-        if (cancelled || !data?.id) return;
+        if (cancelled) return;
+        if (mErr && isMissingPayoutScheduleSchema(mErr)) {
+          setPayoutEntity(null);
+          setPayoutSchemaHint(PAYOUT_SCHEMA_UPDATE_HINT);
+          return;
+        }
+        if (!data?.id) return;
         const sched = (data.payout_schedule as string | undefined) ?? "";
+        setPayoutSchemaHint(null);
         setPayoutEntity({
           table: "merchants",
           id: data.id,
@@ -90,7 +110,10 @@ export default function Settings() {
         });
         return;
       }
-      if (!cancelled) setPayoutEntity(null);
+      if (!cancelled) {
+        setPayoutEntity(null);
+        setPayoutSchemaHint(null);
+      }
     })();
     return () => {
       cancelled = true;
@@ -213,6 +236,19 @@ export default function Settings() {
           {profileBusy ? "Saving…" : "Save profile"}
         </button>
       </form>
+
+      {user && payoutSchemaHint && (
+        <div className="card stack rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+          <span className="inline-block rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+            Payout preferences
+          </span>
+          <p className="mt-2 text-sm text-amber-100">{payoutSchemaHint}</p>
+          <p className="mt-2 text-xs text-slate-400">
+            After migrating, open <Link className="font-semibold text-amber-400" to="/guard">/guard</Link> or{" "}
+            <Link className="font-semibold text-amber-400" to="/merchant">/merchant</Link>.
+          </p>
+        </div>
+      )}
 
       {user && payoutEntity && (
         <div className="card stack rounded-2xl border border-white/10 bg-white/5 p-4">

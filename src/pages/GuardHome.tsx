@@ -294,6 +294,9 @@ export default function GuardHome() {
         <Link to="/guard/history" className="hub-nav-link text-slate-200">
           Transactions
         </Link>
+        <a href="#payout-preferences" className="hub-nav-link border-emerald-500/30 bg-emerald-500/10 text-emerald-200">
+          Payout prefs
+        </a>
       </nav>
 
       <GlassPanel className="fx-fade-up" glow="slate">

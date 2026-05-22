@@ -161,7 +161,13 @@ export default function MerchantDashboard() {
         </Link>
       </div>
 
-      <div className="card stack min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+      <div className="card stack min-w-0 scroll-mt-24 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+        <a
+          href="#payout-preferences"
+          className="mb-2 inline-block text-xs font-bold uppercase tracking-wide text-amber-400 hover:text-amber-300"
+        >
+          Payout preferences ↓
+        </a>
         <PayoutSchedulePanel
           table="merchants"
           entityId={merchant.id}
