@@ -1,5 +1,16 @@
 # Migrations and RLS verification
 
+## Release tag `v2.100.1` (final bundle)
+
+There is **no** migration file named `v2.100.1`. That tag maps to the **latest applied pair** on `main`:
+
+| Timestamp | File | Purpose |
+|-----------|------|---------|
+| `20260625120000` | `financial_ops.sql` | Financial ops, reconciliation spine |
+| `20260625130000` | `fintech_integrity_fixes.sql` | P0 wallet/payout hold fixes (final audit) |
+
+Full chain ends at `20260625130000`. After `supabase db push`, verify RPCs `resolve_tip_target` and `admin_payment_analytics` exist (`npm run verify:supabase`).
+
 ## Apply migrations to your Supabase project
 
 From the repo root, with the [Supabase CLI](https://supabase.com/docs/guides/cli) installed:

@@ -30,6 +30,9 @@ playwright-report
 *.sln
 *.sw?
 
+# Supabase CLI link scratch (not part of app)
+supabase/.temp/
+
 # Local MCP / migration scratch (not part of app)
 .cursor/
 .mcp_*
