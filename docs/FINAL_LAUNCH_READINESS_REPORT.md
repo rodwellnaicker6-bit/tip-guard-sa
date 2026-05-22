@@ -1,9 +1,17 @@
 # Final launch readiness — TipGuard SA
 
 **Date:** 21 May 2026  
-**Commit:** `dddffef` (`main`)  
+**Commit:** `43e9d33` (`main`)  
 **Project:** `fyjmujhlqpvfryelnfum` (Supabase)  
 **Validator:** Automated scripts + migration apply + code/doc audit (no experimental features)
+
+---
+
+## Yield Core launch phase (strategic alignment)
+
+Full priority map (15 launch items → DONE / PARTIAL / GAP / POST-LAUNCH), ecosystem Phase 2+ table, compliance sign-off checklist, and launch-critical engineering tasks: **[YIELD_CORE_LAUNCH_PHASE.md](./YIELD_CORE_LAUNCH_PHASE.md)**.
+
+**Launch-critical next 5 (engineering):** (1) Schedule cron per [CRON.md](./CRON.md), (2) live Paystack E2E + keys, (3) admin payout settle/release RPC wiring, (4) legal sign-off on Terms/Privacy/Refunds, (5) redeploy payment Edge functions + `verify:*` scripts.
 
 ---
 
@@ -81,6 +89,7 @@ Schema and verification gates pass on the linked production project. Schedule cr
 
 ## Related docs
 
+- [YIELD_CORE_LAUNCH_PHASE.md](./YIELD_CORE_LAUNCH_PHASE.md) — priority gap analysis and Phase 2+ roadmap
 - [LAUNCH_VALIDATION_REPORT.md](./LAUNCH_VALIDATION_REPORT.md) — full cycle, Edge deploy commands, idempotency
 - [CRON.md](./CRON.md) — exact Supabase Cron URLs for `fyjmujhlqpvfryelnfum`
 - [MONITORING.md](./MONITORING.md) — alerts and audit SQL
