@@ -82,6 +82,25 @@ async function main() {
   if (!admin) {
     warn("SUPABASE_SERVICE_ROLE_KEY not set — skipping storage + service_role checks");
   } else {
+    const { error: claimErr } = await admin.rpc("claim_tip_link_session", {
+      p_link_token: "",
+      p_guard_id: "00000000-0000-0000-0000-000000000001",
+      p_payer_id: "00000000-0000-0000-0000-000000000002",
+    });
+    if (claimErr?.code === "PGRST202" || claimErr?.message.includes("Could not find the function")) {
+      fail("RPC claim_tip_link_session", "missing — apply 20260625160000_launch_qr_hardening.sql");
+    } else {
+      pass("RPC claim_tip_link_session (launch QR hardening)");
+    }
+
+    const { error: qrColErr } = await admin.from("qr_codes").select("expires_at, revoked_at").limit(1);
+    if (qrColErr?.message.includes("expires_at") || qrColErr?.code === "42703") {
+      fail("qr_codes.expires_at", "column missing — apply 20260625160000_launch_qr_hardening.sql");
+    } else if (qrColErr) {
+      warn(`qr_codes.expires_at: ${qrColErr.message}`);
+    } else {
+      pass("qr_codes.expires_at + revoked_at columns");
+    }
     const { data: buckets, error: bErr } = await admin.storage.listBuckets();
     if (bErr) fail("Storage listBuckets", bErr.message);
     else {

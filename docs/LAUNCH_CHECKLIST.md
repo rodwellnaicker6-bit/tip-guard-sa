@@ -32,11 +32,11 @@ Use with [DEPLOY.md](../DEPLOY.md) and [docs/PRODUCTION_CHECKLIST.md](./PRODUCTI
 
 ## Post-MVP (documented, not blocking)
 
-- [ ] `paystack-reconcile` batch job
-- [ ] `audit_log` writes from Edge Functions
-- [ ] Rate limits wired to `api_rate_log`
-- [ ] Sentry `@sentry/react` package + source maps
-- [ ] Full payout reconciliation reports
+- [x] `paystack-reconcile` / `reconcile-daily` Edge functions (schedule cron — [CRON.md](./CRON.md))
+- [x] Rate limits on Paystack Edge routes via `api_rate_log` (`_shared/rateLimit.ts`)
+- [x] Sentry `@sentry/react` when `VITE_SENTRY_DSN` is set (`src/lib/sentry.ts`)
+- [ ] Server-side `admin_audit_log` from Edge (still client-invoked `log_admin_audit`)
+- [ ] Reference-level Paystack CSV reconciliation (aggregate `reconciliation_log` only)
 - [ ] Service worker + offline QR cache
 
 ## Go / no-go
