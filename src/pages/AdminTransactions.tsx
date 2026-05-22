@@ -18,6 +18,15 @@ type TxRow = {
   created_at: string;
 };
 
+type ReconRow = {
+  id: string;
+  run_at: string;
+  scope: string;
+  matched_count: number;
+  mismatch_count: number;
+  details: Record<string, unknown> | null;
+};
+
 function startOfDay(d: Date) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -39,6 +48,7 @@ export default function AdminTransactions() {
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [recon, setRecon] = useState<ReconRow[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,6 +62,12 @@ export default function AdminTransactions() {
       setError(null);
       setRows((data as TxRow[]) ?? []);
     }
+    const { data: reconData } = await supabase
+      .from("reconciliation_log")
+      .select("id, run_at, scope, matched_count, mismatch_count, details")
+      .order("run_at", { ascending: false })
+      .limit(10);
+    setRecon((reconData as ReconRow[]) ?? []);
     setLoading(false);
   }, []);
 
@@ -176,6 +192,33 @@ export default function AdminTransactions() {
           )
         )}
       </div>
+      <section className="stack mt" style={{ marginTop: 24 }}>
+        <h3 style={{ fontSize: 16, margin: 0 }}>Reconciliation log</h3>
+        <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>
+          Batch runs from <code>paystack-reconcile</code>. See docs/RECONCILIATION.md.
+        </p>
+        {recon.length === 0 ? (
+          <p style={{ fontSize: 13, color: "var(--muted)" }}>No reconciliation_log rows yet.</p>
+        ) : (
+          <ul className="stack" style={{ gap: 8, listStyle: "none", padding: 0 }}>
+            {recon.map((r) => (
+              <li
+                key={r.id}
+                style={{
+                  border: "1px solid var(--border)",
+                  borderRadius: 12,
+                  padding: "10px 12px",
+                  fontSize: 13,
+                }}
+              >
+                <strong>{r.scope}</strong> · {new Date(r.run_at).toLocaleString()}
+                <br />
+                matched {r.matched_count} · mismatch {r.mismatch_count}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <Link to="/admin">Admin home</Link>
     </div>
   );

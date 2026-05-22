@@ -5,14 +5,27 @@ import { bootLog, logBootHealth } from "../lib/bootDebug";
 import { BootBanner } from "./BootBanner";
 import { BootLoadingFallback } from "./BootFallback";
 import { OfflineBanner } from "./OfflineBanner";
+import MaintenancePage from "../pages/MaintenancePage";
 
 const FORCE_READY_MS = 10_000;
+
+function isClientMaintenanceMode(): boolean {
+  const v = import.meta.env.VITE_MAINTENANCE_MODE?.trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+}
 
 /**
  * First-paint gate: brief splash while auth hydrates; always unblocks within {@link FORCE_READY_MS}.
  * Never blocks the app on missing Paystack — checkout pages show "payments unavailable" instead.
  */
 export function AppBootGate({ children }: { children: ReactNode }) {
+  if (isClientMaintenanceMode()) {
+    return <MaintenancePage />;
+  }
+  return <AppBootGateInner>{children}</AppBootGateInner>;
+}
+
+function AppBootGateInner({ children }: { children: ReactNode }) {
   const { authReady } = useAuth();
   const [forceReady, setForceReady] = useState(false);
 

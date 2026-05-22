@@ -10,6 +10,8 @@ interface ImportMetaEnv {
   readonly VITE_TIP_PAYMENT_GATEWAY?: string;
   /** Optional Sentry DSN — @sentry/react when set */
   readonly VITE_SENTRY_DSN?: string;
+  /** Emergency maintenance screen (Vercel env); unset = normal app */
+  readonly VITE_MAINTENANCE_MODE?: string;
   readonly VITE_PLAUSIBLE_DOMAIN?: string;
   readonly VITE_POSTHOG_KEY?: string;
   readonly VITE_POSTHOG_HOST?: string;

@@ -48,6 +48,8 @@ export default function AdminDashboard() {
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [fraud, setFraud] = useState<FraudRow[]>([]);
   const [failedTx, setFailedTx] = useState<FailedTxRow[]>([]);
+  const [payoutsFrozen, setPayoutsFrozen] = useState(false);
+  const [freezeSaving, setFreezeSaving] = useState(false);
 
   const loadMetrics = useCallback(async () => {
     const { data, error: rpcErr } = await supabase.rpc("admin_dashboard_metrics");
@@ -70,6 +72,11 @@ export default function AdminDashboard() {
     });
   }, []);
 
+  const loadPlatform = useCallback(async () => {
+    const { data } = await supabase.from("platform_settings").select("payouts_frozen").eq("id", 1).maybeSingle();
+    if (data && typeof data.payouts_frozen === "boolean") setPayoutsFrozen(data.payouts_frozen);
+  }, []);
+
   const loadLists = useCallback(async () => {
     const [gRes, pRes, lRes, fRes, txRes] = await Promise.all([
       supabase.from("guards").select("id, display_name, verified, user_id, location").eq("verified", false).order("created_at", { ascending: false }).limit(50),
@@ -89,22 +96,40 @@ export default function AdminDashboard() {
     let cancelled = false;
     (async () => {
       await loadMetrics();
+      await loadPlatform();
       await loadLists();
       if (!cancelled) setReady(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [loadMetrics, loadLists]);
+  }, [loadMetrics, loadPlatform, loadLists]);
 
   async function refreshAll() {
     setRefreshing(true);
     try {
       await loadMetrics();
+      await loadPlatform();
       await loadLists();
     } finally {
       setRefreshing(false);
     }
+  }
+
+  async function togglePayoutsFrozen() {
+    setFreezeSaving(true);
+    const next = !payoutsFrozen;
+    const { error: uErr } = await supabase
+      .from("platform_settings")
+      .update({ payouts_frozen: next, updated_at: new Date().toISOString() })
+      .eq("id", 1);
+    setFreezeSaving(false);
+    if (uErr) {
+      toast.error(uErr.message);
+      return;
+    }
+    setPayoutsFrozen(next);
+    toast.success(next ? "Payouts frozen." : "Payouts enabled.");
   }
 
   async function approveGuard(id: string) {
@@ -197,6 +222,29 @@ export default function AdminDashboard() {
           </button>
         ))}
       </div>
+
+      {tab === "overview" && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase text-slate-500">Payout freeze</p>
+            <p className="mt-1 text-sm text-slate-400">
+              {payoutsFrozen
+                ? "New guard payout requests are blocked (503)."
+                : "Payouts are accepting new requests."}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={freezeSaving}
+            onClick={() => void togglePayoutsFrozen()}
+            className={`min-h-[44px] shrink-0 rounded-xl px-5 text-sm font-bold ${
+              payoutsFrozen ? "bg-emerald-500/20 text-emerald-300" : "bg-red-500/20 text-red-300"
+            }`}
+          >
+            {freezeSaving ? "Saving…" : payoutsFrozen ? "Unfreeze payouts" : "Freeze payouts"}
+          </button>
+        </div>
+      )}
 
       {tab === "overview" && metrics && (
         <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3">
@@ -343,7 +391,7 @@ export default function AdminDashboard() {
 
       <div className="flex flex-col gap-2 sm:flex-row">
         <Link className="rounded-xl border border-white/10 py-3 text-center text-sm font-semibold text-amber-400" to="/admin/security">
-          Security
+          Security & fraud
         </Link>
         <Link className="rounded-xl border border-white/10 py-3 text-center text-sm font-semibold text-amber-400" to="/admin/transactions">
           Transactions

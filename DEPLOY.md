@@ -5,9 +5,10 @@ Short go-live list. Details: [docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md
 ## Before deploy
 
 - [ ] Migrations applied on Supabase (`supabase db push` or `npm run db:push`)
-- [ ] Edge functions deployed: `paystack-initialize`, `paystack-webhook`, `paystack-verify`, `request-payout`
+- [ ] Edge functions deployed: `paystack-initialize`, `paystack-webhook`, `paystack-verify`, `request-payout`, `health`
 - [ ] Optional scaffold: `notify-payment` (no email until `RESEND_API_KEY` + `NOTIFY_FROM_EMAIL` in Supabase secrets)
-- [ ] Optional post-MVP: `paystack-reconcile` (stub only)
+- [ ] Cron-ready ops: `process-webhook-retries`, `paystack-reconcile` (POST + service role; see docs/MONITORING.md)
+- [ ] Optional secrets: `MAINTENANCE_MODE`, `APP_VERSION` (health JSON)
 - [ ] Supabase secrets: `PAYSTACK_SECRET_KEY`, `PUBLIC_APP_URL` (service role for ops scripts only)
 
 ## Vercel / hosting env (client)
@@ -27,7 +28,8 @@ In the Vercel project → **Settings → Environment Variables**, add these name
 | Variable | Purpose |
 |----------|---------|
 | `VITE_PAYSTACK_TEST_MODE` | `true` / `false` (else inferred from `pk_test_`) |
-| `VITE_SENTRY_DSN` | Error monitoring (stub until `@sentry/react` is added) |
+| `VITE_SENTRY_DSN` | Error monitoring (`@sentry/react` when set) |
+| `VITE_MAINTENANCE_MODE` | `true` — emergency maintenance page (redeploy required) |
 | `VITE_SESSION_IDLE_MINUTES` | Idle sign-out; `0` or unset = disabled |
 | `VITE_TIP_PAYMENT_GATEWAY` | `paystack` (default), `payfast`, `yoco`, etc. |
 | `VITE_DEMO_MODE` | `true` for staging one-click demo login only |

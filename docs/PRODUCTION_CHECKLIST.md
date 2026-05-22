@@ -2,6 +2,18 @@
 
 See [ROADMAP_AND_DEPLOYMENT.md](./ROADMAP_AND_DEPLOYMENT.md), [AUTH_SMOKE_TESTS.md](./AUTH_SMOKE_TESTS.md), [MIGRATIONS_AND_RLS.md](./MIGRATIONS_AND_RLS.md), [PRODUCTION_READINESS_AND_DEPLOYMENT.md](./PRODUCTION_READINESS_AND_DEPLOYMENT.md), and **[DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)** for smoke tests, SQL verification, and go-live steps.
 
+## Pre-launch operations
+
+- [ ] [ROLLBACK_PLAN.md](./ROLLBACK_PLAN.md) — Vercel promote, Edge redeploy, migration caution
+- [ ] [INCIDENT_RESPONSE.md](./INCIDENT_RESPONSE.md) — SEV levels, contain, recover
+- [ ] [MONITORING.md](./MONITORING.md) — `health` endpoint, Sentry, Paystack webhooks, uptime ping
+- [ ] [BACKUP_VERIFICATION.md](./BACKUP_VERIFICATION.md) — Supabase backups / PITR checklist
+- [ ] [WEBHOOK_RETRY_QUEUE.md](./WEBHOOK_RETRY_QUEUE.md) — failed webhook queue + `process-webhook-retries` cron
+- [ ] [RECONCILIATION.md](./RECONCILIATION.md) — `paystack-reconcile` + `reconciliation_log` admin view
+- [ ] Maintenance: `VITE_MAINTENANCE_MODE` (Vercel) + `MAINTENANCE_MODE` (Supabase Edge secret)
+- [ ] Payout freeze tested: Admin → Freeze payouts; `request-payout` returns 503 when frozen
+- [ ] Migration `20260521140000_prelaunch_operational_systems.sql` applied
+
 ## UX & quality (MVP pass)
 
 - [x] Visual glitches — boot banner in `app-root` layout (no sticky overlap); hub `overflow-x` guarded
@@ -18,7 +30,7 @@ See [ROADMAP_AND_DEPLOYMENT.md](./ROADMAP_AND_DEPLOYMENT.md), [AUTH_SMOKE_TESTS.
 
 ## Configuration
 
-- [ ] Database migrations applied through `20260621110000_launch_stability_indexes.sql` (includes `20260621100000_ecosystem_scaling_core.sql` and earlier). Earlier baseline: `20260615100000_tipguard_rbac_extension.sql` (customers, merchants, `qr_codes`, views, activity log).
+- [ ] Database migrations applied through `20260521140000_prelaunch_operational_systems.sql` (and earlier through `20260624140000_fintech_production_mvp.sql`, `20260621110000_launch_stability_indexes.sql`, etc.).
 - [ ] `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PAYSTACK_PUBLIC_KEY` set in the hosting provider for the Vite build (production build **throws** if missing).
 - [ ] Optional: `VITE_PAYSTACK_TEST_MODE` (`true` / `false`). If unset, the UI treats the build as **test** when the public key starts with `pk_test_` (banner + client behaviour).
 - [ ] Server secret for payments: `PAYSTACK_SECRET_KEY` (Supabase Edge secrets). Use `sk_test_…` with `pk_test_…` until go-live.

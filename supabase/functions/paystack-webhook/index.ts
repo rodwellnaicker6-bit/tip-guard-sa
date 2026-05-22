@@ -1,6 +1,24 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
+import { isMaintenanceMode, maintenanceResponse } from "../_shared/maintenance.ts";
+
+async function enqueueWebhookRetry(
+  service: SupabaseClient,
+  opts: { eventId: string | null; eventType: string | null; payload: unknown; errorMessage: string },
+): Promise<void> {
+  const { error } = await service.from("webhook_retry_queue").insert({
+    provider: "paystack",
+    event_id: opts.eventId,
+    event_type: opts.eventType,
+    payload: opts.payload,
+    error_message: opts.errorMessage,
+    status: "pending",
+    next_retry_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+  });
+  if (error) console.error("webhook_retry_enqueue", error);
+}
 
 const log = (msg: string, extra?: Record<string, unknown>) => {
   console.log(JSON.stringify({ msg, ts: new Date().toISOString(), ...extra }));
@@ -27,6 +45,8 @@ async function verifySignature(body: string, signature: string | null, secret: s
 }
 
 serve(async (req) => {
+  if (isMaintenanceMode()) return maintenanceResponse();
+
   const secret = Deno.env.get("PAYSTACK_SECRET_KEY") ?? "";
   if (!secret) {
     return new Response("Missing PAYSTACK_SECRET_KEY", { status: 500 });
@@ -85,6 +105,12 @@ serve(async (req) => {
     });
     if (claimErr) {
       console.error("webhook_claim", claimErr);
+      await enqueueWebhookRetry(service, {
+        eventId: dedupeId,
+        eventType: event,
+        payload,
+        errorMessage: claimErr.message ?? "claim_failed",
+      });
       return new Response(JSON.stringify({ error: "claim_failed" }), { status: 500 });
     }
     claimed = legacyClaimed === true;

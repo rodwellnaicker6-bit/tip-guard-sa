@@ -2,11 +2,14 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
+import { isMaintenanceMode, maintenanceResponse } from "../_shared/maintenance.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  if (isMaintenanceMode()) return maintenanceResponse();
 
   try {
     const authHeader = req.headers.get("Authorization");
@@ -50,6 +53,18 @@ serve(async (req) => {
       });
     }
     await recordRateLimitHit(service, { userId: user.id, route: "request-payout" });
+
+    const { data: platform } = await service
+      .from("platform_settings")
+      .select("payouts_frozen")
+      .eq("id", 1)
+      .maybeSingle();
+    if (platform?.payouts_frozen === true) {
+      return new Response(
+        JSON.stringify({ error: "Payouts are temporarily frozen. Try again later.", code: "payouts_frozen" }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     const body = await req.json().catch(() => null) as { amount_cents?: number } | null;
     const amountCents = body?.amount_cents;

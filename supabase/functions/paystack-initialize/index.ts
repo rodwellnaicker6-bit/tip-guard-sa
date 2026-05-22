@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
+import { isMaintenanceMode, maintenanceResponse } from "../_shared/maintenance.ts";
 
 const RATE_MAX = 30;
 const RATE_WINDOW_SEC = 60;
@@ -26,6 +27,8 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  if (isMaintenanceMode()) return maintenanceResponse();
 
   try {
     const secret = Deno.env.get("PAYSTACK_SECRET_KEY") ?? "";
