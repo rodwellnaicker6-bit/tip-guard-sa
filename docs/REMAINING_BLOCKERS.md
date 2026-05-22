@@ -1,7 +1,16 @@
 # Remaining blockers
 
-- Remote Supabase DB: `resolve_tip_target` RPC not deployed — run `supabase db push`
-- Remote Supabase DB: `admin_payment_analytics` RPC not deployed — run `supabase db push`
+## Resolved (2026-05-21)
+
+- ~~Remote Supabase DB: `resolve_tip_target` RPC not deployed~~ — applied via `20260625140000_payment_qr_rpc_hotfix.sql`
+- ~~Remote Supabase DB: `admin_payment_analytics` RPC not deployed~~ — same hotfix (`admin_payment_analytics_v2` not used; client and verify use `admin_payment_analytics`)
+
+## Database / migrations
+
+- Full `supabase db push` still fails on this project when replaying `20250512000000_init.sql` (policies already exist). Remote has orphan migration versions (May 2026) reverted via `migration repair`; local chain through `20260625130000` is not marked applied. New environments should run the hotfix SQL or complete repair + push per [MIGRATIONS_AND_RLS.md](./MIGRATIONS_AND_RLS.md).
+
+## Product / ops (unchanged)
+
 - P1-1: Admin manual payout status does not call settle/release RPCs
 - P1-4: Payout state machine not enforced in SQL
 - P1-5: Reconciliation is aggregate-only, not reference-level Paystack match

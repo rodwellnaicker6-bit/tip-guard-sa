@@ -9,7 +9,7 @@ There is **no** migration file named `v2.100.1`. That tag maps to the **latest a
 | `20260625120000` | `financial_ops.sql` | Financial ops, reconciliation spine |
 | `20260625130000` | `fintech_integrity_fixes.sql` | P0 wallet/payout hold fixes (final audit) |
 
-Full chain ends at `20260625130000`. After `supabase db push`, verify RPCs `resolve_tip_target` and `admin_payment_analytics` exist (`npm run verify:supabase`).
+Full chain ends at `20260625140000` (`payment_qr_rpc_hotfix.sql` — idempotent RPC deploy when history diverged). After push or hotfix SQL, verify RPCs `resolve_tip_target` and `admin_payment_analytics` exist (`npm run verify:supabase`).
 
 ## Apply migrations to your Supabase project
 
