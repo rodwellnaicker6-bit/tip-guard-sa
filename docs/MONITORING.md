@@ -43,12 +43,58 @@ When `VITE_SENTRY_DSN` is set in Vercel Production:
 - Subscribe to [status.supabase.com](https://status.supabase.com).
 - Dashboard → **Reports** — database CPU, connections, Edge invocations.
 
+## Failure alerts (launch)
+
+| Signal | Threshold | Action |
+|--------|-----------|--------|
+| `health` Edge | Non-200 or `supabase: "degraded"` | Page on-call; check DB connections |
+| Paystack webhook dashboard | Repeated 4xx/5xx to `paystack-webhook` | Inspect Edge logs; check `claim_*` RPCs exist |
+| `webhook_retry_queue` | `pending` &gt; 10 or `dead_letter` growing | `/admin/fraud`; run `process-webhook-retries` |
+| Sentry | Spike on `TipCheckout` / `paystack` | [INCIDENT_RESPONSE.md](./INCIDENT_RESPONSE.md) |
+| `npm run verify:paystack` | Exit non-zero | HMAC secret mismatch or Edge not deployed |
+
+## RPC latency (pre-launch baseline)
+
+Run after migrations:
+
+```bash
+npx tsx scripts/stress-qr-resolve.ts <token> 50
+```
+
+**21 May 2026** (`demo-staging-qr-01`, remote): p50 **281ms**, p95 **354ms**, 0/50 errors. Alert if p95 &gt; 800ms sustained or error rate &gt; 10%.
+
+Edge functions: log `webhook_claim` / `payment_events_init` errors in Supabase Dashboard → Edge → Logs.
+
+## `payment_events` audit trail (SQL)
+
+```sql
+-- Recent provider events (service_role or admin SQL editor)
+select id, provider, provider_event_id, event_type, status, paystack_reference, created_at
+from public.payment_events
+order by created_at desc
+limit 50;
+
+-- Init + verify + webhook for one reference
+select provider_event_id, event_type, status, created_at
+from public.payment_events
+where paystack_reference = '<reference>'
+   or provider_event_id like '%<reference>%'
+order by created_at;
+
+-- Duplicate webhook dedupe (should be one claim row per event id)
+select provider, provider_event_id, count(*)
+from public.payment_events
+where provider = 'paystack'
+group by 1, 2
+having count(*) > 1;
+```
+
 ## Cron stubs (post-MVP wiring)
 
 | Function | Suggested schedule | Auth |
 |----------|-------------------|------|
 | `process-webhook-retries` | Every 15 min | `Bearer <SERVICE_ROLE_KEY>` POST |
-| `paystack-reconcile` | Daily 02:00 SAST | Same |
+| `reconcile-daily` | Daily 02:00 SAST | Same |
 
 ## Runbook links
 

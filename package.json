@@ -16,6 +16,7 @@
     "reset:demo": "tsx scripts/reset-demo.ts",
     "verify:supabase": "tsx scripts/verify-supabase.ts",
     "verify:paystack": "tsx scripts/verify-paystack-beta.ts",
+    "stress:qr": "tsx scripts/stress-qr-resolve.ts",
     "test:auth": "tsx scripts/test-auth-integration.ts",
     "db:apply": "tsx scripts/apply-migrations-pg.ts",
     "db:sql": "tsx scripts/exec-sql-file.ts",

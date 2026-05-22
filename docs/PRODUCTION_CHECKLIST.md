@@ -13,7 +13,9 @@ See [ROADMAP_AND_DEPLOYMENT.md](./ROADMAP_AND_DEPLOYMENT.md), [AUTH_SMOKE_TESTS.
 - [ ] Maintenance: `VITE_MAINTENANCE_MODE` (Vercel) + `MAINTENANCE_MODE` (Supabase Edge secret)
 - [ ] Payout freeze tested: Admin → Freeze payouts; `request-payout` returns 503 when frozen
 - [ ] Migration `20260521140000_prelaunch_operational_systems.sql` applied
-- [ ] Launch SQL `20260625140000_payment_qr_rpc_hotfix.sql` + `20260625160000_launch_qr_hardening.sql` applied on production
+- [ ] Launch SQL through `20260625170000_merchant_ops_launch.sql` applied on production (`20260625150000`, `20260625160000`, `20260625170000` + hotfixes per [MIGRATIONS_AND_RLS.md](./MIGRATIONS_AND_RLS.md))
+- [ ] `npm run verify:supabase` exits 0 (includes `regenerate_qr_code_token`, `qr_codes` launch columns)
+- [ ] [LAUNCH_VALIDATION_REPORT.md](./LAUNCH_VALIDATION_REPORT.md) and [FINAL_LAUNCH_READINESS_REPORT.md](./FINAL_LAUNCH_READINESS_REPORT.md) reviewed — **GO** only when NO-GO blockers cleared
 - [ ] Cron: `process-webhook-retries` (15m) + `reconcile-daily` (daily) — [CRON.md](./CRON.md) reliability section
 
 ## UX & quality (MVP pass)
@@ -69,4 +71,6 @@ See [ROADMAP_AND_DEPLOYMENT.md](./ROADMAP_AND_DEPLOYMENT.md), [AUTH_SMOKE_TESTS.
 - [ ] Guard: payout request flow records an internal payout request.
 - [ ] Short link `/t/:token` while signed out → login → returns to `/customer/tip/:guardId`.
 - [ ] Signup with email confirmations: user sees verify step, completes link, lands on `/onboarding` or preserved redirect.
-- [ ] `npm run lint && npm run build && npm run test:e2e` (auth guards + demo refresh when seeded)
+- [ ] `npm run lint && npm run build && npm run verify:paystack && npm run verify:supabase`
+- [ ] `npx tsx scripts/stress-qr-resolve.ts <prod-qr-token> 50` — p95 &lt; 800ms, errors &lt; 10%
+- [ ] `npm run test:e2e` after `npx playwright install` (auth guards + demo refresh when seeded)

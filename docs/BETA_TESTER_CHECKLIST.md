@@ -27,6 +27,8 @@ Use this on a real phone (Android Chrome + iPhone Safari) with **test** Paystack
 - [ ] Guard hub shows balance / recent tips (or empty state)
 - [ ] Guard QR page generates a scannable code
 - [ ] Merchant setup + KYC pages load for merchant role
+- [ ] Merchant dashboard shows **Verified** or **Pending verification** (`merchants.verified`)
+- [ ] Merchant QR: create, print, revoke/regenerate (after launch migration `20260625170000` on server)
 
 ## Mobile UX (report failures)
 
