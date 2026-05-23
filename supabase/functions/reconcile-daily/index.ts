@@ -1,10 +1,10 @@
 /**
  * Daily financial reconciliation: payment_events vs transactions for a date range.
- * Auth: Bearer SUPABASE_SERVICE_ROLE_KEY
+ * Auth: Bearer SUPABASE_SERVICE_ROLE_KEY (cron) or admin session JWT (/admin/transactions)
  * Body (optional): { "from_date": "2026-05-20", "to_date": "2026-05-21" }
  */
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { authorizeServiceOrAdmin } from "../_shared/adminAuth.ts";
 
 function parseDay(s: string | undefined, fallback: Date): Date {
   if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return fallback;
@@ -17,19 +17,14 @@ serve(async (req) => {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  const auth = req.headers.get("authorization") ?? "";
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (!serviceKey || auth !== `Bearer ${serviceKey}`) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
+  const authResult = await authorizeServiceOrAdmin(req);
+  if (!authResult.ok) {
+    return new Response(JSON.stringify({ error: authResult.error }), {
+      status: authResult.status,
       headers: { "Content-Type": "application/json" },
     });
   }
-
-  const service = createClient(
-    Deno.env.get("SUPABASE_URL") ?? "",
-    serviceKey,
-  );
+  const service = authResult.service;
 
   let body: { from_date?: string; to_date?: string } = {};
   try {

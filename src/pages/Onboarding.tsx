@@ -369,7 +369,7 @@ export default function Onboarding() {
           )}
 
           {allDone && (
-            <p className="fx-fade-up text-center text-sm text-emerald-400/90">You are ready for beta.</p>
+            <p className="fx-fade-up text-center text-sm text-emerald-400/90">Your account is ready.</p>
           )}
         </>
       )}

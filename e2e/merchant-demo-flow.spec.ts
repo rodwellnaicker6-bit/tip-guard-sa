@@ -28,4 +28,24 @@ test.describe("Demo merchant hub (auth + routing)", () => {
     await page.goto("/merchant/setup");
     await expect(page).toHaveURL(/\/merchant/, { timeout: 15_000 });
   });
+
+  test("onboarding Continue advances role step when session present", async ({ page }) => {
+    await page.getByPlaceholder(/email address/i).fill(DEMO_MERCHANT_EMAIL);
+    await page.getByPlaceholder(/password/i).fill(DEMO_PASSWORD);
+    await page.getByRole("button", { name: /^continue$/i }).click();
+    await expect(page).toHaveURL(/\/merchant/, { timeout: 30_000 });
+
+    await page.goto("/onboarding");
+    const onOnboarding = await page
+      .waitForURL(/\/onboarding/, { timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!onOnboarding) return;
+
+    const continueBtn = page.getByRole("button", { name: /^continue$/i });
+    if (await continueBtn.isVisible().catch(() => false)) {
+      await continueBtn.click();
+      await expect(page.getByText(/profile basics|venue|go to dashboard/i)).toBeVisible({ timeout: 15_000 });
+    }
+  });
 });

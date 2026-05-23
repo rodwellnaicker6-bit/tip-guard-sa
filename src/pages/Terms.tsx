@@ -33,7 +33,9 @@ export default function Terms() {
         The service is provided &quot;as is&quot; to the extent permitted by law. Operators deploying TipGuard should maintain
         appropriate insurance and employment arrangements with guards.
       </p>
-      <p>Operators should replace this template with counsel-reviewed terms before public marketing.</p>
+      <p>
+        Questions: <a href="/contact">contact us</a>. Governing law: Republic of South Africa.
+      </p>
     </LegalPageLayout>
   );
 }

@@ -26,6 +26,11 @@ test.describe("QR resolve and checkout shell", () => {
     await expect(page.getByRole("heading", { name: /tip link unavailable/i })).not.toBeVisible();
   });
 
+  test("resolve_tip_target RPC path via /t demo token", async ({ page }) => {
+    await page.goto("/t/demo-staging-qr-01");
+    await expect(page.getByRole("heading", { name: /^Tip /i })).toBeVisible({ timeout: 15000 });
+  });
+
   test("payment failure page renders", async ({ page }) => {
     await page.goto("/payment/failure");
     await expect(page.getByRole("heading", { name: /not completed/i })).toBeVisible({ timeout: 10000 });

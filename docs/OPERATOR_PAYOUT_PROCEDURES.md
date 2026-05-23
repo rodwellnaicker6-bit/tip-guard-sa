@@ -14,10 +14,22 @@
 
 Server implementation: migration `20260625200000_launch_cron_admin_payout.sql`.
 
-## Standard paid flow (beta)
+## Automatic Paystack Transfer API
 
-1. Guard requests payout on dashboard (`request-payout` Edge) → row `pending`, funds in `wallet_accounts.pending_cents`.
-2. Operator initiates Paystack transfer (external) and records `provider_reference` when wired.
+When `PAYSTACK_SECRET_KEY` is set in Supabase Edge secrets and `PAYSTACK_PAYOUT_TRANSFERS` is not `false`:
+
+1. Guard calls `request-payout` with optional `bank_code`, `account_number`, `account_name` (or values stored on `guards.payout_*` columns).
+2. Edge creates a Paystack **transfer recipient** (if needed), then **transfer** from balance; row moves to `processing` with `provider_reference` = Paystack `transfer_code`.
+3. `transfer.success` webhook settles the hold and sets `paid`.
+
+If the secret is missing, transfers are disabled, or bank details are absent, the payout stays `pending` with a graceful message — operator completes manually (below).
+
+Set `PAYSTACK_PAYOUT_TRANSFERS=false` to force manual-only payouts while keeping card checkout live.
+
+## Standard paid flow (manual or after transfer)
+
+1. Guard requests payout on dashboard (`request-payout` Edge) → row `pending` (or `processing` if Transfer API ran), funds in `wallet_accounts.pending_cents`.
+2. If manual: operator initiates Paystack transfer in Dashboard and records `provider_reference` on the row, or marks status on `/admin` → Payouts.
 3. Paystack sends `transfer.success` → webhook calls `settle_guard_payout_hold` and sets `paid`, **or** operator marks **Processing** then **Paid** on `/admin` → Payouts (same settle via RPC).
 4. Confirm in SQL:
 
@@ -61,8 +73,19 @@ That page runs `payout_reconciliation_report` and `reconcile-daily` only. Payout
 
 Duplicate settle suspicion → [INCIDENT_RESPONSE.md](./INCIDENT_RESPONSE.md) SEV2, freeze payouts, export `payout_requests` + `wallet_accounts` for affected `guard_id`.
 
+## Manual payout test (Paystack review / staging)
+
+1. `npm run seed:demo` — guard balance seeded.
+2. Sign in as `demo-guard@tipguard.staging` → **Request payout** (e.g. R50).
+3. Sign in as `demo-admin@tipguard.staging` → `/admin` → Payouts → **Processing** → **Paid**.
+4. Confirm guard `pending_cents` decreased and payout row `paid` (SQL snippet above).
+5. Optional Transfer API: set guard bank fields + `PAYSTACK_SECRET_KEY`, repeat; watch `transfer.success` in webhook logs.
+
+E2E scaffold: `e2e/payout-flow.spec.ts` (set `E2E_SKIP_PAYOUT_TRANSFER=1` when Transfer API unavailable in CI).
+
 ## Related
 
 - [ADMIN_PROCEDURES.md](./ADMIN_PROCEDURES.md)
+- [PAYSTACK_REVIEW_DEMO.md](./PAYSTACK_REVIEW_DEMO.md)
 - [BETA_ROLLOUT_PLAN.md](./BETA_ROLLOUT_PLAN.md) — payout reliability test
 - `scripts/operator-e2e-checklist.sh` section 4

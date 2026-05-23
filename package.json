@@ -25,6 +25,7 @@
     "auth:configure": "tsx scripts/configure-auth-urls.ts",
     "setup:production": "bash scripts/setup-production.sh",
     "readiness": "tsx scripts/production-readiness.ts",
+    "smoke:production": "bash scripts/production-smoke.sh",
     "scan:secrets": "tsx scripts/scan-secrets.ts"
   },
   "dependencies": {

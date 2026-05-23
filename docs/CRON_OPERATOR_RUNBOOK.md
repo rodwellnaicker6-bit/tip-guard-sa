@@ -88,7 +88,10 @@ order by run_at desc
 limit 3;
 ```
 
-Manual trigger:
+Manual trigger (either):
+
+- **Admin UI:** sign in as admin → `/admin/transactions` → **Run daily reconcile** (uses your session JWT).
+- **Cron / CLI:**
 
 ```bash
 curl -X POST "https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/reconcile-daily" \
@@ -96,6 +99,8 @@ curl -X POST "https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/reconcile-da
   -H "Content-Type: application/json" \
   -d '{}'
 ```
+
+Deployed Edge functions for review: `paystack-webhook`, `process-webhook-retries`, `reconcile-daily` (see `supabase functions deploy` in [DEPLOYMENT_FINAL.md](./DEPLOYMENT_FINAL.md)).
 
 ---
 
