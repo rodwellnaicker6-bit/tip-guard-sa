@@ -45,12 +45,33 @@ npx vercel@latest env add VITE_DEMO_MODE production
 npx vercel@latest deploy --prod
 ```
 
-## CLI status (automated run)
+## Production live keys (placeholders — operator pastes real values)
 
-- Global `vercel` CLI: **not installed**
-- `npx vercel@latest`: available (v54.4.0)
-- Auth: **not logged in** (device OAuth required; non-interactive session could not complete)
+User did not provide `pk_live_` / `sk_live_` in chat. Set these manually after Paystack approves live mode:
+
+| Where | Variable | Placeholder | Real value source |
+|-------|----------|-------------|-------------------|
+| Vercel Production | `VITE_PAYSTACK_PUBLIC_KEY` | `pk_live_REPLACE_ME` | Paystack → API Keys → Live Public |
+| Vercel Production | `VITE_PAYSTACK_TEST_MODE` | remove or `false` | — |
+| Supabase Edge secrets | `PAYSTACK_SECRET_KEY` | `sk_live_REPLACE_ME` | Paystack → Live Secret (**never** Vercel) |
+
+```bash
+# After vercel login + link on operator machine:
+npx vercel@latest env add VITE_PAYSTACK_PUBLIC_KEY production
+# When prompted, paste pk_live_... from Paystack Dashboard
+
+# Supabase (never use vercel env for sk_live):
+supabase secrets set PAYSTACK_SECRET_KEY="sk_live_..."
+```
+
+Full cutover: [LIVE_KEY_CUTOVER.md](./LIVE_KEY_CUTOVER.md).
+
+## CLI status (automated run — May 2026)
+
+- `npx vercel@latest`: available (v54.4.x)
+- Auth: **not logged in** (device OAuth at `https://vercel.com/oauth/device` — agent cannot complete)
 - `.vercel/project.json`: **not present** (project not linked locally)
+- `vercel env add`: **not run** — use Dashboard or CLI after login
 
 ## Verify after redeploy
 

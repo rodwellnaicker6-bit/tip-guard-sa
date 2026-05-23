@@ -87,20 +87,32 @@ Header: `Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>`.
 
 ---
 
-## 7. Vercel frontend (requires user token)
+## 7. Vercel frontend — redeploy production
 
-Vite inlines `VITE_*` at **build** time. After changing env vars, redeploy:
+Vite inlines `VITE_*` at **build** time. **Redeploy after any env var change** or new commits on `main`.
+
+### Option A — Vercel Dashboard (operator; no CLI)
+
+1. Open [Vercel Dashboard](https://vercel.com/dashboard) → project **tip-guard-sa** (or your linked repo name).
+2. **Deployments** tab → filter **Production**.
+3. Open the latest deployment from branch `main` (or click **Create Deployment** → branch `main` → **Production**).
+4. **⋯** (three dots) → **Redeploy**.
+5. Leave **Use existing Build Cache** unchecked if you changed `VITE_*` env vars; optional if code-only.
+6. Confirm **Redeploy** and wait until status is **Ready**.
+7. Open https://tip-guard-sa.vercel.app and hard-refresh (or incognito) to verify the new build.
+
+### Option B — Vercel CLI (machine with `vercel login`)
 
 ```bash
-# From machine with Vercel CLI logged in:
-vercel --prod
+cd /path/to/tipguard-sa
+npx vercel@latest login          # device OAuth in browser
+npx vercel@latest link           # select team + project
+npx vercel@latest deploy --prod
 ```
 
-Or: Vercel Dashboard → Project → Deployments → Redeploy Production.
+Env names: [LIVE_ENV_VARIABLES.md](./LIVE_ENV_VARIABLES.md). Live key placeholders: [VERCEL_ENV_SETUP.md](./VERCEL_ENV_SETUP.md).
 
-Env names: [LIVE_ENV_VARIABLES.md](./LIVE_ENV_VARIABLES.md).
-
-**This agent cannot redeploy Vercel without the operator's Vercel token.**
+**Automated agent status (May 2026):** CLI not authenticated; no `.vercel/project.json` locally — use **Option A** unless you complete `vercel login` on your machine.
 
 ---
 
