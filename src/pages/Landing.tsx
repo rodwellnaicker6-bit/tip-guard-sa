@@ -80,6 +80,7 @@ export default function Landing() {
             <Link to="/privacy">Privacy</Link>
             <Link to="/legal/popia">POPIA</Link>
             <Link to="/legal/refunds">Refunds</Link>
+            <Link to="/contact">Contact</Link>
             <a href="https://paystack.com" target="_blank" rel="noreferrer">
               Paystack
             </a>

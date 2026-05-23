@@ -50,6 +50,7 @@ const PopiaNotice = lazy(() => import("./pages/PopiaNotice"));
 const CookiesPolicy = lazy(() => import("./pages/CookiesPolicy"));
 const RefundPolicy = lazy(() => import("./pages/RefundPolicy"));
 const MerchantOnboardingLegal = lazy(() => import("./pages/MerchantOnboardingLegal"));
+const Contact = lazy(() => import("./pages/Contact"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const AdminSecurity = lazy(() => import("./pages/AdminSecurity"));
 const AdminTransactions = lazy(() => import("./pages/AdminTransactions"));
@@ -122,6 +123,14 @@ function AppRoutes() {
         element={
           <Lazy>
             <MerchantOnboardingLegal />
+          </Lazy>
+        }
+      />
+      <Route
+        path="/contact"
+        element={
+          <Lazy>
+            <Contact />
           </Lazy>
         }
       />
