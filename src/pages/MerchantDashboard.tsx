@@ -9,7 +9,7 @@ import { ProfileCompletionCard } from "../components/ProfileCompletionCard";
 import { FetchError } from "../components/FetchError";
 import { MerchantAnalyticsPanel } from "../components/MerchantAnalyticsPanel";
 import { PayoutSchedulePanel } from "../components/PayoutSchedulePanel";
-import { isPayoutSchedule, type PayoutSchedule } from "../lib/payoutSchedule";
+import { fetchEntityPayoutPrefs, type PayoutSchedule } from "../lib/payoutSchedule";
 
 type MerchRow = {
   id: string;
@@ -28,6 +28,7 @@ export default function MerchantDashboard() {
   const [payoutSchedule, setPayoutSchedule] = useState<PayoutSchedule>("weekly");
   const [nextPayoutAt, setNextPayoutAt] = useState<string | null>(null);
   const [minPayoutCents, setMinPayoutCents] = useState(10000);
+  const [payoutSchemaComplete, setPayoutSchemaComplete] = useState(true);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -35,29 +36,26 @@ export default function MerchantDashboard() {
     (async () => {
       setLoading(true);
       setError(null);
-      const { data, error: err } = await supabase
-        .from("merchants")
-        .select(
-          "id, business_name, location, verified, risk_score, payout_schedule, next_payout_at, minimum_payout_threshold_cents",
-        )
-        .eq("user_id", user.id)
-        .maybeSingle();
+      const [{ data, error: err }, payoutLoad] = await Promise.all([
+        supabase
+          .from("merchants")
+          .select("id, business_name, location, verified, risk_score")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        fetchEntityPayoutPrefs("merchants", user.id),
+      ]);
       if (cancelled) return;
       if (err) {
         setError("We could not load your venue. Please try again.");
         setMerchant(null);
       } else {
-        const row = data as MerchRow & {
-          payout_schedule?: string;
-          next_payout_at?: string | null;
-          minimum_payout_threshold_cents?: number;
-        };
-        setMerchant((row as MerchRow) ?? null);
-        if (row?.id) {
-          const sched = row.payout_schedule ?? "";
-          setPayoutSchedule(isPayoutSchedule(sched) ? sched : "weekly");
-          setNextPayoutAt(row.next_payout_at ?? null);
-          setMinPayoutCents(row.minimum_payout_threshold_cents ?? 10000);
+        const row = data as MerchRow | null;
+        setMerchant(row ?? null);
+        if (payoutLoad.prefs) {
+          setPayoutSchedule(payoutLoad.prefs.schedule);
+          setNextPayoutAt(payoutLoad.prefs.nextPayoutAt);
+          setMinPayoutCents(payoutLoad.prefs.minCents);
+          setPayoutSchemaComplete(payoutLoad.prefs.schemaComplete);
         }
       }
       setLoading(false);
@@ -131,6 +129,37 @@ export default function MerchantDashboard() {
         )}
       </header>
 
+      <nav className="hub-nav-grid" aria-label="Venue hub">
+        <a
+          href="#payout-preferences"
+          className="hub-nav-link border-emerald-500/30 bg-emerald-500/10 font-bold text-emerald-200"
+        >
+          Payouts
+        </a>
+        <Link className="hub-nav-link bg-white/10 text-amber-200" to="/merchant/locations">
+          Locations
+        </Link>
+        <Link className="hub-nav-link bg-white/10 text-amber-200" to="/merchant/qr">
+          QR codes
+        </Link>
+        <Link className="hub-nav-link bg-white/10 text-amber-200" to="/merchant/guards">
+          Guards
+        </Link>
+      </nav>
+
+      <div className="card min-w-0 scroll-mt-24 rounded-2xl border-2 border-amber-500/40 bg-amber-500/5 p-4 fx-fade-up shadow-lg shadow-amber-500/10">
+        <PayoutSchedulePanel
+          table="merchants"
+          entityId={merchant.id}
+          schedule={payoutSchedule}
+          nextPayoutAt={nextPayoutAt}
+          minimumPayoutThresholdCents={minPayoutCents}
+          prominent
+          schemaUnavailable={!payoutSchemaComplete}
+          onSaved={() => setReload((n) => n + 1)}
+        />
+      </div>
+
       <ProfileCompletionCard fields={profileFields} />
 
       <div className="card min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4 fx-fade-up">
@@ -159,23 +188,6 @@ export default function MerchantDashboard() {
         >
           Venue verification
         </Link>
-      </div>
-
-      <div className="card stack min-w-0 scroll-mt-24 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-        <a
-          href="#payout-preferences"
-          className="mb-2 inline-block text-xs font-bold uppercase tracking-wide text-amber-400 hover:text-amber-300"
-        >
-          Payout preferences ↓
-        </a>
-        <PayoutSchedulePanel
-          table="merchants"
-          entityId={merchant.id}
-          schedule={payoutSchedule}
-          nextPayoutAt={nextPayoutAt}
-          minimumPayoutThresholdCents={minPayoutCents}
-          onSaved={() => setReload((n) => n + 1)}
-        />
       </div>
 
       <div className="card stack min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4">

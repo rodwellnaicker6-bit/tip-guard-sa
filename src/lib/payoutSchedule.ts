@@ -1,4 +1,19 @@
+import { supabase } from "./supabase";
+
 export type PayoutSchedule = "instant" | "daily" | "weekly" | "monthly";
+
+export type EntityTable = "guards" | "merchants";
+
+export type EntityPayoutPrefs = {
+  id: string;
+  schedule: PayoutSchedule;
+  nextPayoutAt: string | null;
+  minCents: number;
+  /** False when DB migration 20260625150000 is not applied (columns missing). */
+  schemaComplete: boolean;
+};
+
+const PAYOUT_COLS = "id, payout_schedule, next_payout_at, minimum_payout_threshold_cents";
 
 export const PAYOUT_SCHEDULE_OPTIONS: { value: PayoutSchedule; label: string; description: string }[] = [
   { value: "instant", label: "Instant", description: "Request payouts when your balance is ready." },
@@ -63,4 +78,50 @@ export function formatNextPayoutAt(iso: string | null | undefined): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+type PayoutRowSlice = {
+  id: string;
+  payout_schedule?: string;
+  next_payout_at?: string | null;
+  minimum_payout_threshold_cents?: number;
+};
+
+function prefsFromRow(row: PayoutRowSlice, schemaComplete: boolean): EntityPayoutPrefs {
+  const sched = row.payout_schedule ?? "";
+  return {
+    id: row.id,
+    schedule: isPayoutSchedule(sched) ? sched : "weekly",
+    nextPayoutAt: row.next_payout_at ?? null,
+    minCents: row.minimum_payout_threshold_cents ?? 10000,
+    schemaComplete,
+  };
+}
+
+/** Load payout prefs; falls back to id-only select when migration columns are missing. */
+export async function fetchEntityPayoutPrefs(
+  table: EntityTable,
+  userId: string,
+): Promise<{ prefs: EntityPayoutPrefs | null; error: string | null }> {
+  const { data, error } = await supabase.from(table).select(PAYOUT_COLS).eq("user_id", userId).maybeSingle();
+  if (!error && data?.id) {
+    return { prefs: prefsFromRow(data as PayoutRowSlice, true), error: null };
+  }
+  if (error && isMissingPayoutScheduleSchema(error)) {
+    const { data: legacy, error: legacyErr } = await supabase.from(table).select("id").eq("user_id", userId).maybeSingle();
+    if (legacyErr) return { prefs: null, error: "We could not load payout preferences." };
+    if (!legacy?.id) return { prefs: null, error: null };
+    return {
+      prefs: {
+        id: legacy.id as string,
+        schedule: "weekly",
+        nextPayoutAt: null,
+        minCents: 10000,
+        schemaComplete: false,
+      },
+      error: null,
+    };
+  }
+  if (error) return { prefs: null, error: "We could not load payout preferences." };
+  return { prefs: null, error: null };
 }

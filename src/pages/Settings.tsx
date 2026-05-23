@@ -7,12 +7,7 @@ import { supabase } from "../lib/supabase";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { profileCompletionPercent, profileChecklist } from "../lib/profileCompletion";
 import { PayoutSchedulePanel } from "../components/PayoutSchedulePanel";
-import {
-  PAYOUT_SCHEMA_UPDATE_HINT,
-  isMissingPayoutScheduleSchema,
-  isPayoutSchedule,
-  type PayoutSchedule,
-} from "../lib/payoutSchedule";
+import { fetchEntityPayoutPrefs, type PayoutSchedule } from "../lib/payoutSchedule";
 
 const THEME_KEY = "tipguard_theme";
 const DARK_KEY = "tipguard_dark";
@@ -30,6 +25,7 @@ type PayoutEntity = {
   minCents: number;
   availableCents?: number;
   pendingCents?: number;
+  schemaComplete: boolean;
 };
 
 export default function Settings() {
@@ -43,76 +39,56 @@ export default function Settings() {
     () => typeof document !== "undefined" && document.documentElement.dataset.theme === "hc",
   );
   const [payoutEntity, setPayoutEntity] = useState<PayoutEntity | null>(null);
-  const [payoutSchemaHint, setPayoutSchemaHint] = useState<string | null>(null);
+  const [payoutSchemaComplete, setPayoutSchemaComplete] = useState(true);
 
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
     (async () => {
       if (isGuardUser) {
-        const { data, error: gErr } = await supabase
-          .from("guards")
-          .select("id, payout_schedule, next_payout_at, minimum_payout_threshold_cents")
-          .eq("user_id", user.id)
-          .maybeSingle();
-        if (cancelled) return;
-        if (gErr && isMissingPayoutScheduleSchema(gErr)) {
-          setPayoutEntity(null);
-          setPayoutSchemaHint(PAYOUT_SCHEMA_UPDATE_HINT);
-          return;
-        }
-        if (!data?.id) return;
-        const sched = (data.payout_schedule as string | undefined) ?? "";
+        const { prefs } = await fetchEntityPayoutPrefs("guards", user.id);
+        if (cancelled || !prefs) return;
         let avail: number | undefined;
         let pending: number | undefined;
         const { data: w } = await supabase
           .from("wallet_accounts")
           .select("available_cents, pending_cents")
-          .eq("guard_id", data.id)
+          .eq("guard_id", prefs.id)
           .maybeSingle();
         if (w) {
           avail = w.available_cents as number;
           pending = w.pending_cents as number;
         }
-        setPayoutSchemaHint(null);
+        setPayoutSchemaComplete(prefs.schemaComplete);
         setPayoutEntity({
           table: "guards",
-          id: data.id,
-          schedule: isPayoutSchedule(sched) ? sched : "weekly",
-          nextPayoutAt: (data.next_payout_at as string | null) ?? null,
-          minCents: (data.minimum_payout_threshold_cents as number) ?? 10000,
+          id: prefs.id,
+          schedule: prefs.schedule,
+          nextPayoutAt: prefs.nextPayoutAt,
+          minCents: prefs.minCents,
           availableCents: avail,
           pendingCents: pending,
+          schemaComplete: prefs.schemaComplete,
         });
         return;
       }
       if (isMerchantUser) {
-        const { data, error: mErr } = await supabase
-          .from("merchants")
-          .select("id, payout_schedule, next_payout_at, minimum_payout_threshold_cents")
-          .eq("user_id", user.id)
-          .maybeSingle();
-        if (cancelled) return;
-        if (mErr && isMissingPayoutScheduleSchema(mErr)) {
-          setPayoutEntity(null);
-          setPayoutSchemaHint(PAYOUT_SCHEMA_UPDATE_HINT);
-          return;
-        }
-        if (!data?.id) return;
-        const sched = (data.payout_schedule as string | undefined) ?? "";
-        setPayoutSchemaHint(null);
+        const { prefs } = await fetchEntityPayoutPrefs("merchants", user.id);
+        if (cancelled || !prefs) return;
+        setPayoutSchemaComplete(prefs.schemaComplete);
         setPayoutEntity({
           table: "merchants",
-          id: data.id,
-          schedule: isPayoutSchedule(sched) ? sched : "weekly",
-          nextPayoutAt: (data.next_payout_at as string | null) ?? null,
-          minCents: (data.minimum_payout_threshold_cents as number) ?? 10000,
+          id: prefs.id,
+          schedule: prefs.schedule,
+          nextPayoutAt: prefs.nextPayoutAt,
+          minCents: prefs.minCents,
+          schemaComplete: prefs.schemaComplete,
         });
         return;
       }
       if (!cancelled) {
         setPayoutEntity(null);
-        setPayoutSchemaHint(null);
+        setPayoutSchemaComplete(true);
       }
     })();
     return () => {
@@ -237,21 +213,8 @@ export default function Settings() {
         </button>
       </form>
 
-      {user && payoutSchemaHint && (
-        <div className="card stack rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
-          <span className="inline-block rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
-            Payout preferences
-          </span>
-          <p className="mt-2 text-sm text-amber-100">{payoutSchemaHint}</p>
-          <p className="mt-2 text-xs text-slate-400">
-            After migrating, open <Link className="font-semibold text-amber-400" to="/guard">/guard</Link> or{" "}
-            <Link className="font-semibold text-amber-400" to="/merchant">/merchant</Link>.
-          </p>
-        </div>
-      )}
-
       {user && payoutEntity && (
-        <div className="card stack rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="card stack rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 p-4">
           <PayoutSchedulePanel
             table={payoutEntity.table}
             entityId={payoutEntity.id}
@@ -260,7 +223,20 @@ export default function Settings() {
             minimumPayoutThresholdCents={payoutEntity.minCents}
             availableCents={payoutEntity.availableCents}
             pendingCents={payoutEntity.pendingCents}
+            prominent
+            schemaUnavailable={!payoutSchemaComplete}
           />
+          <p className="mt-2 text-xs text-slate-500">
+            Also on{" "}
+            <Link className="font-semibold text-amber-400" to="/guard#payout-preferences">
+              guard dashboard
+            </Link>{" "}
+            or{" "}
+            <Link className="font-semibold text-amber-400" to="/merchant#payout-preferences">
+              venue hub
+            </Link>
+            .
+          </p>
         </div>
       )}
 

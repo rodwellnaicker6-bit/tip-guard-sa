@@ -22,6 +22,10 @@ type Props = {
   availableCents?: number | null;
   pendingCents?: number | null;
   onSaved?: () => void;
+  /** Highlights panel at top of dashboard — hard to miss. */
+  prominent?: boolean;
+  /** DB migration not applied; save will fail until `supabase db push`. */
+  schemaUnavailable?: boolean;
 };
 
 export function PayoutSchedulePanel({
@@ -33,6 +37,8 @@ export function PayoutSchedulePanel({
   availableCents,
   pendingCents,
   onSaved,
+  prominent = false,
+  schemaUnavailable = false,
 }: Props) {
   const [schedule, setSchedule] = useState<PayoutSchedule>(initialSchedule);
   const [busy, setBusy] = useState(false);
@@ -71,12 +77,27 @@ export function PayoutSchedulePanel({
   const minZar = zarFromCents(minimumPayoutThresholdCents);
 
   return (
-    <form id="payout-preferences" className="scroll-mt-24 space-y-3" onSubmit={(ev) => void onSave(ev)}>
+    <form
+      id="payout-preferences"
+      className={`scroll-mt-24 space-y-3${prominent ? " rounded-2xl" : ""}`}
+      onSubmit={(ev) => void onSave(ev)}
+    >
+      {schemaUnavailable && (
+        <div
+          className="rounded-xl border-2 border-amber-500/50 bg-amber-500/15 px-3 py-3 text-sm text-amber-100"
+          role="alert"
+        >
+          <p className="font-bold text-amber-200">Database update required to save</p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-100/90">{PAYOUT_SCHEMA_UPDATE_HINT}</p>
+          <p className="mt-2 text-xs text-slate-400">You can still preview options below; defaults apply until migration runs.</p>
+        </div>
+      )}
+
       <div>
         <span className="mb-2 inline-block rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">
           Payout preferences
         </span>
-        <h3 className="text-base font-bold text-white">Payout schedule</h3>
+        <h3 className={`font-bold text-white${prominent ? " text-lg" : " text-base"}`}>Payout schedule</h3>
         <p className="mt-1 text-xs text-slate-500">
           Choose how often accumulated tips are batched for bank transfer. You can still request a manual payout below
           the minimum when funds are available.
@@ -145,7 +166,11 @@ export function PayoutSchedulePanel({
         {busy ? "Saving…" : "Save payout schedule"}
       </button>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && (
+        <div className="rounded-xl border-2 border-red-500/50 bg-red-500/15 px-3 py-3 text-sm text-red-200" role="alert">
+          {error}
+        </div>
+      )}
       {message && <p className="text-sm text-emerald-400">{message}</p>}
     </form>
   );

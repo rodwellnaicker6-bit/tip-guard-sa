@@ -45,6 +45,7 @@ export default function GuardHome() {
   const [payoutSchedule, setPayoutSchedule] = useState<PayoutSchedule>("weekly");
   const [nextPayoutAt, setNextPayoutAt] = useState<string | null>(null);
   const [minPayoutCents, setMinPayoutCents] = useState(10000);
+  const [payoutSchemaComplete, setPayoutSchemaComplete] = useState(true);
   const [recentPayouts, setRecentPayouts] = useState<PayoutRow[]>([]);
 
   useEffect(() => {
@@ -68,6 +69,8 @@ export default function GuardHome() {
       }) ?? null;
       setGuard(g);
       if (g) {
+        const hasPayoutCols = "payout_schedule" in g;
+        setPayoutSchemaComplete(hasPayoutCols);
         const sched = g.payout_schedule ?? "";
         setPayoutSchedule(isPayoutSchedule(sched) ? sched : "weekly");
         setNextPayoutAt(g.next_payout_at ?? null);
@@ -218,6 +221,21 @@ export default function GuardHome() {
         </div>
       </header>
 
+      <GlassPanel className="fx-fade-up border-2 border-amber-500/40 shadow-lg shadow-amber-500/10" glow="amber">
+        <PayoutSchedulePanel
+          table="guards"
+          entityId={guard.id}
+          schedule={payoutSchedule}
+          nextPayoutAt={nextPayoutAt}
+          minimumPayoutThresholdCents={minPayoutCents}
+          availableCents={walletAvail ?? guard.balance_cents}
+          pendingCents={walletPending}
+          prominent
+          schemaUnavailable={!payoutSchemaComplete}
+          onSaved={() => setReload((n) => n + 1)}
+        />
+      </GlassPanel>
+
       <TrustRibbon />
 
       <ProfileCompletionCard fields={profileFields} />
@@ -294,23 +312,10 @@ export default function GuardHome() {
         <Link to="/guard/history" className="hub-nav-link text-slate-200">
           Transactions
         </Link>
-        <a href="#payout-preferences" className="hub-nav-link border-emerald-500/30 bg-emerald-500/10 text-emerald-200">
-          Payout prefs
+        <a href="#payout-preferences" className="hub-nav-link border-emerald-500/30 bg-emerald-500/10 font-bold text-emerald-200">
+          Payouts
         </a>
       </nav>
-
-      <GlassPanel className="fx-fade-up" glow="slate">
-        <PayoutSchedulePanel
-          table="guards"
-          entityId={guard.id}
-          schedule={payoutSchedule}
-          nextPayoutAt={nextPayoutAt}
-          minimumPayoutThresholdCents={minPayoutCents}
-          availableCents={walletAvail ?? guard.balance_cents}
-          pendingCents={walletPending}
-          onSaved={() => setReload((n) => n + 1)}
-        />
-      </GlassPanel>
 
       {recentPayouts.length > 0 ? (
         <GlassPanel className="fx-fade-up" glow="slate">
