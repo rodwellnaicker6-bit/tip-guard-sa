@@ -17,7 +17,8 @@ export function resetPostAuthRedirectState(): void {
  */
 export function usePostAuthRedirect(options: PostAuthNavigateOptions & { enabled?: boolean } = {}) {
   const { enabled = true } = options;
-  const { user, authReady, role, profileFields, hasGuardRow, hasMerchantRow } = useAuth();
+  const { user, authReady, sessionReady, role, profileFields, hasGuardRow, hasMerchantRow } =
+    useAuth();
   const navigate = useNavigate();
   const [routing, setRouting] = useState(false);
   const mountedRef = useRef(true);
@@ -35,6 +36,7 @@ export function usePostAuthRedirect(options: PostAuthNavigateOptions & { enabled
   useEffect(() => {
     if (!enabled) return;
     if (!authReady) return;
+    if (!sessionReady) return;
     if (!user?.id) {
       redirectStarted.current = false;
       postAuthRedirectUserId = null;
@@ -60,8 +62,8 @@ export function usePostAuthRedirect(options: PostAuthNavigateOptions & { enabled
       });
     // Snapshot captured once per redirect; profile fields must not retrigger navigation.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- role/hasGuardRow/hasMerchantRow read at redirect start only
-  }, [enabled, authReady, user?.id, navigate, from, preferOnboarding]);
+  }, [enabled, authReady, sessionReady, user?.id, navigate, from, preferOnboarding]);
 
-  const showLoader = Boolean(user?.id && (routing || !authReady));
+  const showLoader = Boolean(user?.id && (routing || (!authReady && sessionReady)));
   return { routing, showLoader };
 }

@@ -33,6 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authBootError, setAuthBootError] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const accountAbortRef = useRef<AbortController | null>(null);
+  const accountLoadGenRef = useRef(0);
   const sessionReadyRef = useRef(false);
   const reconnectBusyRef = useRef(false);
 
@@ -46,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const loadAccount = useCallback(async (uid: string, signal?: AbortSignal) => {
+  const loadAccount = useCallback(async (uid: string, signal?: AbortSignal, loadGen?: number) => {
     if (!isSupabaseBrowserConfigured) return;
     try {
       const [profRes, guardRes, merchRes] = await Promise.all([
@@ -79,10 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setHasGuardRow(false);
       setHasMerchantRow(false);
     } finally {
-      if (
-        mountedRef.current &&
-        (!signal?.aborted || accountAbortRef.current?.signal === signal)
-      ) {
+      if (mountedRef.current && loadGen === accountLoadGenRef.current) {
         setProfileReady(true);
       }
     }
@@ -102,19 +100,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     accountAbortRef.current?.abort();
     accountAbortRef.current = ac;
     setProfileReady(false);
-    await loadAccount(user.id, ac.signal);
+    const gen = ++accountLoadGenRef.current;
+    await loadAccount(user.id, ac.signal, gen);
   }, [loadAccount, user]);
 
   /** Never call Supabase data APIs inside onAuthStateChange — defer to avoid auth deadlocks. */
   const scheduleLoadAccount = useCallback(
     (uid: string) => {
       if (!mountedRef.current) return;
+      const gen = ++accountLoadGenRef.current;
       setProfileReady(false);
       accountAbortRef.current?.abort();
       const ac = new AbortController();
       accountAbortRef.current = ac;
       queueMicrotask(() => {
-        void loadAccount(uid, ac.signal);
+        void loadAccount(uid, ac.signal, gen);
       });
     },
     [loadAccount],
@@ -230,7 +230,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return true;
         });
       }
-    }, 15_000);
+    }, 8_000);
 
     return () => {
       effectCancelled = true;
@@ -254,9 +254,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!mountedRef.current || !next) return;
           setSession(next);
           setUser(next.user ?? null);
-          if (next.user?.id) {
-            scheduleLoadAccount(next.user.id);
-          }
         })
         .catch((e) => {
           if (import.meta.env.DEV) console.warn("[AuthProvider] reconnect getSession", e);
