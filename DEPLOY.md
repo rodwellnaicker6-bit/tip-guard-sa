@@ -10,6 +10,7 @@ Short go-live list. Details: [docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md
 - [ ] Cron-ready ops: `process-webhook-retries`, `paystack-reconcile` (POST + service role; see docs/MONITORING.md)
 - [ ] Optional secrets: `MAINTENANCE_MODE`, `APP_VERSION` (health JSON)
 - [ ] Supabase secrets: `PAYSTACK_SECRET_KEY`, `PUBLIC_APP_URL` (service role for ops scripts only)
+- [ ] Production: `PAYSTACK_SECRET_KEY` only in Supabase Edge secrets (not Vercel client env).
 
 ## Vercel / hosting env (client)
 
