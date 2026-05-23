@@ -15,7 +15,12 @@ import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { bootLog } from "../lib/bootDebug";
 import { isSupabaseBrowserConfigured, supabase } from "../lib/supabase";
 import { AuthContext } from "./authReactContext";
-import type { AuthContextValue, AuthProfileFields, AuthRole } from "./authTypes";
+import type {
+  AuthAccountSnapshot,
+  AuthContextValue,
+  AuthProfileFields,
+  AuthRole,
+} from "./authTypes";
 
 /**
  * Auth state provider. This module exports only this component so React Fast Refresh stays valid.
@@ -47,62 +52,100 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const loadAccount = useCallback(async (uid: string, signal?: AbortSignal, loadGen?: number) => {
-    if (!isSupabaseBrowserConfigured) return;
-    try {
-      const [profRes, guardRes, merchRes] = await Promise.all([
-        supabase.from("profiles").select("role, full_name, phone").eq("id", uid).maybeSingle(),
-        supabase.from("guards").select("id").eq("user_id", uid).maybeSingle(),
-        supabase.from("merchants").select("id").eq("user_id", uid).maybeSingle(),
-      ]);
-      if (signal?.aborted || !mountedRef.current) return;
-      if (profRes.error) {
-        if (import.meta.env.DEV) console.warn("[AuthProvider] profiles:", profRes.error.message);
+  const loadAccount = useCallback(
+    async (uid: string, signal?: AbortSignal, loadGen?: number): Promise<AuthAccountSnapshot | null> => {
+      if (!isSupabaseBrowserConfigured) return null;
+      let snapshot: AuthAccountSnapshot = {
+        role: null,
+        profileFields: { full_name: null, phone: null },
+        hasGuardRow: false,
+        hasMerchantRow: false,
+      };
+      try {
+        const [profRes, guardRes, merchRes] = await Promise.all([
+          supabase.from("profiles").select("role, full_name, phone").eq("id", uid).maybeSingle(),
+          supabase.from("guards").select("id").eq("user_id", uid).maybeSingle(),
+          supabase.from("merchants").select("id").eq("user_id", uid).maybeSingle(),
+        ]);
+        if (signal?.aborted || !mountedRef.current) return null;
+        const hasGuardRow = !!guardRes.data && !guardRes.error;
+        const hasMerchantRow = !!merchRes.data && !merchRes.error;
+        if (profRes.error) {
+          if (import.meta.env.DEV) console.warn("[AuthProvider] profiles:", profRes.error.message);
+          setRole(null);
+          setProfileFields({ full_name: null, phone: null });
+        } else if (profRes.data) {
+          const nextRole = (profRes.data.role as AuthRole) ?? null;
+          const nextFields: AuthProfileFields = {
+            full_name: (profRes.data.full_name as string | null) ?? null,
+            phone: (profRes.data.phone as string | null) ?? null,
+          };
+          setRole(nextRole);
+          setProfileFields(nextFields);
+          snapshot = { role: nextRole, profileFields: nextFields, hasGuardRow, hasMerchantRow };
+        } else {
+          setRole(null);
+          setProfileFields({ full_name: null, phone: null });
+          snapshot = {
+            role: null,
+            profileFields: { full_name: null, phone: null },
+            hasGuardRow,
+            hasMerchantRow,
+          };
+        }
+        setHasGuardRow(hasGuardRow);
+        setHasMerchantRow(hasMerchantRow);
+        if (profRes.error) {
+          snapshot = {
+            role: null,
+            profileFields: { full_name: null, phone: null },
+            hasGuardRow,
+            hasMerchantRow,
+          };
+        }
+      } catch (e) {
+        if (signal?.aborted || !mountedRef.current) return null;
+        console.error("[AuthCrash] AuthProvider.loadAccount", e);
         setRole(null);
         setProfileFields({ full_name: null, phone: null });
-      } else if (profRes.data) {
-        setRole((profRes.data.role as AuthRole) ?? null);
-        setProfileFields({
-          full_name: (profRes.data.full_name as string | null) ?? null,
-          phone: (profRes.data.phone as string | null) ?? null,
-        });
-      } else {
-        setRole(null);
-        setProfileFields({ full_name: null, phone: null });
+        setHasGuardRow(false);
+        setHasMerchantRow(false);
+        snapshot = {
+          role: null,
+          profileFields: { full_name: null, phone: null },
+          hasGuardRow: false,
+          hasMerchantRow: false,
+        };
+      } finally {
+        if (mountedRef.current && loadGen === accountLoadGenRef.current) {
+          setProfileReady(true);
+        }
       }
-      setHasGuardRow(!!guardRes.data && !guardRes.error);
-      setHasMerchantRow(!!merchRes.data && !merchRes.error);
-    } catch (e) {
-      if (signal?.aborted || !mountedRef.current) return;
-      console.error("[AuthCrash] AuthProvider.loadAccount", e);
-      setRole(null);
-      setProfileFields({ full_name: null, phone: null });
-      setHasGuardRow(false);
-      setHasMerchantRow(false);
-    } finally {
-      if (mountedRef.current && loadGen === accountLoadGenRef.current) {
-        setProfileReady(true);
-      }
-    }
-  }, []);
+      return snapshot;
+    },
+    [],
+  );
 
-  const refreshProfile = useCallback(async () => {
-    if (!user?.id) {
-      if (!mountedRef.current) return;
-      setRole(null);
-      setProfileFields({ full_name: null, phone: null });
-      setHasGuardRow(false);
-      setHasMerchantRow(false);
-      setProfileReady(true);
-      return;
-    }
-    const ac = new AbortController();
-    accountAbortRef.current?.abort();
-    accountAbortRef.current = ac;
-    setProfileReady(false);
-    const gen = ++accountLoadGenRef.current;
-    await loadAccount(user.id, ac.signal, gen);
-  }, [loadAccount, user]);
+  const refreshProfile = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!user?.id) {
+        if (!mountedRef.current) return null;
+        setRole(null);
+        setProfileFields({ full_name: null, phone: null });
+        setHasGuardRow(false);
+        setHasMerchantRow(false);
+        setProfileReady(true);
+        return null;
+      }
+      const ac = new AbortController();
+      accountAbortRef.current?.abort();
+      accountAbortRef.current = ac;
+      if (!options?.silent) setProfileReady(false);
+      const gen = ++accountLoadGenRef.current;
+      return loadAccount(user.id, ac.signal, gen);
+    },
+    [loadAccount, user],
+  );
 
   /** Never call Supabase data APIs inside onAuthStateChange — defer to avoid auth deadlocks. */
   const scheduleLoadAccount = useCallback(

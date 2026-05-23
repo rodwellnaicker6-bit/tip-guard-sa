@@ -7,6 +7,18 @@ export type AuthProfileFields = {
   phone: string | null;
 };
 
+export type AuthAccountSnapshot = {
+  role: AuthRole;
+  profileFields: AuthProfileFields;
+  hasGuardRow: boolean;
+  hasMerchantRow: boolean;
+};
+
+export type RefreshProfileOptions = {
+  /** Reload profile without setting profileReady=false (avoids onboarding UI deadlock). */
+  silent?: boolean;
+};
+
 export type AuthContextValue = {
   user: User | null;
   session: Session | null;
@@ -45,5 +57,5 @@ export type AuthContextValue = {
   resetPasswordForEmail: (email: string) => Promise<{ error?: string }>;
   updatePassword: (newPassword: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
-  refreshProfile: () => Promise<void>;
+  refreshProfile: (options?: RefreshProfileOptions) => Promise<AuthAccountSnapshot | null>;
 };

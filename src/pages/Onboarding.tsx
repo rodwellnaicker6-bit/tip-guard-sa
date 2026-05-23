@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import type { AuthAccountSnapshot } from "../context/authTypes";
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import PaystackTestBanner from "../components/PaystackTestBanner";
 import { supabase } from "../lib/supabase";
@@ -14,8 +15,22 @@ type IntentRole = "customer" | "guard" | "merchant";
 const STEPS = ["role", "profile", "finish"] as const;
 type Step = (typeof STEPS)[number];
 
+function profileSaveErrorMessage(message: string): string {
+  if (/profile role cannot be changed/i.test(message)) {
+    return "We could not save your role. Ask an admin to apply the latest database migration, then try again.";
+  }
+  if (/permission denied|row-level security|42501/i.test(message)) {
+    return "We could not save your profile (access denied). Sign out, sign in again, or contact support.";
+  }
+  if (/network|fetch|failed to fetch|timeout/i.test(message)) {
+    return "Network error while saving. Check your connection and try again.";
+  }
+  return message;
+}
+
 export default function Onboarding() {
-  const { user, role, profileFields, hasGuardRow, hasMerchantRow, loading, refreshProfile } = useAuth();
+  const { user, role, profileFields, hasGuardRow, hasMerchantRow, sessionReady, refreshProfile } =
+    useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const reg = (location.state as LocationState | null)?.registeredRole;
@@ -32,11 +47,11 @@ export default function Onboarding() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (loading) return;
+    if (!sessionReady) return;
     if (!user) {
       navigate("/login", { replace: true, state: { from: "/onboarding" } });
     }
-  }, [loading, user, navigate]);
+  }, [sessionReady, user, navigate]);
 
   const effectiveStep: Step =
     step === "finish" && !isProfileComplete(profileFields) ? "profile" : step;
@@ -47,9 +62,53 @@ export default function Onboarding() {
     intent === "merchant" ? hasMerchantRow : intent === "guard" ? hasGuardRow : true;
   const allDone = profileDone && roleDone;
 
+  function destinationForSnapshot(snap: AuthAccountSnapshot, chosenRole: IntentRole): string {
+    const effectiveRole = snap.role ?? chosenRole;
+    return pathAfterSignIn(effectiveRole, snap.hasGuardRow, snap.hasMerchantRow, snap.profileFields);
+  }
+
+  function tryLeaveOnboarding(snap: AuthAccountSnapshot, chosenRole: IntentRole): boolean {
+    const dest = destinationForSnapshot(snap, chosenRole);
+    if (dest === "/onboarding") return false;
+    navigate(dest, { replace: true });
+    return true;
+  }
+
+  async function continueFromRole() {
+    if (!user?.id || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ role: intent })
+      .eq("id", user.id)
+      .select("role")
+      .maybeSingle();
+    if (error) {
+      setSaving(false);
+      setSaveError(profileSaveErrorMessage(error.message));
+      if (import.meta.env.DEV) console.warn("[Onboarding] role save", error);
+      return;
+    }
+    if (!data?.role) {
+      setSaving(false);
+      setSaveError("Your profile could not be updated. Sign out and sign in again, then retry.");
+      return;
+    }
+    const snap = (await refreshProfile({ silent: true })) ?? {
+      role: intent,
+      profileFields,
+      hasGuardRow,
+      hasMerchantRow,
+    };
+    setSaving(false);
+    if (tryLeaveOnboarding(snap, intent)) return;
+    setStep(isProfileComplete(snap.profileFields) ? "finish" : "profile");
+  }
+
   async function saveProfile(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!user?.id) return;
+    if (!user?.id || saving) return;
     const fd = new FormData(e.currentTarget);
     const name = String(fd.get("full_name") ?? "").trim();
     const phoneRaw = String(fd.get("phone") ?? "").trim();
@@ -73,23 +132,35 @@ export default function Onboarding() {
       .from("profiles")
       .update({ full_name: name, phone: phoneVal })
       .eq("id", user.id);
-    setSaving(false);
     if (error) {
-      setSaveError(error.message);
+      setSaving(false);
+      setSaveError(profileSaveErrorMessage(error.message));
+      if (import.meta.env.DEV) console.warn("[Onboarding] profile save", error);
       return;
     }
-    await refreshProfile();
+    const snap = (await refreshProfile({ silent: true })) ?? {
+      role: role ?? intent,
+      profileFields: { full_name: name, phone: phoneVal },
+      hasGuardRow,
+      hasMerchantRow,
+    };
+    setSaving(false);
+    if (tryLeaveOnboarding(snap, intent)) return;
     setStep("finish");
   }
 
   function finishOnboarding() {
-    navigate(
-      pathAfterSignIn(role ?? intent, hasGuardRow, hasMerchantRow, profileFields),
-      { replace: true },
-    );
+    const snap: AuthAccountSnapshot = {
+      role: role ?? intent,
+      profileFields,
+      hasGuardRow,
+      hasMerchantRow,
+    };
+    if (tryLeaveOnboarding(snap, intent)) return;
+    navigate(destinationForSnapshot(snap, intent), { replace: true });
   }
 
-  if (loading || !user) {
+  if (!sessionReady || !user) {
     return (
       <div className="shell mx-auto max-w-lg px-5 py-10">
         <p className="text-slate-400">Loading your account…</p>
@@ -127,6 +198,12 @@ export default function Onboarding() {
         ))}
       </div>
 
+      {saveError && effectiveStep === "role" && (
+        <div className="error fx-fade-up text-sm" role="alert">
+          {saveError}
+        </div>
+      )}
+
       {effectiveStep === "role" && (
         <GlassPanel className="fx-fade-up space-y-3" glow="amber">
           <p className="text-xs font-bold uppercase text-amber-300/90">How will you use TipGuard?</p>
@@ -143,6 +220,7 @@ export default function Onboarding() {
                 className="sr-only"
                 checked={intent === r}
                 onChange={() => setIntent(r)}
+                disabled={saving}
               />
               <span className="text-sm font-semibold text-white capitalize">{r}</span>
               <span className="ml-auto text-xs text-slate-500">
@@ -150,8 +228,21 @@ export default function Onboarding() {
               </span>
             </label>
           ))}
-          <button type="button" className="btn-gold tap-target w-full rounded-2xl py-3 font-black" onClick={() => setStep("profile")}>
-            Continue
+          <button
+            type="button"
+            className={`btn-gold tap-target w-full rounded-2xl py-3 font-black ${saving ? "btn-gold--loading" : ""}`}
+            disabled={saving}
+            aria-busy={saving}
+            onClick={() => void continueFromRole()}
+          >
+            {saving ? (
+              <span className="btn-gold-inner">
+                <span className="btn-spinner" aria-hidden />
+                Saving…
+              </span>
+            ) : (
+              "Continue"
+            )}
           </button>
         </GlassPanel>
       )}
@@ -173,6 +264,7 @@ export default function Onboarding() {
                 autoComplete="name"
                 required
                 minLength={2}
+                disabled={saving}
               />
             </label>
             <label className="block">
@@ -185,14 +277,35 @@ export default function Onboarding() {
                 defaultValue={profileFields.phone ?? ""}
                 autoComplete="tel"
                 placeholder="e.g. 082 123 4567"
+                disabled={saving}
               />
             </label>
-            {saveError && <div className="error text-sm">{saveError}</div>}
-            <button type="submit" className="btn-gold tap-target w-full rounded-2xl py-3 font-black" disabled={saving}>
-              {saving ? "Saving…" : "Save & continue"}
+            {saveError && <div className="error text-sm" role="alert">{saveError}</div>}
+            <button
+              type="submit"
+              className={`btn-gold tap-target w-full rounded-2xl py-3 font-black ${saving ? "btn-gold--loading" : ""}`}
+              disabled={saving}
+              aria-busy={saving}
+            >
+              {saving ? (
+                <span className="btn-gold-inner">
+                  <span className="btn-spinner" aria-hidden />
+                  Saving…
+                </span>
+              ) : (
+                "Save & continue"
+              )}
             </button>
           </form>
-          <button type="button" className="text-sm text-slate-500 underline" onClick={() => setStep("role")}>
+          <button
+            type="button"
+            className="text-sm text-slate-500 underline"
+            disabled={saving}
+            onClick={() => {
+              setSaveError(null);
+              setStep("role");
+            }}
+          >
             ← Back
           </button>
         </GlassPanel>
