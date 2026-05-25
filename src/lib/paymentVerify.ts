@@ -1,3 +1,9 @@
+import {
+  logPayInvokeFailure,
+  logPayInvokeStart,
+  logPayInvokeSuccess,
+  parseFunctionsInvokeError,
+} from "./edgeFunctionInvoke";
 import { supabase } from "./supabase";
 
 export type VerifyPaymentResult = {
@@ -13,10 +19,17 @@ export type VerifyPaymentResult = {
 export async function verifyPaystackReference(
   reference: string,
 ): Promise<{ data: VerifyPaymentResult | null; error: string | null }> {
+  const started = Date.now();
+  logPayInvokeStart("paystack-verify", { reference });
   const { data, error } = await supabase.functions.invoke("paystack-verify", {
     body: { reference },
   });
-  if (error) return { data: null, error: error.message };
+  if (error) {
+    const detail = await parseFunctionsInvokeError(error);
+    logPayInvokeFailure("paystack-verify", detail, Date.now() - started);
+    return { data: null, error: detail.message };
+  }
+  logPayInvokeSuccess("paystack-verify", Date.now() - started);
   const payload = data as VerifyPaymentResult & { error?: string };
   if (payload?.error) return { data: null, error: payload.error };
   return { data: payload, error: null };

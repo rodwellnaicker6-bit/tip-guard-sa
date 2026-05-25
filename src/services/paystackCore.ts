@@ -1,8 +1,21 @@
 import type { NavigateFunction } from "react-router-dom";
 import type { CheckoutPhase } from "../payments/types";
 import { supabase } from "../lib/supabase";
+import { PAYMENT_PARSER_MARKER } from "../lib/buildInfo";
+import {
+  edgeFunctionUrl,
+  logPayInvokeFailure,
+  logPayInvokeStart,
+  logPayInvokeSuccess,
+  parseFunctionsInvokeError,
+} from "../lib/edgeFunctionInvoke";
+
+/** Bundle marker for prod grep (edgeFunctionInvoke error parser). */
+const __paymentParserBundle = PAYMENT_PARSER_MARKER;
+void __paymentParserBundle;
 import { openPaystackInline, zarSubunitsFromCents } from "../lib/paystack";
 import { getPaystackPublicKey, isPaystackConfigured, paystackEnvIssue } from "../lib/paystackEnv";
+import { isSupabaseBrowserConfigured } from "../lib/supabase";
 import { isTransientNetworkError } from "../lib/networkUtils";
 import { getDeviceFingerprintHash } from "../lib/deviceFingerprint";
 
@@ -28,25 +41,58 @@ export async function initializePaystackTransaction(body: {
   qr_code_id?: string;
   source_link_token?: string;
 }): Promise<{ data: PaystackInitResponse | null; errorMessage: string | null }> {
+  if (!isSupabaseBrowserConfigured) {
+    console.error("[TipGuard:pay] Supabase not configured — cannot invoke paystack-initialize", {
+      url: edgeFunctionUrl("paystack-initialize"),
+    });
+    return {
+      data: null,
+      errorMessage: "Payments backend is not configured (missing VITE_SUPABASE_URL / anon key).",
+    };
+  }
+
   const device_fingerprint = await getDeviceFingerprintHash();
+  const payload = { ...body, device_fingerprint };
+  const started = Date.now();
+  logPayInvokeStart("paystack-initialize", payload);
+
   const attempt = async () =>
-    supabase.functions.invoke("paystack-initialize", { body: { ...body, device_fingerprint } });
+    supabase.functions.invoke("paystack-initialize", { body: payload });
+
   let { data, error } = await attempt();
   for (let i = 0; i < 2 && error && isTransientInvokeError(error.message); i++) {
     await new Promise((r) => setTimeout(r, 350 * (i + 1)));
     ({ data, error } = await attempt());
   }
+
   if (error) {
-    return { data: null, errorMessage: error.message };
+    const detail = await parseFunctionsInvokeError(error);
+    logPayInvokeFailure("paystack-initialize", detail, Date.now() - started);
+    return { data: null, errorMessage: detail.message };
   }
-  const payload = data as PaystackInitResponse & { error?: string; code?: string };
-  if (payload?.error) {
-    return { data: null, errorMessage: payload.error };
+
+  const responsePayload = data as PaystackInitResponse & { error?: string; code?: string };
+  if (responsePayload?.error) {
+    const detail = {
+      message: responsePayload.error,
+      code: responsePayload.code,
+      status: 200,
+      bodySnippet: JSON.stringify(responsePayload).slice(0, 500),
+    };
+    logPayInvokeFailure("paystack-initialize", detail, Date.now() - started);
+    return { data: null, errorMessage: responsePayload.error };
   }
-  if (!payload?.access_code || !payload?.reference) {
+  if (!responsePayload?.access_code || !responsePayload?.reference) {
+    logPayInvokeFailure(
+      "paystack-initialize",
+      { message: "Invalid response from pay server", bodySnippet: JSON.stringify(data).slice(0, 500) },
+      Date.now() - started,
+    );
     return { data: null, errorMessage: "Invalid response from pay server" };
   }
-  return { data: payload, errorMessage: null };
+
+  logPayInvokeSuccess("paystack-initialize", Date.now() - started);
+  return { data: responsePayload, errorMessage: null };
 }
 
 function isTransientInvokeError(msg: string): boolean {
@@ -66,6 +112,13 @@ export async function payTipWithPaystack(opts: {
   onCheckoutDismissed?: () => void;
   onCheckoutPhase?: (phase: import("../payments/types").CheckoutPhase) => void;
 }): Promise<void> {
+  console.info("[TipGuard:pay] tip checkout start", {
+    guardId: opts.guardId,
+    amountCents: opts.amountCents,
+    hasLinkToken: Boolean(opts.sourceLinkToken),
+    functionsUrl: edgeFunctionUrl("paystack-initialize"),
+  });
+
   if (tipCheckoutInFlight) {
     opts.onError("Checkout already starting. Please wait.");
     return;
@@ -83,6 +136,7 @@ export async function payTipWithPaystack(opts: {
   if (!user?.email && !user?.id) {
     tipCheckoutInFlight = false;
     setPhase(opts, "idle");
+    console.warn("[TipGuard:pay] tip checkout aborted — not signed in");
     opts.onError("Not signed in");
     return;
   }
@@ -126,6 +180,7 @@ export async function payTipWithPaystack(opts: {
   } catch (e) {
     tipCheckoutInFlight = false;
     setPhase(opts, "idle");
+    console.error("[TipGuard:pay] Paystack inline failed", e);
     opts.onError((e as Error).message ?? "Paystack failed to open");
   }
 }
@@ -137,6 +192,11 @@ export async function payWalletTopUpWithPaystack(opts: {
   onCheckoutDismissed?: () => void;
   onCheckoutPhase?: (phase: CheckoutPhase) => void;
 }): Promise<void> {
+  console.info("[TipGuard:pay] wallet top-up start", {
+    amountCents: opts.amountCents,
+    functionsUrl: edgeFunctionUrl("paystack-initialize"),
+  });
+
   if (walletTopUpInFlight) {
     opts.onError("Deposit already starting. Please wait.");
     return;
@@ -184,6 +244,7 @@ export async function payWalletTopUpWithPaystack(opts: {
   } catch (e) {
     walletTopUpInFlight = false;
     setPhase(opts, "idle");
+    console.error("[TipGuard:pay] Paystack inline failed", e);
     opts.onError((e as Error).message ?? "Paystack failed to open");
   }
 }

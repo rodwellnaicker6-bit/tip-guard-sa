@@ -70,6 +70,12 @@ export default function QrTipLanding() {
   }
 
   async function pay() {
+    console.info("[TipGuard:pay] Pay clicked (QR landing)", {
+      token,
+      guardId: target?.guard_id,
+      amountCents: cents,
+      signedIn: Boolean(user?.id),
+    });
     if (!target?.guard_id || cents == null) {
       setError("Choose a valid amount.");
       return;

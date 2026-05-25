@@ -5,6 +5,7 @@ import { AuthProvider } from "./context/AuthProvider";
 import { ToastProvider } from "./context/ToastProvider";
 import { AppBootGate } from "./components/AppBootGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { BuildDeployBadge } from "./components/BuildDeployBadge";
 import { bootLog, logBootHealth } from "./lib/bootDebug";
 import { SessionIdleWatcher } from "./components/SessionIdleWatcher";
 import { RequireAdmin, RequireAuth, RequireGuard, RequireMerchant } from "./components/RequireAuth";
@@ -493,6 +494,7 @@ export default function App() {
             <AppBootGate>
               <AppRoutes />
             </AppBootGate>
+            <BuildDeployBadge />
           </AuthProvider>
         </ToastProvider>
       </BrowserRouter>

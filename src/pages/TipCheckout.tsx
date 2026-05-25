@@ -54,6 +54,10 @@ export default function TipCheckout() {
   }, [guardId, reload]);
 
   async function startPayment() {
+    console.info("[TipGuard:pay] Pay clicked (tip checkout)", {
+      guardId,
+      amountCents: cents,
+    });
     setError(null);
     if (!guardId || cents == null) {
       setError("Enter a valid Rand amount.");

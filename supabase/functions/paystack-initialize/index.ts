@@ -35,11 +35,17 @@ serve(async (req) => {
   try {
     const secret = Deno.env.get("PAYSTACK_SECRET_KEY") ?? "";
     if (!secret) {
+      console.error("paystack-initialize: PAYSTACK_SECRET_KEY missing");
       return new Response(JSON.stringify({ error: "PAYSTACK_SECRET_KEY not configured", code: "config" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const paystackKeyMode = secret.startsWith("sk_test_") ? "test" : secret.startsWith("sk_live_") ? "live" : "unknown";
+    console.info("paystack-initialize: PAYSTACK_SECRET_KEY present", {
+      prefix: secret.slice(0, 12) + "…",
+      mode: paystackKeyMode,
+    });
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -129,7 +135,7 @@ serve(async (req) => {
 
     const email = user.email ?? `${user.id}@customers.tipguard.local`;
     const reference = randomRef(kind === "tip" ? "tg_" : "wl_");
-    const paystackTest = secret.startsWith("sk_test_");
+    const paystackTest = paystackKeyMode === "test";
 
     const fraud = await runFraudChecks(service, {
       userId: user.id,

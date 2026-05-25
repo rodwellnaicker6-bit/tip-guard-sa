@@ -18,7 +18,14 @@ interface ImportMetaEnv {
   readonly VITE_ENABLE_PUSH?: string;
   /** Idle logout after N minutes of inactivity; 0 or unset = disabled */
   readonly VITE_SESSION_IDLE_MINUTES?: string;
+  /** Verbose boot logs (also enabled in dev) */
+  readonly VITE_DEBUG_BOOT?: string;
+  /** Verbose payment invoke logs in browser console */
+  readonly VITE_DEBUG_PAY?: string;
 }
+
+declare const __BUILD_ID__: string;
+declare const __GIT_SHA__: string;
 
 interface ImportMeta {
   readonly env: ImportMetaEnv;
