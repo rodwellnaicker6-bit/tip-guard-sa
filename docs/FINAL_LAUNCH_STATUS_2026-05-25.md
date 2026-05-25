@@ -14,7 +14,7 @@ configuration that cannot be completed from this unauthenticated agent.
 | --- | --- | --- |
 | `VITE_SUPABASE_URL` | Present in live bundle | Live client bundle contains `https://fyjmujhlqpvfryelnfum.supabase.co`; boot banner reports `Supabase ok`. |
 | `VITE_SUPABASE_ANON_KEY` | Inferred present | Supabase browser client initializes and live boot banner reports `Supabase ok`; exact value was not printed or exposed. |
-| `VITE_PAYSTACK_PUBLIC_KEY` | Missing in live bundle | Live boot banner reports `Payments off` / `Payments unavailable`; bundle scan found no `pk_test_*` or `pk_live_*`. |
+| `VITE_PAYSTACK_PUBLIC_KEY` | Supplied; not deployed | A `pk_test_*` public key was supplied out-of-band and validated locally. Live boot banner still reports `Payments off` / `Payments unavailable`; set the supplied key in Vercel Production and redeploy. |
 | `PAYSTACK_SECRET_KEY` | Not verifiable from this agent | Must be set as a Supabase Edge secret for `paystack-initialize`, `paystack-verify`, and `paystack-webhook`; no `sk_*` secret appears in the client bundle. |
 | `PUBLIC_APP_URL` | Not verifiable from this agent | Must be set in Supabase Edge secrets as `https://tipguardsa.co.za` for Paystack callback URLs. |
 | `VITE_PUBLIC_APP_URL` | Not live yet | Added in this branch; set in Vercel Production as `https://tipguardsa.co.za` and redeploy. |
@@ -27,7 +27,7 @@ machine has no Vercel credentials and the repo is not linked with `.vercel/proje
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Frontend public key | Blocked | Production bundle has no Paystack public key, so checkout is disabled before modal open. |
+| Frontend public key | Valid locally; blocked in production | Supplied `pk_test_*` key passes local validation and production build. Production bundle has no Paystack public key yet, so checkout is disabled before modal open. |
 | Inline script loading | Hardened in branch | Added timeout/retry behavior so script load cannot hang indefinitely. |
 | Payment initialize | Code path present, live unverified | `paystack-initialize` validates auth, rate limits, creates pending records, calls Paystack, logs `payment_events`, and uses `PUBLIC_APP_URL` for callback URL. Live verification needs auth + Paystack env. |
 | Callback verification | Code path present, live unverified | `paystack-verify` calls Paystack verify, updates succeeded/failed statuses, and logs `payment_events`. |
@@ -66,6 +66,8 @@ machine has no Vercel credentials and the repo is not linked with `.vercel/proje
 - `npm run build` - pass
 - `npm run lint` - pass
 - `npm run scan:secrets` - pass
+- `VITE_PAYSTACK_PUBLIC_KEY=<supplied pk_test> npm run verify:paystack` - pass for public key, webhook reachability, and verify Edge reachability; warns that secret/service-role checks require operator env
+- `VITE_PAYSTACK_PUBLIC_KEY=<supplied pk_test> npm run build` - pass
 - `npx playwright test e2e/boot-startup.spec.ts e2e/auth-public-and-guards.spec.ts` - pass, 14 tests
 - Live browser smoke against `https://tipguardsa.co.za` - pass for landing/login/protected redirect/failure page/error route/mobile; `payments_unavailable=true`
 - `npm run smoke:production` - fail because local `.env` is absent in this agent (`VITE_SUPABASE_*`, `VITE_PAYSTACK_PUBLIC_KEY`, `SUPABASE_URL`, and Paystack secret checks cannot run)
