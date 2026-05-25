@@ -10,7 +10,7 @@ const staging = process.argv.includes("--staging");
 
 const clientRequired = ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY", "VITE_PAYSTACK_PUBLIC_KEY"] as const;
 const edgeRequired = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "PAYSTACK_SECRET_KEY"] as const;
-const deployRecommended = ["PUBLIC_APP_URL"] as const;
+const deployRecommended = ["VITE_PUBLIC_APP_URL", "PUBLIC_APP_URL"] as const;
 const placeholders = ["VITE_YOCO_PUBLIC_KEY", "VITE_OZOW_SITE_CODE", "VITE_PAYFAST_MERCHANT_ID"] as const;
 
 function ok(v: string | undefined) {
@@ -41,9 +41,22 @@ for (const k of edgeRequired) {
 
 for (const k of deployRecommended) {
   if (!ok(process.env[k])) {
-    console.warn(`⚠ ${k} — recommended for Paystack callback_url`);
+    console.warn(`⚠ ${k} — recommended for canonical auth/payment callback URLs`);
   } else {
     console.log(`✓ ${k}`);
+  }
+}
+
+const canonicalAppUrl = process.env.VITE_PUBLIC_APP_URL?.trim() || process.env.PUBLIC_APP_URL?.trim();
+if (canonicalAppUrl) {
+  try {
+    const origin = new URL(canonicalAppUrl).origin;
+    if (!staging && origin !== "https://tipguardsa.co.za") {
+      console.warn(`⚠ canonical app URL is ${origin}; production launch target is https://tipguardsa.co.za`);
+    }
+  } catch {
+    console.error("✗ canonical app URL is not a valid URL");
+    exitCode = 1;
   }
 }
 

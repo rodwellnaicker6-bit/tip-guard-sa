@@ -2,7 +2,7 @@
 
 **Do not commit real values.** Copy names only into Vercel / Supabase Dashboard.
 
-**Production app:** https://tip-guard-sa.vercel.app  
+**Production app:** https://tipguardsa.co.za
 **Supabase API:** `https://fyjmujhlqpvfryelnfum.supabase.co`
 
 ---
@@ -14,6 +14,7 @@
 | `VITE_SUPABASE_URL` | Yes | `https://fyjmujhlqpvfryelnfum.supabase.co` |
 | `VITE_SUPABASE_ANON_KEY` | Yes | Dashboard → Settings → API → anon or publishable key |
 | `VITE_PAYSTACK_PUBLIC_KEY` | Yes | `pk_test_…` for UAT; `pk_live_…` after Paystack approval |
+| `VITE_PUBLIC_APP_URL` | Yes | `https://tipguardsa.co.za` — canonical Supabase Auth callback origin |
 | `VITE_PAYSTACK_TEST_MODE` | Optional | `true` to force test behaviour if key ambiguous |
 | `VITE_DEMO_MODE` | Staging only | `true` — one-click demo tiles on `/login` |
 | `VITE_SUPPORT_EMAIL` | Optional | Shown on `/contact` (default `support@tipguard.co.za`) |
@@ -40,7 +41,7 @@
 | Secret | Required | Notes |
 |--------|----------|-------|
 | `PAYSTACK_SECRET_KEY` | Yes | `sk_test_…` or `sk_live_…`; redeploy functions after change |
-| `PUBLIC_APP_URL` | Yes | `https://tip-guard-sa.vercel.app` — redirects and emails |
+| `PUBLIC_APP_URL` | Yes | `https://tipguardsa.co.za` — Paystack callback URLs, redirects, and emails |
 | `PAYSTACK_PAYOUT_TRANSFERS` | Optional | `true` enables Paystack Transfer in `request-payout` |
 | `RESEND_API_KEY` | Optional | `notify-payment` email |
 | `NOTIFY_FROM_EMAIL` | Optional | With Resend |

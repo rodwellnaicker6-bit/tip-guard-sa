@@ -29,7 +29,8 @@ function looksLikeNetworkFailure(message: string): boolean {
     m.includes("failed to fetch") ||
     m.includes("networkerror") ||
     m.includes("network request failed") ||
-    m.includes("fetch failed")
+    m.includes("fetch failed") ||
+    m.includes("timed out")
   );
 }
 

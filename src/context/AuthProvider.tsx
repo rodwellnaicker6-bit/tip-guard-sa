@@ -14,6 +14,7 @@ import { clearAuthRedirectStorage } from "../lib/authRedirect";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { bootLog } from "../lib/bootDebug";
 import { isSupabaseBrowserConfigured, supabase } from "../lib/supabase";
+import { withTimeout } from "../lib/asyncTimeout";
 import { AuthContext } from "./authReactContext";
 import type {
   AuthAccountSnapshot,
@@ -21,6 +22,9 @@ import type {
   AuthProfileFields,
   AuthRole,
 } from "./authTypes";
+
+const AUTH_SESSION_TIMEOUT_MS = 10_000;
+const AUTH_REQUEST_TIMEOUT_MS = 15_000;
 
 /**
  * Auth state provider. This module exports only this component so React Fast Refresh stays valid.
@@ -229,8 +233,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     queueMicrotask(() => {
-      void supabase.auth
-        .getSession()
+      void withTimeout(
+        supabase.auth.getSession(),
+        AUTH_SESSION_TIMEOUT_MS,
+        "Session check timed out",
+      )
         .then(({ data: { session: next }, error }) => {
           if (bootGen !== authBootRef.current || effectCancelled || !mountedRef.current) return;
           if (error) {
@@ -291,8 +298,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const reconnect = () => {
       if (document.visibilityState !== "visible" || reconnectBusyRef.current) return;
       reconnectBusyRef.current = true;
-      void supabase.auth
-        .getSession()
+      void withTimeout(
+        supabase.auth.getSession(),
+        AUTH_SESSION_TIMEOUT_MS,
+        "Session refresh timed out",
+      )
         .then(({ data: { session: next } }) => {
           if (!mountedRef.current || !next) return;
           setSession(next);
@@ -325,7 +335,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     try {
       for (let attempt = 0; attempt < 3; attempt++) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await withTimeout(
+          supabase.auth.signInWithPassword({ email, password }),
+          AUTH_REQUEST_TIMEOUT_MS,
+          "Sign in timed out",
+        );
         if (!mountedRef.current) return {};
         if (!error) return {};
         if (import.meta.env.DEV) console.warn("[AuthProvider] signIn:", error.message);

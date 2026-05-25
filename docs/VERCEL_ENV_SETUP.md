@@ -4,7 +4,7 @@ Sync **client-only** `VITE_*` variables from local `.env` to Vercel. Copy full v
 
 ## Security
 
-- **Set on Vercel:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PAYSTACK_PUBLIC_KEY`, `VITE_PAYSTACK_TEST_MODE`, `VITE_DEMO_MODE`
+- **Set on Vercel:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PAYSTACK_PUBLIC_KEY`, `VITE_PUBLIC_APP_URL`, `VITE_PAYSTACK_TEST_MODE`, `VITE_DEMO_MODE`
 - **Never set on Vercel (client):** `PAYSTACK_SECRET_KEY`, any `sk_*` secret keys, or server-only secrets
 
 ## Variables (from local `.env`)
@@ -14,6 +14,7 @@ Sync **client-only** `VITE_*` variables from local `.env` to Vercel. Copy full v
 | `VITE_SUPABASE_URL` | `https://fyjm…` | Yes | Yes |
 | `VITE_SUPABASE_ANON_KEY` | `sb_publi…` | Yes | Yes |
 | `VITE_PAYSTACK_PUBLIC_KEY` | `pk_test_…` | Yes | Yes |
+| `VITE_PUBLIC_APP_URL` | `https://tipguardsa.co.za` | Yes | Preview-specific |
 | `VITE_PAYSTACK_TEST_MODE` | `true` | Yes | Yes |
 | `VITE_DEMO_MODE` | `true` | Yes | Yes |
 
@@ -40,6 +41,7 @@ npx vercel@latest link
 npx vercel@latest env add VITE_SUPABASE_URL production
 npx vercel@latest env add VITE_SUPABASE_ANON_KEY production
 npx vercel@latest env add VITE_PAYSTACK_PUBLIC_KEY production
+npx vercel@latest env add VITE_PUBLIC_APP_URL production
 npx vercel@latest env add VITE_PAYSTACK_TEST_MODE production
 npx vercel@latest env add VITE_DEMO_MODE production
 npx vercel@latest deploy --prod

@@ -26,6 +26,7 @@ export function logRuntimeEnvPresence(): void {
     VITE_SUPABASE_URL: Boolean(import.meta.env.VITE_SUPABASE_URL?.trim()),
     VITE_SUPABASE_ANON_KEY: Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY?.trim()),
     VITE_PAYSTACK_PUBLIC_KEY: Boolean(import.meta.env.VITE_PAYSTACK_PUBLIC_KEY?.trim()),
+    VITE_PUBLIC_APP_URL: Boolean(import.meta.env.VITE_PUBLIC_APP_URL?.trim()),
     VITE_PAYSTACK_TEST_MODE: Boolean(import.meta.env.VITE_PAYSTACK_TEST_MODE?.trim()),
   });
 }

@@ -2,6 +2,9 @@ import type { NavigateFunction } from "react-router-dom";
 import type { AuthProfileFields, AuthRole } from "../context/authTypes";
 import { isSupabaseBrowserConfigured, supabase } from "./supabase";
 import { pathAfterSignIn } from "./postAuthRedirect";
+import { withTimeout } from "./asyncTimeout";
+
+const POST_AUTH_LOOKUP_TIMEOUT_MS = 8_000;
 
 export type PostAuthNavigateOptions = {
   from?: string;
@@ -66,7 +69,11 @@ export async function navigateAfterAuth(
 
     if (isSupabaseBrowserConfigured) {
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      const { data: { session }, error: sessErr } = await supabase.auth.getSession();
+      const { data: { session }, error: sessErr } = await withTimeout(
+        supabase.auth.getSession(),
+        POST_AUTH_LOOKUP_TIMEOUT_MS,
+        "Post-login session check timed out",
+      );
       if (sessErr || !session?.user?.id) {
         if (!userId) {
           console.error("[AuthCrash] navigateAfterAuth: no session before redirect", sessErr?.message);
@@ -81,11 +88,11 @@ export async function navigateAfterAuth(
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
     const [{ data: profile, error: pErr }, { data: guard, error: gErr }, { data: merchant, error: mErr }] =
-      await Promise.all([
+      await withTimeout(Promise.all([
         supabase.from("profiles").select("role, full_name, phone").eq("id", userId).maybeSingle(),
         supabase.from("guards").select("id").eq("user_id", userId).maybeSingle(),
         supabase.from("merchants").select("id").eq("user_id", userId).maybeSingle(),
-      ]);
+      ]), POST_AUTH_LOOKUP_TIMEOUT_MS, "Post-login profile lookup timed out");
 
     if (import.meta.env.DEV && (pErr || gErr || mErr)) {
       console.warn("[authRedirect] profile lookup", { pErr, gErr, mErr });

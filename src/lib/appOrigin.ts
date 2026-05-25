@@ -1,8 +1,21 @@
 /** Local dev origins allowed in Supabase Auth redirect configuration. */
 export const LOCAL_AUTH_ORIGINS = ["http://localhost:5173", "http://localhost:5174"] as const;
 
+function configuredPublicOrigin(): string | null {
+  const raw = import.meta.env.VITE_PUBLIC_APP_URL?.trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    console.warn("[TipGuard] VITE_PUBLIC_APP_URL is not a valid URL");
+    return null;
+  }
+}
+
 /** App origin for auth redirects (uses current browser port in dev). */
 export function getAppOrigin(): string {
+  const configured = configuredPublicOrigin();
+  if (configured) return configured;
   if (typeof window !== "undefined" && window.location?.origin) {
     return window.location.origin;
   }
