@@ -35,7 +35,7 @@ export function loadPaystackInlineScript(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
   if (window.PaystackPop) return Promise.resolve();
   if (loadPromise) return loadPromise;
-  loadPromise = new Promise((resolve, reject) => {
+  const promise = new Promise<void>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>(`script[src="${PAYSTACK_INLINE_SRC}"]`);
     let timer: number | null = null;
     const clearTimer = () => {
@@ -69,7 +69,8 @@ export function loadPaystackInlineScript(): Promise<void> {
     };
     s.onerror = () => fail("Failed to load Paystack Inline");
     document.body.appendChild(s);
-  }).catch((error) => {
+  });
+  loadPromise = promise.catch((error) => {
     loadPromise = null;
     throw error;
   });
