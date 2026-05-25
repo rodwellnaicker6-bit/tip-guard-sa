@@ -1,4 +1,5 @@
 const PAYSTACK_INLINE_SRC = "https://js.paystack.co/v1/inline.js";
+const PAYSTACK_SCRIPT_TIMEOUT_MS = 15_000;
 
 export type PaystackInlineOptions = {
   key: string;
@@ -36,17 +37,41 @@ export function loadPaystackInlineScript(): Promise<void> {
   if (loadPromise) return loadPromise;
   loadPromise = new Promise((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>(`script[src="${PAYSTACK_INLINE_SRC}"]`);
+    let timer: number | null = null;
+    const clearTimer = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = null;
+    };
+    const fail = (message: string) => {
+      clearTimer();
+      reject(new Error(message));
+    };
     if (existing) {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("Paystack script failed")), { once: true });
+      if (window.PaystackPop) {
+        resolve();
+        return;
+      }
+      timer = window.setTimeout(() => fail("Paystack script load timed out"), PAYSTACK_SCRIPT_TIMEOUT_MS);
+      existing.addEventListener("load", () => {
+        clearTimer();
+        resolve();
+      }, { once: true });
+      existing.addEventListener("error", () => fail("Paystack script failed"), { once: true });
       return;
     }
     const s = document.createElement("script");
     s.src = PAYSTACK_INLINE_SRC;
     s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Failed to load Paystack Inline"));
+    timer = window.setTimeout(() => fail("Paystack script load timed out"), PAYSTACK_SCRIPT_TIMEOUT_MS);
+    s.onload = () => {
+      clearTimer();
+      resolve();
+    };
+    s.onerror = () => fail("Failed to load Paystack Inline");
     document.body.appendChild(s);
+  }).catch((error) => {
+    loadPromise = null;
+    throw error;
   });
   return loadPromise;
 }

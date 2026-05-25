@@ -5,10 +5,13 @@ import { openPaystackInline, zarSubunitsFromCents } from "../lib/paystack";
 import { getPaystackPublicKey, isPaystackConfigured, paystackEnvIssue } from "../lib/paystackEnv";
 import { isTransientNetworkError } from "../lib/networkUtils";
 import { getDeviceFingerprintHash } from "../lib/deviceFingerprint";
+import { withTimeout } from "../lib/asyncTimeout";
 
 /** Prevents double-invoke (double-tap) opening two Paystack sessions. */
 let tipCheckoutInFlight = false;
 let walletTopUpInFlight = false;
+const PAYSTACK_FUNCTION_TIMEOUT_MS = 15_000;
+const PAYSTACK_AUTH_TIMEOUT_MS = 10_000;
 
 export type PaystackInitResponse = {
   access_code: string;
@@ -30,7 +33,11 @@ export async function initializePaystackTransaction(body: {
 }): Promise<{ data: PaystackInitResponse | null; errorMessage: string | null }> {
   const device_fingerprint = await getDeviceFingerprintHash();
   const attempt = async () =>
-    supabase.functions.invoke("paystack-initialize", { body: { ...body, device_fingerprint } });
+    withTimeout(
+      supabase.functions.invoke("paystack-initialize", { body: { ...body, device_fingerprint } }),
+      PAYSTACK_FUNCTION_TIMEOUT_MS,
+      "Payment initialization timed out",
+    );
   let { data, error } = await attempt();
   for (let i = 0; i < 2 && error && isTransientInvokeError(error.message); i++) {
     await new Promise((r) => setTimeout(r, 350 * (i + 1)));
@@ -79,7 +86,7 @@ export async function payTipWithPaystack(opts: {
   setPhase(opts, "initializing");
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await withTimeout(supabase.auth.getUser(), PAYSTACK_AUTH_TIMEOUT_MS, "Payment session check timed out");
   if (!user?.email && !user?.id) {
     tipCheckoutInFlight = false;
     setPhase(opts, "idle");
