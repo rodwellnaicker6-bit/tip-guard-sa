@@ -8,6 +8,22 @@ import { supabase } from "../lib/supabase";
 import { pathAfterSignIn } from "../lib/postAuthRedirect";
 import { isProfileComplete, profileCompletionPercent } from "../lib/profileCompletion";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
+import { unwrapRpcSingle } from "../lib/rpcData";
+import { stabilLog } from "../lib/stabilLog";
+
+const ONBOARDING_SAVE_TIMEOUT_MS = 15_000;
+
+function withSaveTimeout<T>(promise: PromiseLike<T>, label: string): Promise<T> {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise<T>((_, reject) => {
+      window.setTimeout(
+        () => reject(new Error(`${label} timed out. Check your connection and try again.`)),
+        ONBOARDING_SAVE_TIMEOUT_MS,
+      );
+    }),
+  ]);
+}
 
 type LocationState = { registeredRole?: "customer" | "guard" | "merchant" };
 type IntentRole = "customer" | "guard" | "merchant";
@@ -82,80 +98,100 @@ export default function Onboarding() {
 
   async function continueFromRole() {
     if (!user?.id || saving) return;
+    if (!sessionReady) {
+      setSaveError("Still connecting your session. Wait a moment and try again.");
+      return;
+    }
     setSaving(true);
     setSaveError(null);
 
-    const { data: savedRole, error: rpcErr } = await supabase.rpc("save_onboarding_role", {
-      p_role: intent,
-    });
+    try {
+      stabilLog("auth", "onboarding role save start", { intent });
 
-    let roleSaved = typeof savedRole === "string" ? savedRole : null;
+      const { data: savedRoleRaw, error: rpcErr } = await withSaveTimeout(
+        supabase.rpc("save_onboarding_role", { p_role: intent }),
+        "Role save",
+      );
 
-    if (rpcErr) {
-      const { data: row, error: updErr } = await supabase
-        .from("profiles")
-        .update({ role: intent })
-        .eq("id", user.id)
-        .select("role")
-        .maybeSingle();
-      if (updErr) {
-        setSaving(false);
-        setSaveError(profileSaveErrorMessage(updErr.message, updErr.code));
-        if (import.meta.env.DEV) console.warn("[Onboarding] role save", rpcErr, updErr);
+      let roleSaved = unwrapRpcSingle<string>(savedRoleRaw);
+
+      if (rpcErr) {
+        console.error("[Onboarding] save_onboarding_role", rpcErr.message, rpcErr.code);
+        const { data: row, error: updErr } = await withSaveTimeout(
+          supabase.from("profiles").update({ role: intent }).eq("id", user.id).select("role").maybeSingle(),
+          "Profile update",
+        );
+        if (updErr) {
+          setSaveError(profileSaveErrorMessage(updErr.message, updErr.code));
+          if (import.meta.env.DEV) console.warn("[Onboarding] role save", rpcErr, updErr);
+          return;
+        }
+        roleSaved = row?.role ?? null;
+        if (!roleSaved) {
+          const { error: insErr } = await supabase.from("profiles").insert({
+            id: user.id,
+            role: "customer",
+            full_name:
+              profileFields.full_name ??
+              (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null) ??
+              "Member",
+          });
+          if (insErr) {
+            setSaveError(profileSaveErrorMessage(insErr.message, insErr.code));
+            return;
+          }
+          const retry = await withSaveTimeout(
+            supabase.from("profiles").update({ role: intent }).eq("id", user.id).select("role").maybeSingle(),
+            "Profile update retry",
+          );
+          if (retry.error) {
+            setSaveError(profileSaveErrorMessage(retry.error.message, retry.error.code));
+            return;
+          }
+          roleSaved = retry.data?.role ?? null;
+        }
+      }
+
+      if (!roleSaved) {
+        roleSaved = intent;
+      }
+
+      let snap: AuthAccountSnapshot | null = null;
+      try {
+        snap = await withSaveTimeout(refreshProfile({ silent: true }), "Profile refresh");
+      } catch (refreshErr) {
+        console.warn("[Onboarding] refreshProfile after role", refreshErr);
+      }
+
+      const merged: AuthAccountSnapshot =
+        snap ??
+        ({
+          role: (roleSaved as AuthRole) ?? intent,
+          profileFields,
+          hasGuardRow,
+          hasMerchantRow,
+        } satisfies AuthAccountSnapshot);
+
+      const effectiveRole = merged.role ?? roleSaved ?? intent;
+      if (effectiveRole !== intent) {
+        setSaveError(
+          profileSaveErrorMessage(
+            `Role did not persist (expected ${intent}, got ${effectiveRole ?? "none"}).`,
+          ),
+        );
         return;
       }
-      roleSaved = row?.role ?? null;
-      if (!roleSaved) {
-        const { error: insErr } = await supabase.from("profiles").insert({
-          id: user.id,
-          role: "customer",
-          full_name:
-            profileFields.full_name ??
-            (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null) ??
-            "Member",
-        });
-        if (insErr) {
-          setSaving(false);
-          setSaveError(profileSaveErrorMessage(insErr.message, insErr.code));
-          return;
-        }
-        const retry = await supabase
-          .from("profiles")
-          .update({ role: intent })
-          .eq("id", user.id)
-          .select("role")
-          .maybeSingle();
-        if (retry.error) {
-          setSaving(false);
-          setSaveError(profileSaveErrorMessage(retry.error.message, retry.error.code));
-          return;
-        }
-        roleSaved = retry.data?.role ?? null;
-      }
-    }
 
-    const snap =
-      (await refreshProfile({ silent: true })) ??
-      ({
-        role: (roleSaved as AuthRole) ?? intent,
-        profileFields,
-        hasGuardRow,
-        hasMerchantRow,
-      } satisfies AuthAccountSnapshot);
-    const effectiveRole = snap.role ?? intent;
-    if (effectiveRole !== intent) {
+      stabilLog("auth", "onboarding role save ok", { role: effectiveRole });
+      if (tryLeaveOnboarding(merged, intent)) return;
+      setStep(isProfileComplete(merged.profileFields ?? profileFields) ? "finish" : "profile");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not save your role.";
+      console.error("[Onboarding] continueFromRole", e);
+      setSaveError(profileSaveErrorMessage(msg));
+    } finally {
       setSaving(false);
-      setSaveError(
-        profileSaveErrorMessage(
-          `Role did not persist (expected ${intent}, got ${effectiveRole ?? "none"}).`,
-        ),
-      );
-      return;
     }
-
-    setSaving(false);
-    if (tryLeaveOnboarding(snap, intent)) return;
-    setStep(isProfileComplete(snap.profileFields ?? profileFields) ? "finish" : "profile");
   }
 
   async function saveProfile(e: FormEvent<HTMLFormElement>) {
@@ -170,35 +206,48 @@ export default function Onboarding() {
     }
     setSaving(true);
     setSaveError(null);
-    let phoneVal: string | null = null;
-    if (phoneRaw) {
-      try {
-        phoneVal = normalizeZaPhone(phoneRaw);
-      } catch {
-        setSaveError("Enter a valid South African mobile number or leave blank.");
-        setSaving(false);
+    try {
+      let phoneVal: string | null = null;
+      if (phoneRaw) {
+        try {
+          phoneVal = normalizeZaPhone(phoneRaw);
+        } catch {
+          setSaveError("Enter a valid South African mobile number or leave blank.");
+          return;
+        }
+      }
+      const { error } = await withSaveTimeout(
+        supabase.from("profiles").update({ full_name: name, phone: phoneVal }).eq("id", user.id),
+        "Profile save",
+      );
+      if (error) {
+        setSaveError(profileSaveErrorMessage(error.message, error.code));
+        if (import.meta.env.DEV) console.warn("[Onboarding] profile save", error);
         return;
       }
-    }
-    const { error } = await supabase
-      .from("profiles")
-      .update({ full_name: name, phone: phoneVal })
-      .eq("id", user.id);
-    if (error) {
+      let snap: AuthAccountSnapshot | null = null;
+      try {
+        snap = await withSaveTimeout(refreshProfile({ silent: true }), "Profile refresh");
+      } catch (refreshErr) {
+        console.warn("[Onboarding] refreshProfile after profile", refreshErr);
+      }
+      const merged =
+        snap ??
+        ({
+          role: role ?? intent,
+          profileFields: { full_name: name, phone: phoneVal },
+          hasGuardRow,
+          hasMerchantRow,
+        } satisfies AuthAccountSnapshot);
+      if (tryLeaveOnboarding(merged, intent)) return;
+      setStep("finish");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not save your profile.";
+      console.error("[Onboarding] saveProfile", e);
+      setSaveError(profileSaveErrorMessage(msg));
+    } finally {
       setSaving(false);
-      setSaveError(profileSaveErrorMessage(error.message, error.code));
-      if (import.meta.env.DEV) console.warn("[Onboarding] profile save", error);
-      return;
     }
-    const snap = (await refreshProfile({ silent: true })) ?? {
-      role: role ?? intent,
-      profileFields: { full_name: name, phone: phoneVal },
-      hasGuardRow,
-      hasMerchantRow,
-    };
-    setSaving(false);
-    if (tryLeaveOnboarding(snap, intent)) return;
-    setStep("finish");
   }
 
   function finishOnboarding() {
