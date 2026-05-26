@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
-import type { AuthAccountSnapshot, AuthRole } from "../context/authTypes";
+import type { AuthAccountSnapshot, AuthRole, AuthProfileFields } from "../context/authTypes";
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import PaystackTestBanner from "../components/PaystackTestBanner";
 import { supabase } from "../lib/supabase";
@@ -9,27 +9,16 @@ import { pathAfterSignIn } from "../lib/postAuthRedirect";
 import { isProfileComplete, profileCompletionPercent } from "../lib/profileCompletion";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { unwrapRpcSingle } from "../lib/rpcData";
-import { stabilLog } from "../lib/stabilLog";
-
-const ONBOARDING_SAVE_TIMEOUT_MS = 15_000;
-
-function withSaveTimeout<T>(promise: PromiseLike<T>, label: string): Promise<T> {
-  return Promise.race([
-    Promise.resolve(promise),
-    new Promise<T>((_, reject) => {
-      window.setTimeout(
-        () => reject(new Error(`${label} timed out. Check your connection and try again.`)),
-        ONBOARDING_SAVE_TIMEOUT_MS,
-      );
-    }),
-  ]);
-}
+import { logOnboarding, ONBOARDING_FAILSAFE_MS, withOnboardingTimeout } from "../lib/onboardingDebug";
 
 type LocationState = { registeredRole?: "customer" | "guard" | "merchant" };
 type IntentRole = "customer" | "guard" | "merchant";
 
 const STEPS = ["role", "profile", "finish"] as const;
 type Step = (typeof STEPS)[number];
+
+const CONTINUE_DEBOUNCE_MS = 800;
+const PROFILE_REFRESH_TIMEOUT_MS = 4_000;
 
 function profileSaveErrorMessage(message: string, code?: string): string {
   let msg: string;
@@ -50,6 +39,10 @@ function profileSaveErrorMessage(message: string, code?: string): string {
   return msg;
 }
 
+function merchantHubDest(hasMerchantRow: boolean): string {
+  return hasMerchantRow ? "/merchant" : "/merchant/setup";
+}
+
 export default function Onboarding() {
   const { user, role, profileFields, hasGuardRow, hasMerchantRow, sessionReady, refreshProfile } =
     useAuth();
@@ -67,22 +60,115 @@ export default function Onboarding() {
   const [intent, setIntent] = useState<IntentRole>(initialIntent);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [localProfileFields, setLocalProfileFields] = useState<AuthProfileFields | null>(null);
+  const [localRole, setLocalRole] = useState<AuthRole | null>(null);
+
+  const savingRef = useRef(false);
+  const lastContinueAtRef = useRef(0);
+  const failSafeTimerRef = useRef<number | null>(null);
+  const rolePersistedRef = useRef(false);
+
+  const activeProfileFields = localProfileFields ?? profileFields;
+  const activeRole = localRole ?? role;
+
+  const setSavingSafe = useCallback((next: boolean) => {
+    savingRef.current = next;
+    setSaving(next);
+  }, []);
+
+  const clearFailSafe = useCallback(() => {
+    if (failSafeTimerRef.current) {
+      window.clearTimeout(failSafeTimerRef.current);
+      failSafeTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleBackgroundProfileSync = useCallback(() => {
+    logOnboarding("refreshProfile background schedule");
+    void withOnboardingTimeout(
+      "refreshProfile",
+      refreshProfile({ silent: true, source: "onboarding" }),
+      PROFILE_REFRESH_TIMEOUT_MS,
+    ).catch((e) => {
+      logOnboarding("refreshProfile background failed (non-blocking)", {
+        message: e instanceof Error ? e.message : String(e),
+      });
+    });
+  }, [refreshProfile]);
+
+  const armFailSafe = useCallback(
+    (chosenIntent: IntentRole) => {
+      clearFailSafe();
+      failSafeTimerRef.current = window.setTimeout(() => {
+        if (!savingRef.current || !rolePersistedRef.current) return;
+        logOnboarding("fail-safe: role saved but UI still saving — forcing exit", { intent: chosenIntent });
+        setSavingSafe(false);
+        if (chosenIntent === "merchant") {
+          logOnboarding("navigate fail-safe", { dest: merchantHubDest(false) });
+          navigate(merchantHubDest(false), { replace: true });
+          scheduleBackgroundProfileSync();
+          return;
+        }
+        if (chosenIntent === "guard") {
+          navigate("/guard/setup", { replace: true });
+          scheduleBackgroundProfileSync();
+          return;
+        }
+        setStep(isProfileComplete(activeProfileFields) ? "finish" : "profile");
+        scheduleBackgroundProfileSync();
+      }, ONBOARDING_FAILSAFE_MS);
+    },
+    [activeProfileFields, clearFailSafe, navigate, scheduleBackgroundProfileSync, setSavingSafe],
+  );
+
+  useEffect(() => {
+    savingRef.current = saving;
+  }, [saving]);
+
+  useEffect(() => {
+    logOnboarding("session snapshot", {
+      sessionReady,
+      uid: user?.id ?? null,
+      step,
+      intent,
+      activeRole,
+      profileReadyFields: isProfileComplete(activeProfileFields),
+    });
+  }, [sessionReady, user?.id, step, intent, activeRole, activeProfileFields]);
 
   useEffect(() => {
     if (!sessionReady) return;
     if (!user) {
+      logOnboarding("redirect login (no user)");
       navigate("/login", { replace: true, state: { from: "/onboarding" } });
     }
   }, [sessionReady, user, navigate]);
 
-  const effectiveStep: Step =
-    step === "finish" && !isProfileComplete(profileFields) ? "profile" : step;
+  useEffect(() => () => clearFailSafe(), [clearFailSafe]);
 
-  const profileDone = isProfileComplete(profileFields);
-  const profilePct = profileCompletionPercent(profileFields);
+  const effectiveStep: Step =
+    step === "finish" && !isProfileComplete(activeProfileFields) ? "profile" : step;
+
+  const profileDone = isProfileComplete(activeProfileFields);
+  const profilePct = profileCompletionPercent(activeProfileFields);
   const roleDone =
-    intent === "merchant" ? hasMerchantRow : intent === "guard" ? hasGuardRow : true;
+    intent === "merchant"
+      ? hasMerchantRow || activeRole === "merchant"
+      : intent === "guard"
+        ? hasGuardRow || activeRole === "guard"
+        : true;
   const allDone = profileDone && roleDone;
+
+  function buildSnapshot(
+    overrides: Partial<AuthAccountSnapshot> & { role?: AuthRole },
+  ): AuthAccountSnapshot {
+    return {
+      role: overrides.role ?? activeRole ?? intent,
+      profileFields: overrides.profileFields ?? activeProfileFields,
+      hasGuardRow: overrides.hasGuardRow ?? (intent === "guard" ? true : hasGuardRow),
+      hasMerchantRow: overrides.hasMerchantRow ?? (intent === "merchant" ? true : hasMerchantRow),
+    };
+  }
 
   function destinationForSnapshot(snap: AuthAccountSnapshot, chosenRole: IntentRole): string {
     const effectiveRole = snap.role ?? chosenRole;
@@ -90,36 +176,56 @@ export default function Onboarding() {
   }
 
   function tryLeaveOnboarding(snap: AuthAccountSnapshot, chosenRole: IntentRole): boolean {
-    const dest = destinationForSnapshot(snap, chosenRole);
+    let dest = destinationForSnapshot(snap, chosenRole);
+    if (dest === "/onboarding" && chosenRole === "merchant" && isProfileComplete(snap.profileFields)) {
+      dest = merchantHubDest(snap.hasMerchantRow);
+    }
+    logOnboarding("tryLeaveOnboarding", { dest, chosenRole, role: snap.role });
     if (dest === "/onboarding") return false;
+    logOnboarding("navigate", { dest, replace: true });
     navigate(dest, { replace: true });
     return true;
   }
 
+  function advanceAfterRoleSave(merged: AuthAccountSnapshot) {
+    const nextStep: Step = isProfileComplete(merged.profileFields) ? "finish" : "profile";
+    logOnboarding("step change", { from: step, to: nextStep });
+    setStep(nextStep);
+  }
+
   async function continueFromRole() {
-    if (!user?.id || saving) return;
+    const now = Date.now();
+    if (!user?.id || savingRef.current) return;
+    if (now - lastContinueAtRef.current < CONTINUE_DEBOUNCE_MS) {
+      logOnboarding("continueFromRole debounced");
+      return;
+    }
+    lastContinueAtRef.current = now;
     if (!sessionReady) {
       setSaveError("Still connecting your session. Wait a moment and try again.");
       return;
     }
-    setSaving(true);
+
+    rolePersistedRef.current = false;
+    setSavingSafe(true);
     setSaveError(null);
+    armFailSafe(intent);
 
     try {
-      stabilLog("auth", "onboarding role save start", { intent });
+      logOnboarding("continueFromRole", { intent, uid: user.id });
 
-      const { data: savedRoleRaw, error: rpcErr } = await withSaveTimeout(
+      const { data: savedRoleRaw, error: rpcErr } = await withOnboardingTimeout(
+        "rpc save_onboarding_role",
         supabase.rpc("save_onboarding_role", { p_role: intent }),
-        "Role save",
       );
 
       let roleSaved = unwrapRpcSingle<string>(savedRoleRaw);
 
       if (rpcErr) {
         console.error("[Onboarding] save_onboarding_role", rpcErr.message, rpcErr.code);
-        const { data: row, error: updErr } = await withSaveTimeout(
+        const { data: row, error: updErr } = await withOnboardingTimeout(
+          "profiles update role",
           supabase.from("profiles").update({ role: intent }).eq("id", user.id).select("role").maybeSingle(),
-          "Profile update",
         );
         if (updErr) {
           setSaveError(profileSaveErrorMessage(updErr.message, updErr.code));
@@ -128,21 +234,24 @@ export default function Onboarding() {
         }
         roleSaved = row?.role ?? null;
         if (!roleSaved) {
-          const { error: insErr } = await supabase.from("profiles").insert({
-            id: user.id,
-            role: "customer",
-            full_name:
-              profileFields.full_name ??
-              (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null) ??
-              "Member",
-          });
+          const { error: insErr } = await withOnboardingTimeout(
+            "profiles insert",
+            supabase.from("profiles").insert({
+              id: user.id,
+              role: "customer",
+              full_name:
+                activeProfileFields.full_name ??
+                (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null) ??
+                "Member",
+            }),
+          );
           if (insErr) {
             setSaveError(profileSaveErrorMessage(insErr.message, insErr.code));
             return;
           }
-          const retry = await withSaveTimeout(
+          const retry = await withOnboardingTimeout(
+            "profiles update role retry",
             supabase.from("profiles").update({ role: intent }).eq("id", user.id).select("role").maybeSingle(),
-            "Profile update retry",
           );
           if (retry.error) {
             setSaveError(profileSaveErrorMessage(retry.error.message, retry.error.code));
@@ -152,44 +261,40 @@ export default function Onboarding() {
         }
       }
 
-      if (!roleSaved) {
-        roleSaved = intent;
-      }
+      if (!roleSaved) roleSaved = intent;
 
-      void refreshProfile({ silent: true });
-
-      const merged: AuthAccountSnapshot = {
-        role: (roleSaved as AuthRole) ?? intent,
-        profileFields,
-        hasGuardRow: intent === "guard" ? true : hasGuardRow,
-        hasMerchantRow: intent === "merchant" ? true : hasMerchantRow,
-      };
-
-      const effectiveRole = merged.role ?? roleSaved ?? intent;
-      if (effectiveRole !== intent) {
+      const persistedRole = (roleSaved as AuthRole) ?? intent;
+      if (persistedRole !== intent) {
         setSaveError(
-          profileSaveErrorMessage(
-            `Role did not persist (expected ${intent}, got ${effectiveRole ?? "none"}).`,
-          ),
+          profileSaveErrorMessage(`Role did not persist (expected ${intent}, got ${persistedRole ?? "none"}).`),
         );
         return;
       }
 
-      stabilLog("auth", "onboarding role save ok", { role: effectiveRole });
+      rolePersistedRef.current = true;
+      setLocalRole(persistedRole);
+      scheduleBackgroundProfileSync();
+
+      const merged = buildSnapshot({ role: persistedRole });
+      logOnboarding("role save ok", { role: persistedRole });
+
       if (tryLeaveOnboarding(merged, intent)) return;
-      setStep(isProfileComplete(merged.profileFields ?? profileFields) ? "finish" : "profile");
+      advanceAfterRoleSave(merged);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Could not save your role.";
       console.error("[Onboarding] continueFromRole", e);
       setSaveError(profileSaveErrorMessage(msg));
     } finally {
-      setSaving(false);
+      clearFailSafe();
+      setSavingSafe(false);
+      logOnboarding("continueFromRole finally", { saving: false });
     }
   }
 
   async function saveProfile(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!user?.id || saving) return;
+    if (!user?.id || savingRef.current) return;
+
     const fd = new FormData(e.currentTarget);
     const name = String(fd.get("full_name") ?? "").trim();
     const phoneRaw = String(fd.get("phone") ?? "").trim();
@@ -197,54 +302,68 @@ export default function Onboarding() {
       setSaveError("Enter your display name (at least 2 characters).");
       return;
     }
-    setSaving(true);
-    setSaveError(null);
-    try {
-      let phoneVal: string | null = null;
-      if (phoneRaw) {
-        try {
-          phoneVal = normalizeZaPhone(phoneRaw);
-        } catch {
-          setSaveError("Enter a valid South African mobile number or leave blank.");
-          return;
-        }
+
+    let phoneVal: string | null = null;
+    if (phoneRaw) {
+      try {
+        phoneVal = normalizeZaPhone(phoneRaw);
+      } catch {
+        setSaveError("Enter a valid South African mobile number or leave blank.");
+        return;
       }
-      const { error } = await withSaveTimeout(
+    }
+
+    setSavingSafe(true);
+    setSaveError(null);
+
+    try {
+      const { error } = await withOnboardingTimeout(
+        "profiles update",
         supabase.from("profiles").update({ full_name: name, phone: phoneVal }).eq("id", user.id),
-        "Profile save",
       );
       if (error) {
         setSaveError(profileSaveErrorMessage(error.message, error.code));
         if (import.meta.env.DEV) console.warn("[Onboarding] profile save", error);
         return;
       }
-      void refreshProfile({ silent: true });
-      const merged = {
-        role: role ?? intent,
-        profileFields: { full_name: name, phone: phoneVal },
-        hasGuardRow,
-        hasMerchantRow,
-      } satisfies AuthAccountSnapshot;
+
+      const nextFields: AuthProfileFields = { full_name: name, phone: phoneVal };
+      setLocalProfileFields(nextFields);
+      scheduleBackgroundProfileSync();
+
+      const merged = buildSnapshot({ profileFields: nextFields });
+      logOnboarding("profile save ok");
       if (tryLeaveOnboarding(merged, intent)) return;
+      logOnboarding("step change", { from: step, to: "finish" });
       setStep("finish");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Could not save your profile.";
-      console.error("[Onboarding] saveProfile", e);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not save your profile.";
+      console.error("[Onboarding] saveProfile", err);
       setSaveError(profileSaveErrorMessage(msg));
     } finally {
-      setSaving(false);
+      setSavingSafe(false);
+      logOnboarding("saveProfile finally", { saving: false });
     }
   }
 
   function finishOnboarding() {
-    const snap: AuthAccountSnapshot = {
-      role: role ?? intent,
-      profileFields,
-      hasGuardRow,
-      hasMerchantRow,
-    };
-    if (tryLeaveOnboarding(snap, intent)) return;
-    navigate(destinationForSnapshot(snap, intent), { replace: true });
+    const snap = buildSnapshot({});
+    logOnboarding("finishOnboarding", { intent, allDone, roleDone, profileDone });
+    if (tryLeaveOnboarding(snap, intent)) {
+      scheduleBackgroundProfileSync();
+      return;
+    }
+    if (intent === "merchant") {
+      const dest = merchantHubDest(hasMerchantRow);
+      logOnboarding("navigate merchant fail-safe", { dest });
+      navigate(dest, { replace: true });
+      scheduleBackgroundProfileSync();
+      return;
+    }
+    const dest = destinationForSnapshot(snap, intent);
+    logOnboarding("navigate", { dest });
+    navigate(dest, { replace: true });
+    scheduleBackgroundProfileSync();
   }
 
   if (!sessionReady || !user) {
@@ -338,7 +457,7 @@ export default function Onboarding() {
         <GlassPanel className="fx-fade-up space-y-4" glow="slate">
           <p className="text-xs font-bold uppercase text-slate-400">Profile basics · {profilePct}%</p>
           <form
-            key={`${user.id}-${profileFields.full_name ?? ""}-${profileFields.phone ?? ""}`}
+            key={`${user.id}-${activeProfileFields.full_name ?? ""}-${activeProfileFields.phone ?? ""}`}
             className="space-y-3"
             onSubmit={(e) => void saveProfile(e)}
           >
@@ -347,7 +466,7 @@ export default function Onboarding() {
               <input
                 className="field tap-target mt-1 w-full"
                 name="full_name"
-                defaultValue={profileFields.full_name ?? ""}
+                defaultValue={activeProfileFields.full_name ?? ""}
                 autoComplete="name"
                 required
                 minLength={2}
@@ -361,7 +480,7 @@ export default function Onboarding() {
                 name="phone"
                 type="tel"
                 inputMode="tel"
-                defaultValue={profileFields.phone ?? ""}
+                defaultValue={activeProfileFields.phone ?? ""}
                 autoComplete="tel"
                 placeholder="e.g. 082 123 4567"
                 disabled={saving}
@@ -390,6 +509,7 @@ export default function Onboarding() {
             disabled={saving}
             onClick={() => {
               setSaveError(null);
+              logOnboarding("step change", { from: step, to: "role" });
               setStep("role");
             }}
           >
@@ -445,15 +565,13 @@ export default function Onboarding() {
             </GlassPanel>
           )}
 
-          {profileDone && (
-            <button
-              type="button"
-              className="btn-gold tap-target fx-fade-up w-full rounded-2xl py-4 font-black"
-              onClick={finishOnboarding}
-            >
-              {allDone ? "Go to dashboard" : "Continue to app"}
-            </button>
-          )}
+          <button
+            type="button"
+            className="btn-gold tap-target fx-fade-up w-full rounded-2xl py-4 font-black"
+            onClick={finishOnboarding}
+          >
+            {allDone ? "Go to dashboard" : "Continue to app"}
+          </button>
 
           {allDone && (
             <p className="fx-fade-up text-center text-sm text-emerald-400/90">Your account is ready.</p>

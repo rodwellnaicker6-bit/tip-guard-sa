@@ -13,6 +13,7 @@ import { resetPostAuthRedirectState } from "../hooks/usePostAuthRedirect";
 import { clearAuthRedirectStorage } from "../lib/authRedirect";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { bootLog } from "../lib/bootDebug";
+import { logOnboarding } from "../lib/onboardingDebug";
 import { stabilLog } from "../lib/stabilLog";
 import { isSupabaseBrowserConfigured, supabase } from "../lib/supabase";
 import { AuthContext } from "./authReactContext";
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const accountLoadGenRef = useRef(0);
   const profileLoadInflightUidRef = useRef<string | null>(null);
   const refreshInFlightRef = useRef<Promise<AuthAccountSnapshot | null> | null>(null);
+  const refreshSourceRef = useRef<string | null>(null);
   const sessionReadyRef = useRef(false);
   const reconnectBusyRef = useRef(false);
 
@@ -71,7 +73,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           supabase.from("guards").select("id").eq("user_id", uid).maybeSingle(),
           supabase.from("merchants").select("id").eq("user_id", uid).maybeSingle(),
         ]);
-        if (signal?.aborted || !mountedRef.current) return null;
+        if (signal?.aborted) {
+          logOnboarding("loadAccount aborted", { uid, loadGen });
+          return null;
+        }
+        if (!mountedRef.current) return null;
         const hasGuardRow = !!guardRes.data && !guardRes.error;
         const hasMerchantRow = !!merchRes.data && !merchRes.error;
         if (profRes.error) {
@@ -131,8 +137,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const refreshProfile = useCallback(
-    async (options?: { silent?: boolean }) => {
+    async (options?: { silent?: boolean; source?: string }) => {
+      const source = options?.source ?? "unknown";
       if (!user?.id) {
+        logOnboarding("refreshProfile skip (no user)", { source });
         if (!mountedRef.current) return null;
         setRole(null);
         setProfileFields({ full_name: null, phone: null });
@@ -141,7 +149,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfileReady(true);
         return null;
       }
-      if (refreshInFlightRef.current) return refreshInFlightRef.current;
+      if (refreshInFlightRef.current) {
+        logOnboarding("refreshProfile coalesced", { source, prior: refreshSourceRef.current });
+        return refreshInFlightRef.current;
+      }
+      const t0 = performance.now();
+      logOnboarding("refreshProfile start", { source, uid: user.id, silent: !!options?.silent });
+      refreshSourceRef.current = source;
       const run = async () => {
         const ac = new AbortController();
         accountAbortRef.current?.abort();
@@ -150,9 +164,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const gen = ++accountLoadGenRef.current;
         return loadAccount(user.id, ac.signal, gen);
       };
-      const p = run().finally(() => {
-        refreshInFlightRef.current = null;
-      });
+      const p = run()
+        .then((snap) => {
+          logOnboarding("refreshProfile end", {
+            source,
+            ms: Math.round(performance.now() - t0),
+            role: snap?.role ?? null,
+          });
+          return snap;
+        })
+        .catch((e) => {
+          logOnboarding("refreshProfile error", {
+            source,
+            ms: Math.round(performance.now() - t0),
+            message: e instanceof Error ? e.message : String(e),
+          });
+          throw e;
+        })
+        .finally(() => {
+          refreshInFlightRef.current = null;
+          refreshSourceRef.current = null;
+        });
       refreshInFlightRef.current = p;
       return p;
     },
@@ -228,6 +260,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, next) => {
       if (!mountedRef.current) return;
+      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION" || event === "SIGNED_IN") {
+        logOnboarding("auth state", {
+          event,
+          sessionReady: sessionReadyRef.current,
+          uid: next?.user?.id ?? null,
+        });
+      }
       applySession(next);
       // TOKEN_REFRESHED can fire in a tight loop and abort in-flight profile loads,
       // leaving profileReady false and blocking post-login redirects.

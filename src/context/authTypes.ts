@@ -17,6 +17,8 @@ export type AuthAccountSnapshot = {
 export type RefreshProfileOptions = {
   /** Reload profile without setting profileReady=false (avoids onboarding UI deadlock). */
   silent?: boolean;
+  /** Caller id for coalesced refresh + production logs (e.g. `onboarding`). */
+  source?: string;
 };
 
 export type AuthContextValue = {
