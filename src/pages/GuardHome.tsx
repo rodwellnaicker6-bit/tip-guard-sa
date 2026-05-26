@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { ensurePaymentAccessToken } from "../lib/paymentSession";
 import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
 import { useAuth } from "../context/useAuth";
@@ -156,8 +157,15 @@ export default function GuardHome() {
       return;
     }
     setPayoutBusy(true);
+    const session = await ensurePaymentAccessToken();
+    if (!session.ok) {
+      setPayoutBusy(false);
+      setToast(session.message);
+      return;
+    }
     const { data, error: fnErr } = await supabase.functions.invoke("request-payout", {
       body: { amount_cents: cents },
+      headers: { Authorization: `Bearer ${session.accessToken}` },
     });
     setPayoutBusy(false);
     if (fnErr) {

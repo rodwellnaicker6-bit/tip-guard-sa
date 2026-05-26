@@ -21,7 +21,7 @@ export default function QrTipLanding() {
   const { token } = useParams<{ token: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, authReady, sessionReady } = useAuth();
   const [target, setTarget] = useState<Awaited<ReturnType<typeof resolveTipTarget>>["target"]>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,6 +78,10 @@ export default function QrTipLanding() {
     });
     if (!target?.guard_id || cents == null) {
       setError("Choose a valid amount.");
+      return;
+    }
+    if (!authReady || !sessionReady) {
+      setError("Still signing you in — wait a moment and tap Pay again.");
       return;
     }
     if (!user?.id) {
@@ -232,7 +236,7 @@ export default function QrTipLanding() {
       <button
         type="button"
         className={`tap-target w-full rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 text-lg font-black text-black shadow-lg ${!paying ? "fx-glow-pulse" : ""}`}
-        disabled={paying || !hasPaystackPublicKey()}
+        disabled={paying || !hasPaystackPublicKey() || (!user?.id && authReady)}
         onClick={() => void pay()}
       >
         {paying ? "Opening checkout…" : user ? `Pay ${amountLabel}` : "Sign in to pay"}

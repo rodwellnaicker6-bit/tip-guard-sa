@@ -31,7 +31,7 @@ export default function GuardQR() {
     void (async () => {
       const { data, error: err } = await supabase
         .from("guards")
-        .select("id, display_name, merchant_id, merchants(business_name)")
+        .select("id, display_name, merchant_id")
         .eq("user_id", user.id)
         .maybeSingle();
       if (cancelled) return;
@@ -45,12 +45,19 @@ export default function GuardQR() {
         setLoading(false);
         return;
       }
-      const merch = data.merchants as { business_name?: string } | { business_name?: string }[] | null;
-      const merchantName = Array.isArray(merch) ? merch[0]?.business_name : merch?.business_name;
+      let merchantName: string | null = null;
+      if (data.merchant_id) {
+        const { data: merch } = await supabase
+          .from("merchants")
+          .select("business_name")
+          .eq("id", data.merchant_id)
+          .maybeSingle();
+        merchantName = merch?.business_name ?? null;
+      }
       setGuard({
         id: data.id,
         display_name: data.display_name,
-        merchant_name: merchantName ?? null,
+        merchant_name: merchantName,
       });
       const { data: rows, error: linkErr } = await supabase
         .from("tip_links")

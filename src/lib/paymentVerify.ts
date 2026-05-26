@@ -4,6 +4,7 @@ import {
   logPayInvokeSuccess,
   parseFunctionsInvokeError,
 } from "./edgeFunctionInvoke";
+import { ensurePaymentAccessToken } from "./paymentSession";
 import { supabase } from "./supabase";
 
 export type VerifyPaymentResult = {
@@ -19,10 +20,16 @@ export type VerifyPaymentResult = {
 export async function verifyPaystackReference(
   reference: string,
 ): Promise<{ data: VerifyPaymentResult | null; error: string | null }> {
+  const session = await ensurePaymentAccessToken();
+  if (!session.ok) {
+    return { data: null, error: session.message };
+  }
+
   const started = Date.now();
   logPayInvokeStart("paystack-verify", { reference });
   const { data, error } = await supabase.functions.invoke("paystack-verify", {
     body: { reference },
+    headers: { Authorization: `Bearer ${session.accessToken}` },
   });
   if (error) {
     const detail = await parseFunctionsInvokeError(error);

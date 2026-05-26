@@ -18,6 +18,7 @@ import { getPaystackPublicKey, isPaystackConfigured, paystackEnvIssue } from "..
 import { isSupabaseBrowserConfigured } from "../lib/supabase";
 import { isTransientNetworkError } from "../lib/networkUtils";
 import { getDeviceFingerprintHash } from "../lib/deviceFingerprint";
+import { ensurePaymentAccessToken } from "../lib/paymentSession";
 
 /** Prevents double-invoke (double-tap) opening two Paystack sessions. */
 let tipCheckoutInFlight = false;
@@ -51,13 +52,19 @@ export async function initializePaystackTransaction(body: {
     };
   }
 
+  const session = await ensurePaymentAccessToken();
+  if (!session.ok) {
+    return { data: null, errorMessage: session.message };
+  }
+
   const device_fingerprint = await getDeviceFingerprintHash();
   const payload = { ...body, device_fingerprint };
   const started = Date.now();
   logPayInvokeStart("paystack-initialize", payload);
 
+  const invokeHeaders = { Authorization: `Bearer ${session.accessToken}` };
   const attempt = async () =>
-    supabase.functions.invoke("paystack-initialize", { body: payload });
+    supabase.functions.invoke("paystack-initialize", { body: payload, headers: invokeHeaders });
 
   let { data, error } = await attempt();
   for (let i = 0; i < 2 && error && isTransientInvokeError(error.message); i++) {
@@ -130,14 +137,12 @@ export async function payTipWithPaystack(opts: {
   }
   tipCheckoutInFlight = true;
   setPhase(opts, "initializing");
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user?.email && !user?.id) {
+  const session = await ensurePaymentAccessToken();
+  if (!session.ok) {
     tipCheckoutInFlight = false;
     setPhase(opts, "idle");
-    console.warn("[TipGuard:pay] tip checkout aborted — not signed in");
-    opts.onError("Not signed in");
+    console.warn("[TipGuard:pay] tip checkout aborted —", session.code);
+    opts.onError(session.message);
     return;
   }
 
@@ -208,6 +213,13 @@ export async function payWalletTopUpWithPaystack(opts: {
   }
   walletTopUpInFlight = true;
   setPhase(opts, "initializing");
+  const session = await ensurePaymentAccessToken();
+  if (!session.ok) {
+    walletTopUpInFlight = false;
+    setPhase(opts, "idle");
+    opts.onError(session.message);
+    return;
+  }
 
   const { data, errorMessage } = await initializePaystackTransaction({
     kind: "wallet_topup",

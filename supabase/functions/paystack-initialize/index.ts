@@ -66,6 +66,8 @@ serve(async (req) => {
       error: userErr,
     } = await supabase.auth.getUser();
     if (userErr || !user) {
+      const hint = userErr?.message ?? "no user from JWT";
+      console.error("paystack-initialize: invalid_session", hint);
       return new Response(JSON.stringify({ error: "Invalid session", code: "invalid_session" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

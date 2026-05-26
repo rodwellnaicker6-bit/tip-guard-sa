@@ -1,108 +1,120 @@
 # Final production report — TipGuard SA
 
-**Date:** 22 May 2026  
-**Branch:** `main`  
-**Commit:** `566aa75`  
+**Date:** 26 May 2026  
 **Supabase project:** `fyjmujhlqpvfryelnfum`  
-**Production URL:** https://tip-guard-sa.vercel.app  
-**Webhook URL:** `https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/paystack-webhook`
-
----
+**Production app:** https://tip-guard-sa.vercel.app · https://tipguardsa.co.za  
 
 ## Executive summary
 
-| Gate | Result |
-|------|--------|
-| Supabase Edge deploy (8 functions) | **PASS** — redeployed 22 May 2026 |
-| `supabase db push` | **PASS** — applied `20260626100000_guard_paystack_recipient.sql` |
-| `npm run build` / `lint` | **PASS** (exit 0) |
-| `verify:supabase` / `verify:paystack` | **PASS** (test keys) |
-| `smoke:production` | **PASS** |
-| QR stress 50× | **PASS** — 0 errors, p50 499ms, p95 766ms |
-| Playwright E2E (`--workers=1`) | **PARTIAL** — 33 passed, 2 failed (demo customer redirect, payout success copy) |
-| Lighthouse (local `dist`) | **SKIP** — CLI not installed in runner |
-| **Paystack review (test mode)** | **GO** |
-| **Public production launch (live keys)** | **CONDITIONAL GO** — operator cron + one live tip E2E required |
+| System | Status | Notes |
+|--------|--------|-------|
+| Frontend (Vite/React) | **PASS** (after deploy) | Build + lint green; payment JWT propagation fixed |
+| Supabase Auth → Edge | **PASS** (fix shipped) | Explicit `Bearer` user JWT on `functions.invoke` |
+| Paystack initialize/verify | **PASS** (code) | Requires signed-in customer; not guest anon |
+| Paystack webhook | **PASS** (code) | HMAC + idempotency; `verify_jwt = false` |
+| Database / RLS | **PASS** (migrations) | Apply `20260626120000_guards_merchants_relationship.sql` on remote |
+| Vercel deploy | **ACTION** | Push + `vercel deploy --prod --force` |
+| Custom domain | **READY** (docs) | See DEPLOYMENT_RUNBOOK § Custom domain |
+| Paystack live review | **PENDING** | Human R5 smoke + dashboard proof |
 
 ---
 
-## Ops items 1–4
+## 1. Auth session propagation (401 `invalid_session`)
 
-| # | Item | Status | Notes |
-|---|------|--------|-------|
-| 1 | List Edge functions to deploy | **PASS** | `paystack-initialize`, `paystack-verify`, `paystack-webhook`, `request-payout`, `process-webhook-retries`, `reconcile-daily`, `health`, `notify-payment` (+ `_shared` assets) |
-| 2 | `supabase functions deploy` (linked project) | **PASS** | All eight deployed to `fyjmujhlqpvfryelnfum` |
-| 3 | `supabase db push` through latest migration | **PASS** | Remote now includes `20260626100000`; `npm run db:push` script still requires `supabase login` or `SUPABASE_ACCESS_TOKEN` for seed step |
-| 4 | Migration FK/RLS grep → [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) | **PASS** | No new P0 RLS gaps; `payment_events` anon revoke confirmed by verify script |
+**Root cause:** `supabase.functions.invoke` sent the **anon/publishable key** when no valid `access_token` was attached, while the Edge function calls `auth.getUser()` and returns 401 at:
 
-**Auth note:** `supabase functions list/deploy` and `supabase db push` succeeded via linked CLI session. `npm run db:push` wrapper exited 1 when `npx supabase projects list` failed in sandbox — use `supabase db push --yes` directly or set `SUPABASE_ACCESS_TOKEN`.
+`supabase/functions/paystack-initialize/index.ts` lines **67–72** (`code: "invalid_session"`).
 
----
+**Fix (frontend):**
 
-## Verification items 5–28
+- `src/lib/paymentSession.ts` — `ensurePaymentAccessToken()` (getSession, refresh if near expiry)
+- `src/services/paystackCore.ts` — pass `Authorization: Bearer <access_token>` on initialize
+- `src/lib/paymentVerify.ts`, `src/pages/GuardHome.tsx` (request-payout) — same pattern
+- `src/pages/QrTipLanding.tsx` — wait for `authReady` + `sessionReady` before Pay
 
-| # | Area | Status | Evidence |
-|---|------|--------|----------|
-| 5 | Database schema & migrations | **PASS** | 28 migration files; remote parity through `20260626100000` |
-| 6 | RLS & tenant isolation | **PASS** | `payment_events` anon blocked; `tips` privileged writer; see SECURITY_AUDIT |
-| 7 | Authentication (roles, demo seed) | **PASS** | `verify:supabase` — 4 demo auth users, `handle_new_user` / onboarding migration |
-| 8 | Protected routes & session | **PASS** | `RequireAuth` / role guards in `App.tsx`; E2E guard specs pass |
-| 9 | Paystack configuration | **PARTIAL** | `verify:paystack` exit 0 with **test** keys; `pk_live_` not validated here |
-| 10 | Webhook idempotency & retry | **PARTIAL** | HMAC + duplicate handling verified; **cron not scheduled** |
-| 11 | QR & tip resolution | **PASS** | RPCs + routes; 50× stress 0 errors |
-| 12 | Payouts & wallet integrity | **PARTIAL** | `request-payout` + `admin_update_payout_status`; Transfer API env-gated; E2E payout message flaky |
-| 13 | Merchant onboarding & locations | **PASS** | Routes + tables; merchant E2E pass |
-| 14 | Admin control panel | **PASS** | Admin routes; dashboard E2E not in failing set |
-| 15 | Transaction logging & analytics | **PARTIAL** | Tables + RPCs OK; `audit_log` Edge wiring incomplete (P2) |
-| 16 | Fraud & rate limiting | **PARTIAL** | Edge `rateLimit.ts` + `run_fraud_checks`; fail-open documented |
-| 17 | Monitoring, health & cron | **PARTIAL** | `health` Edge deployed; **cron jobs not scheduled** |
-| 18 | Legal & compliance pages | **PASS** | `/terms`, `/privacy`, `/legal/*`, `/contact` — legal-pages E2E pass |
-| 19 | Mobile / PWA | **PARTIAL** | Manifest + responsive E2E; no service worker; Lighthouse skipped |
-| 20 | Performance & indexes | **PASS** | Launch index migrations; build chunking OK |
-| 21 | Deployment & environment | **PARTIAL** | Vercel redeploy requires operator token — see [DEPLOYMENT_STEPS.md](./DEPLOYMENT_STEPS.md) |
-| 22 | `npm run build` | **PASS** | exit 0 |
-| 23 | `npm run lint` | **PASS** | exit 0 |
-| 24 | `verify:supabase` | **PASS** | exit 0 |
-| 25 | `verify:paystack` | **PASS** | exit 0 (test keys) |
-| 26 | `smoke:production` | **PASS** | exit 0 |
-| 27 | `test:e2e --workers=1` | **PARTIAL** | 33/35 pass after `npx playwright install`; failures: `demo-login-dashboard`, `payout-flow` |
-| 28 | Stress QR 50× | **PASS** | `npx tsx scripts/stress-qr-resolve.ts demo-staging-qr-01 50` |
+**Product intent:** **Auth-required** for tips (not guest anon). QR flow redirects to `/login` when unsigned.
 
 ---
 
-## E2E failures (non-blocking for schema launch)
+## 2. Deployment consistency
 
-1. **`demo-login-dashboard`** — `demo-customer@tipguard.staging` landed on `/merchant` instead of `/customer/dashboard` (likely demo account role drift; re-run `npm run seed:demo`).
-2. **`payout-flow`** — success toast copy not matched within 20s (manual payout path may differ from regex).
+- Build marker: `PROD_BUILD_ACTIVE` + `build:<BUILD_ID>` in UI (`vite.config.ts`, `BuildDeployBadge`)
+- Cache: `vercel.json` `no-store` on HTML/API; hashed `/assets/*` immutable
+- Debug API: `GET /api/debug-env` (after deploy includes `api/debug-env.ts`)
 
-No loading-freeze or route-crash failures in the passing 33 specs.
-
----
-
-## Schema name mapping (checklist ↔ repo)
-
-| Legacy checklist | Actual |
-|------------------|--------|
-| `venues` | `merchants` + view `venues` |
-| `sites` / `locations` | `merchant_locations` |
-| `qr_links` | `tip_links` |
-| `devices` | **N/A** (POST-LAUNCH; `rfid_tags` only) |
+**Operator:** commit → push → `npx vercel deploy --prod --force` (uncheck build cache in Dashboard if needed).
 
 ---
 
-## GO / NO-GO
+## 3. Database relationship (`guards` ↔ `merchants`)
 
-| Audience | Decision |
-|----------|----------|
-| **Paystack merchant review (test mode)** | **GO** — legal pages, webhook HMAC, Edge deployed, automated verify green |
-| **Production with live keys & volume** | **CONDITIONAL GO** — schedule cron, confirm Vercel env + `vercel --prod`, one operator live tip E2E, optional `seed:demo` refresh |
+**Error:** PostgREST embed `merchants(business_name)` failed when FK missing from schema cache.
+
+**Fix:**
+
+- Migration `supabase/migrations/20260626120000_guards_merchants_relationship.sql`
+- Client: `GuardQR.tsx`, `MerchantQr.tsx` use separate queries (no fragile embed)
+
+```bash
+supabase db push
+# or apply migration via Dashboard SQL
+```
 
 ---
 
-## Related docs
+## 4. Paystack production readiness
 
-- [DEPLOYMENT_STEPS.md](./DEPLOYMENT_STEPS.md)
-- [LIVE_ENV_VARIABLES.md](./LIVE_ENV_VARIABLES.md)
-- [PAYSTACK_REVIEW_CHECKLIST.md](./PAYSTACK_REVIEW_CHECKLIST.md)
-- [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)
-- [FINAL_LAUNCH_CHECKLIST.md](./FINAL_LAUNCH_CHECKLIST.md)
+| Flow | Edge / RPC | JWT | Idempotency |
+|------|------------|-----|-------------|
+| Initialize | `paystack-initialize` | Yes | `payment_events` init row |
+| Verify | `paystack-verify` | Yes | upsert verify event |
+| Webhook | `paystack-webhook` | No (HMAC) | `claim_provider_webhook_event` |
+| Payout | `request-payout` | Yes | manual + optional Transfer API |
+| Reconcile | `reconcile-daily` | Cron secret | daily job |
+
+**R5 test (human):** See `DEMO_SCRIPT.md` step 6 and `PAYSTACK_REVIEW_CHECKLIST.md`.
+
+---
+
+## 5. Security summary
+
+- RLS enabled on public tables; `payment_events` blocked for anon
+- Edge payment routes: user JWT + `getUser()`; webhooks: HMAC only
+- Rate limit: `api_rate_log` on initialize (30/min)
+- Secrets: `PAYSTACK_SECRET_KEY`, `PUBLIC_APP_URL` in Supabase only
+- CORS: `*` on Edge payment functions (Supabase standard)
+- Admin routes: `RequireAdmin` + RLS / service_role on Edge admin paths
+
+---
+
+## 6. QA run (automated)
+
+```bash
+npm run build   # exit 0
+npm run lint    # exit 0
+npm run verify:paystack   # requires .env
+npm run verify:supabase
+```
+
+**Manual:** Safari/iOS Paystack inline, magic-link return to `/tip/:token`, live R5 charge.
+
+---
+
+## 7. Remaining blockers (user-only)
+
+1. `git push` + Vercel production deploy with latest commit
+2. `supabase db push` for relationship migration (if not applied)
+3. Supabase Auth URL config: Site URL + redirect URLs for production domain(s)
+4. Paystack live keys in Supabase secrets + Vercel `pk_live_`
+5. Operator R5 live smoke + Paystack reviewer walkthrough
+
+---
+
+## URLs
+
+| Resource | URL |
+|----------|-----|
+| App | https://tip-guard-sa.vercel.app |
+| Supabase API | https://fyjmujhlqpvfryelnfum.supabase.co |
+| Webhook | https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/paystack-webhook |
+| Initialize | https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/paystack-initialize |

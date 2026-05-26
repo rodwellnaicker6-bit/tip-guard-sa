@@ -20,8 +20,6 @@ type QrRow = {
   scan_count: number;
   revoked_at: string | null;
   expires_at: string;
-  merchant_locations?: { name: string } | { name: string }[] | null;
-  guards?: { display_name: string } | { display_name: string }[] | null;
 };
 
 type LocationOpt = { id: string; name: string };
@@ -33,18 +31,6 @@ const QR_TYPES = [
   { value: "guard_staff", label: "Staff guard" },
   { value: "dynamic_amount", label: "Fixed amount QR" },
 ] as const;
-
-function relName(rel: QrRow["merchant_locations"]): string | null {
-  if (!rel) return null;
-  if (Array.isArray(rel)) return rel[0]?.name ?? null;
-  return rel.name ?? null;
-}
-
-function guardName(rel: QrRow["guards"]): string | null {
-  if (!rel) return null;
-  if (Array.isArray(rel)) return rel[0]?.display_name ?? null;
-  return rel.display_name ?? null;
-}
 
 export default function MerchantQr() {
   const { user } = useAuth();
@@ -88,7 +74,7 @@ export default function MerchantQr() {
         supabase
           .from("qr_codes")
           .select(
-            "id, code_token, label, qr_type, location_id, guard_id, default_amount_cents, scan_count, revoked_at, expires_at, merchant_locations(name), guards(display_name)",
+            "id, code_token, label, qr_type, location_id, guard_id, default_amount_cents, scan_count, revoked_at, expires_at",
           )
           .eq("merchant_id", m.id)
           .order("created_at", { ascending: false }),
@@ -192,7 +178,10 @@ export default function MerchantQr() {
         ? `?amount=${Math.round(row.default_amount_cents / 100)}`
         : "";
     const tipUrl = `${base}/tip/${row.code_token}${amountQ}`;
-    const name = guardName(row.guards) ?? relName(row.merchant_locations) ?? businessName;
+    const name =
+      guards.find((g) => g.id === row.guard_id)?.display_name ??
+      locations.find((l) => l.id === row.location_id)?.name ??
+      businessName;
     try {
       const card = await renderQrPrintCard({
         tipUrl,
