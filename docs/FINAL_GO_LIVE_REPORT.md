@@ -1,7 +1,7 @@
 # TipGuard SA — Final Go-Live Report
 
 **Date:** 2026-05-25  
-**Commit:** `3924c80` (deployed) → post-report commit with telemetry fix  
+**Commit:** `cea7b3c` (deployed)  
 **Production:** https://tipguardsa.co.za  
 **Supabase:** `fyjmujhlqpvfryelnfum`
 
