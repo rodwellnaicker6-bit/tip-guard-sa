@@ -1,5 +1,5 @@
 {
-  "buildCommand": "BUILD_ID=$(node -p Date.now()) npm run build",
+  "buildCommand": "npm run build",
   "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
   "headers": [
     {
