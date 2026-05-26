@@ -14,11 +14,13 @@ import { TrustRibbon } from "../components/fintech/TrustRibbon";
 import { Skeleton } from "../components/Skeleton";
 import { FetchError } from "../components/FetchError";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { EmergencyErrorBoundary } from "../lib/emergencySafeMode";
 
 const PRESETS = [10, 20, 50] as const;
+const QR_LOAD_TIMEOUT_MS = 12_000;
 
 /** Mobile-first QR landing: presets → auth → Paystack checkout. */
-export default function QrTipLanding() {
+function QrTipLandingContent() {
   const { token } = useParams<{ token: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -64,6 +66,15 @@ export default function QrTipLanding() {
       cancelled = true;
     };
   }, [token, searchParams, reload]);
+
+  useEffect(() => {
+    if (!loading) return;
+    const t = window.setTimeout(() => {
+      setLoading(false);
+      setError((prev) => prev ?? "This tip page took too long to load. Check your connection and try again.");
+    }, QR_LOAD_TIMEOUT_MS);
+    return () => window.clearTimeout(t);
+  }, [loading]);
 
   function pickPreset(rands: number) {
     setAmount(String(rands));
@@ -269,6 +280,14 @@ function PageWrap({ children }: { children: ReactNode }) {
     <div className="shell mx-auto flex min-h-[100dvh] max-w-md flex-col items-center justify-center gap-4 px-4 py-10 pb-[env(safe-area-inset-bottom)] text-center">
       {children}
     </div>
+  );
+}
+
+export default function QrTipLanding() {
+  return (
+    <EmergencyErrorBoundary>
+      <QrTipLandingContent />
+    </EmergencyErrorBoundary>
   );
 }
 

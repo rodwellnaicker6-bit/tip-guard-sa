@@ -7,7 +7,7 @@ export function EmergencySafeFallback() {
       className="shell mx-auto flex min-h-[40vh] max-w-lg flex-col items-center justify-center gap-3 px-5 py-12 text-center"
       style={{ color: "white" }}
     >
-      <p className="text-lg font-bold">APP SAFE MODE</p>
+      <p className="text-lg font-bold">TIPGUARD SAFE MODE</p>
       <p className="text-sm text-slate-400">This screen hit an error. Reload or go home.</p>
       <button
         type="button"

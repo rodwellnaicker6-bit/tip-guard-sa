@@ -13,6 +13,7 @@ import { resetPostAuthRedirectState } from "../hooks/usePostAuthRedirect";
 import { clearAuthRedirectStorage } from "../lib/authRedirect";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { bootLog } from "../lib/bootDebug";
+import { stabilLog } from "../lib/stabilLog";
 import { isSupabaseBrowserConfigured, supabase } from "../lib/supabase";
 import { AuthContext } from "./authReactContext";
 import type {
@@ -168,6 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (sessionReadyRef.current || !mountedRef.current) return;
     sessionReadyRef.current = true;
     setSessionReady(true);
+    stabilLog("auth", "session hydration complete");
   }, []);
 
   const authBootRef = useRef(0);
@@ -263,9 +265,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const bootFallback = window.setTimeout(() => {
       if (mountedRef.current && !sessionReadyRef.current) {
         bootLog("session hydration timeout — marking ready");
+        stabilLog("auth", "session hydration timeout — unblocking UI");
         markSessionReady();
       }
-    }, 10_000);
+    }, 5_000);
 
     const profileFallback = window.setTimeout(() => {
       if (mountedRef.current) {

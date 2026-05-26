@@ -68,7 +68,7 @@ export default function MerchantQr() {
         return;
       }
       setMerchantId(m.id);
-      setBusinessName(m.business_name);
+      setBusinessName(m.business_name ?? "Venue");
 
       const [qrRes, locRes, guardRes] = await Promise.all([
         supabase

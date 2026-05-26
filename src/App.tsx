@@ -11,7 +11,7 @@ import { bootLog, logBootHealth } from "./lib/bootDebug";
 import { SessionIdleWatcher } from "./components/SessionIdleWatcher";
 import { RequireAdmin, RequireAuth, RequireGuard, RequireMerchant } from "./components/RequireAuth";
 import { HubLayout } from "./layouts/HubLayout";
-import { Skeleton } from "./components/Skeleton";
+import { TimedPageLoader } from "./components/TimedPageLoader";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -62,13 +62,7 @@ const AdminFraud = lazy(() => import("./pages/AdminFraud"));
 const MerchantDisputes = lazy(() => import("./pages/MerchantDisputes"));
 
 function RouteFallback() {
-  return (
-    <div className="shell mx-auto max-w-lg space-y-3 px-5 py-10">
-      <Skeleton style={{ height: 28, width: "55%" }} />
-      <Skeleton style={{ height: 140, width: "100%", borderRadius: 18 }} />
-      <Skeleton style={{ height: 80, width: "100%", borderRadius: 14 }} />
-    </div>
-  );
+  return <TimedPageLoader label="Loading page…" />;
 }
 
 function Lazy({ children }: { children: ReactNode }) {
@@ -92,7 +86,14 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route
+        path="/auth/callback"
+        element={
+          <EmergencyErrorBoundary>
+            <AuthCallback />
+          </EmergencyErrorBoundary>
+        }
+      />
       <Route path="/auth/reset" element={<PasswordReset />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
@@ -153,8 +154,22 @@ function AppRoutes() {
           </Lazy>
         }
       />
-      <Route path="/payment/success" element={<PaymentSuccess />} />
-      <Route path="/payment/failure" element={<PaymentFailure />} />
+      <Route
+        path="/payment/success"
+        element={
+          <EmergencyErrorBoundary>
+            <PaymentSuccess />
+          </EmergencyErrorBoundary>
+        }
+      />
+      <Route
+        path="/payment/failure"
+        element={
+          <EmergencyErrorBoundary>
+            <PaymentFailure />
+          </EmergencyErrorBoundary>
+        }
+      />
       <Route
         path="/customer/tip/:guardId"
         element={

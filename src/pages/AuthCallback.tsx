@@ -16,7 +16,7 @@ function readAuthType(): string | null {
 
 type Status = "working" | "error";
 
-const AUTH_CALLBACK_TIMEOUT_MS = 12_000;
+const AUTH_CALLBACK_TIMEOUT_MS = 8_000;
 
 export default function AuthCallback() {
   const navigate = useNavigate();

@@ -40,3 +40,4 @@ supabase/.temp/
 .tmp_*.sql
 _*.sql
 _invoke_*.json
+.vercel

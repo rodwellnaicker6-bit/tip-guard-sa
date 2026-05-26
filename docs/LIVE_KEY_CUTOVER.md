@@ -12,6 +12,11 @@ Step-by-step for the operator. Complete [COMPLIANCE_SIGNOFF.md](./COMPLIANCE_SIG
 - [ ] `npm run build && npm run lint && npm run verify:supabase && npm run verify:paystack` green on `main`
 - [ ] Cron jobs scheduled ([CRON_OPERATOR_RUNBOOK.md](./CRON_OPERATOR_RUNBOOK.md))
 - [ ] Secure vault copy of **current test keys** for rollback
+- [ ] **Code verified (do not flip keys yet):**
+  - Webhook HMAC: `supabase/functions/paystack-webhook/index.ts` → `verifySignature` + `x-paystack-signature`
+  - Payout path: `request-payout` edge → `hold_guard_payout` / `payout_requests` table
+  - Production E2E checklist: [FINAL_LAUNCH_SUMMARY.md](./FINAL_LAUNCH_SUMMARY.md) (test mode until this doc Step 1–3)
+- [ ] Security migration applied: `20260626170000_security_hardening_rls.sql` (`platform_settings` RLS, anon revoke on admin RPCs)
 
 ---
 

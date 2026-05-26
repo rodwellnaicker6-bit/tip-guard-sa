@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getNfcSupport, prepareNfcTap, type NfcPayload } from "../lib/nfc";
+import { fallbackToQR, getNfcSupport, prepareNfcTap, type NfcPayload } from "../lib/nfc";
 
 /** Web NFC scaffold — safe no-op on iOS Safari and desktop. */
 export function NfcTapPanel() {
@@ -32,8 +32,15 @@ export function NfcTapPanel() {
       <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-slate-400">
         <p className="font-bold text-slate-300">NFC tap-to-tip</p>
         <p className="mt-1">
-          Not supported in this browser. Use your QR code instead — works on iPhone and Android.
+          Not supported in this browser (iPhone uses QR). Your printed QR code always works.
         </p>
+        <button
+          type="button"
+          className="tap-target mt-3 w-full rounded-xl border border-white/15 py-2.5 text-sm font-bold text-amber-200"
+          onClick={() => fallbackToQR((p) => navigate(p))}
+        >
+          Open QR tipping
+        </button>
       </div>
     );
   }

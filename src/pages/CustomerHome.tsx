@@ -101,7 +101,7 @@ export default function CustomerHome() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
-                  <strong className="truncate text-base text-white">{g.display_name}</strong>
+                  <strong className="truncate text-base text-white">{g.display_name ?? "Guard"}</strong>
                   <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-300">
                     Verified
                   </span>

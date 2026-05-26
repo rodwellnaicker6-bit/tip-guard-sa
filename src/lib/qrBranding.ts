@@ -16,7 +16,10 @@ export async function renderQrPrintCard(opts: QrCardOptions): Promise<string> {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas not supported");
+  if (!ctx) {
+    console.error("[TipGuard:qr] Canvas not supported");
+    return "";
+  }
 
   const grad = ctx.createLinearGradient(0, 0, width, height);
   grad.addColorStop(0, "#0f172a");

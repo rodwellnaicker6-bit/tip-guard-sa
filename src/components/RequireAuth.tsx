@@ -1,6 +1,8 @@
 import type { ReactElement } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { TimedPageLoader } from "./TimedPageLoader";
+
 function loginRedirectState(pathname: string, search: string) {
   return { from: `${pathname}${search}` };
 }
@@ -9,7 +11,7 @@ function loginRedirectState(pathname: string, search: string) {
 export function RequireAuth({ children }: { children: ReactElement }) {
   const { user, authReady } = useAuth();
   const location = useLocation();
-  if (!authReady) return children;
+  if (!authReady) return <TimedPageLoader label="Checking your session…" />;
   if (!user?.id) {
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
@@ -21,7 +23,7 @@ export function RequireAuth({ children }: { children: ReactElement }) {
 export function RequireAdmin({ children }: { children: ReactElement }) {
   const { user, role, authReady } = useAuth();
   const location = useLocation();
-  if (!authReady) return children;
+  if (!authReady) return <TimedPageLoader label="Checking admin session…" />;
   if (!user?.id) {
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
@@ -37,7 +39,7 @@ export function RequireAdmin({ children }: { children: ReactElement }) {
 export function RequireGuard({ children }: { children: ReactElement }) {
   const { user, authReady, isGuardUser } = useAuth();
   const location = useLocation();
-  if (!authReady) return children;
+  if (!authReady) return <TimedPageLoader label="Loading guard hub…" />;
   if (!user?.id) {
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
@@ -53,7 +55,7 @@ export function RequireGuard({ children }: { children: ReactElement }) {
 export function RequireMerchant({ children }: { children: ReactElement }) {
   const { user, authReady, isMerchantUser } = useAuth();
   const location = useLocation();
-  if (!authReady) return children;
+  if (!authReady) return <TimedPageLoader label="Loading venue hub…" />;
   if (!user?.id) {
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />

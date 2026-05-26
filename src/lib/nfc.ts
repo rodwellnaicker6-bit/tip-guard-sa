@@ -15,10 +15,20 @@ export type NfcPayload = {
 
 export type NfcSupport = "unsupported" | "available" | "unknown";
 
+export function hasNdefReader(): boolean {
+  if (typeof window === "undefined") return false;
+  return typeof (window as unknown as { NDEFReader?: unknown }).NDEFReader === "function";
+}
+
 export function getNfcSupport(): NfcSupport {
   if (typeof window === "undefined") return "unknown";
-  const n = (window as unknown as { NDEFReader?: unknown }).NDEFReader;
-  return typeof n === "function" ? "available" : "unsupported";
+  return hasNdefReader() ? "available" : "unsupported";
+}
+
+/** iPhone Safari / desktop — open QR tip flow instead of crashing. */
+export function fallbackToQR(navigate: (path: string) => void, token?: string): void {
+  if (token?.trim()) navigate(`/tip/${encodeURIComponent(token.trim())}`);
+  else navigate("/customer");
 }
 
 export function nfcKindLabel(kind: NfcTagKind): string {
@@ -53,10 +63,10 @@ export function parseNfcTipPayload(text: string): NfcPayload | null {
 export async function prepareNfcTap(
   onRead?: (payload: NfcPayload) => void,
 ): Promise<{ ok: boolean; message: string }> {
-  if (getNfcSupport() !== "available") {
+  if (!hasNdefReader()) {
     return {
       ok: false,
-      message: "NFC tap-to-tip activates on supported Android Chrome once tags are provisioned.",
+      message: "NFC is not supported here — use your QR code (works on iPhone and Android).",
     };
   }
   try {
