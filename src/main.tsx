@@ -47,8 +47,11 @@ function renderBootstrapFallback(rootEl: HTMLElement | null, err: unknown): void
 
 function bootstrap(): void {
   try {
-    console.log("PROD_BUILD_ACTIVE", BUILD_ID);
-    console.log("SUPABASE_URL", import.meta.env.VITE_SUPABASE_URL);
+    if (import.meta.env.DEV) {
+      console.log("DEV_BUILD_ACTIVE", BUILD_ID);
+    } else {
+      console.log("PROD_BUILD_ACTIVE", BUILD_ID);
+    }
     bootLog("main.tsx bootstrap start", { buildId: BUILD_ID });
     logRuntimeEnvPresence();
     applyThemeFromStorage();

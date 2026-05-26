@@ -29,7 +29,7 @@
 
 | Item | Value |
 |------|--------|
-| Commit | _(filled after push)_ |
+| Commit | `3924c80` |
 | URL | https://tipguardsa.co.za |
 | Paystack mode | **test** (`/api/debug-env`) |
 
