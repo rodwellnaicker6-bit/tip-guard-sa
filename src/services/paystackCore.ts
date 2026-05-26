@@ -18,6 +18,7 @@ import { getPaystackPublicKey, isPaystackConfigured, paystackEnvIssue } from "..
 import { isSupabaseBrowserConfigured } from "../lib/supabase";
 import { isTransientNetworkError } from "../lib/networkUtils";
 import { getDeviceFingerprintHash } from "../lib/deviceFingerprint";
+import { PAYMENT_INIT_TIMEOUT_MS, logFlow, withOperationTimeout } from "../lib/operationTimeout";
 import { ensurePaymentAccessToken } from "../lib/paymentSession";
 
 /** Prevents double-invoke (double-tap) opening two Paystack sessions. */
@@ -27,7 +28,7 @@ let walletTopUpInFlight = false;
 let walletTopUpStartedAt = 0;
 
 /** Max age before a checkout lock is treated as stale and auto-cleared. */
-const CHECKOUT_LOCK_STALE_MS = 90_000;
+const CHECKOUT_LOCK_STALE_MS = 60_000;
 
 /** Clears a stuck module-level checkout lock (unmount, cancel, failed init). */
 export function releaseTipCheckoutLock(): void {
@@ -127,10 +128,15 @@ export async function initializePaystackTransaction(body: {
   const attempt = async () =>
     supabase.functions.invoke("paystack-initialize", { body: payload, headers: invokeHeaders });
 
-  let { data, error } = await attempt();
+  let { data, error } = await withOperationTimeout("pay", "paystack-initialize invoke", attempt(), PAYMENT_INIT_TIMEOUT_MS);
   for (let i = 0; i < 2 && error && isTransientInvokeError(error.message); i++) {
     await new Promise((r) => setTimeout(r, 350 * (i + 1)));
-    ({ data, error } = await attempt());
+    ({ data, error } = await withOperationTimeout(
+      "pay",
+      `paystack-initialize retry ${i + 1}`,
+      attempt(),
+      PAYMENT_INIT_TIMEOUT_MS,
+    ));
   }
 
   if (error) {
@@ -210,12 +216,7 @@ export async function payTipWithPaystack(opts: {
   let paystackModalOpen = false;
   try {
     setPhase(opts, "initializing");
-    const session = await ensurePaymentAccessToken();
-    if (!session.ok) {
-      console.warn("[TipGuard:pay] tip checkout aborted —", session.code);
-      opts.onError(session.message);
-      return;
-    }
+    logFlow("pay", "tip checkout initializing");
 
     const { data, errorMessage } = await initializePaystackTransaction({
       kind: "tip",

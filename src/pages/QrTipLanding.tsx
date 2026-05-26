@@ -129,7 +129,6 @@ function QrTipLandingContent() {
       });
     } finally {
       setPaying(false);
-      setCheckoutPhase("idle");
     }
   }
 

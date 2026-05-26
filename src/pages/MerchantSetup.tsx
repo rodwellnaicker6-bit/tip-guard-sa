@@ -5,6 +5,9 @@ import { useAuth } from "../context/useAuth";
 import PageLoader from "../components/PageLoader";
 import { sanitizeDisplayName } from "../lib/sanitize";
 import { invalidateMerchantVenueCache } from "../hooks/useMerchantVenue";
+import { withOperationTimeout } from "../lib/operationTimeout";
+
+const MERCHANT_SETUP_TIMEOUT_MS = 12_000;
 
 type Step = 1 | 2 | 3;
 
@@ -41,33 +44,47 @@ export default function MerchantSetup() {
     }
     setBusy(true);
     setError(null);
-    const { data: row, error: insErr } = await supabase
-      .from("merchants")
-      .insert({
-        user_id: user.id,
-        business_name: name,
-        location: location.trim() || null,
-      })
-      .select("id")
-      .single();
-    if (insErr) {
+    try {
+      const { data: row, error: insErr } = await withOperationTimeout(
+        "venue",
+        "create merchant",
+        supabase
+          .from("merchants")
+          .insert({
+            user_id: user.id,
+            business_name: name,
+            location: location.trim() || null,
+          })
+          .select("id")
+          .single(),
+        MERCHANT_SETUP_TIMEOUT_MS,
+      );
+      if (insErr) {
+        setError(insErr.message);
+        return;
+      }
+      if (row?.id) {
+        await withOperationTimeout(
+          "venue",
+          "create kyc case",
+          supabase.from("kyc_cases").insert({
+            party_type: "merchant",
+            party_id: row.id,
+            status: "draft",
+            data: {},
+          }),
+          MERCHANT_SETUP_TIMEOUT_MS,
+        );
+        setMerchantId(row.id);
+      }
+      invalidateMerchantVenueCache(user.id);
+      void refreshProfile();
+      setStep(2);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save business profile.");
+    } finally {
       setBusy(false);
-      setError(insErr.message);
-      return;
     }
-    if (row?.id) {
-      await supabase.from("kyc_cases").insert({
-        party_type: "merchant",
-        party_id: row.id,
-        status: "draft",
-        data: {},
-      });
-      setMerchantId(row.id);
-    }
-    setBusy(false);
-    invalidateMerchantVenueCache(user.id);
-    await refreshProfile();
-    setStep(2);
   }
 
   async function saveLocation(e: FormEvent) {
@@ -78,17 +95,28 @@ export default function MerchantSetup() {
     }
     setBusy(true);
     setError(null);
-    const { error: insErr } = await supabase.from("merchant_locations").insert({
-      merchant_id: merchantId,
-      name: sanitizeDisplayName(siteName),
-      address: siteAddress.trim() ? sanitizeDisplayName(siteAddress) : null,
-    });
-    setBusy(false);
-    if (insErr) setError(insErr.message);
-    else {
+    try {
+      const { error: insErr } = await withOperationTimeout(
+        "venue",
+        "add location",
+        supabase.from("merchant_locations").insert({
+          merchant_id: merchantId,
+          name: sanitizeDisplayName(siteName),
+          address: siteAddress.trim() ? sanitizeDisplayName(siteAddress) : null,
+        }),
+        MERCHANT_SETUP_TIMEOUT_MS,
+      );
+      if (insErr) {
+        setError(insErr.message);
+        return;
+      }
       setSiteName("");
       setSiteAddress("");
       setStep(3);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save location.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -99,20 +127,31 @@ export default function MerchantSetup() {
   async function createStarterQr() {
     if (!merchantId) return;
     setBusy(true);
-    const token = `tg_${crypto.randomUUID().replace(/-/g, "")}`;
-    const { error: insErr } = await supabase.from("qr_codes").insert({
-      merchant_id: merchantId,
-      code_token: token,
-      label: "Main venue QR",
-      qr_type: "merchant_permanent",
-    });
-    setBusy(false);
-    if (insErr) {
-      setError(insErr.message);
-      return;
+    setError(null);
+    try {
+      const token = `tg_${crypto.randomUUID().replace(/-/g, "")}`;
+      const { error: insErr } = await withOperationTimeout(
+        "venue",
+        "create starter QR",
+        supabase.from("qr_codes").insert({
+          merchant_id: merchantId,
+          code_token: token,
+          label: "Main venue QR",
+          qr_type: "merchant_permanent",
+        }),
+        MERCHANT_SETUP_TIMEOUT_MS,
+      );
+      if (insErr) {
+        setError(insErr.message);
+        return;
+      }
+      void refreshProfile();
+      navigate("/merchant/qr", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create QR code.");
+    } finally {
+      setBusy(false);
     }
-    await refreshProfile();
-    navigate("/merchant/qr", { replace: true });
   }
 
   return (

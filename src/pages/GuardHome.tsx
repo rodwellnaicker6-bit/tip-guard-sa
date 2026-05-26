@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { parseFunctionsInvokeError } from "../lib/edgeFunctionInvoke";
+import { PAYOUT_REQUEST_TIMEOUT_MS, logFlow, withOperationTimeout } from "../lib/operationTimeout";
 import { ensurePaymentAccessToken } from "../lib/paymentSession";
 import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
@@ -158,23 +160,45 @@ function GuardHomeContent() {
       return;
     }
     setPayoutBusy(true);
-    const session = await ensurePaymentAccessToken();
-    if (!session.ok) {
+    try {
+      const session = await withOperationTimeout(
+        "payout",
+        "payment session",
+        ensurePaymentAccessToken(),
+        PAYOUT_REQUEST_TIMEOUT_MS,
+      );
+      if (!session.ok) {
+        setToast(session.message);
+        return;
+      }
+      const { data, error: fnErr } = await withOperationTimeout(
+        "payout",
+        "request-payout",
+        supabase.functions.invoke("request-payout", {
+          body: { amount_cents: cents },
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        }),
+        PAYOUT_REQUEST_TIMEOUT_MS,
+      );
+      if (fnErr) {
+        const detail = await parseFunctionsInvokeError(fnErr);
+        logFlow("payout", "request-payout failed", { message: detail.message, code: detail.code });
+        setToast(detail.message);
+        return;
+      }
+      const body = data as { error?: string; message?: string } | null;
+      if (body?.error) {
+        setToast(body.error);
+        return;
+      }
+      setToast(body?.message ?? "Payout request submitted.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Payout request failed.";
+      logFlow("payout", "request-payout error", { message: msg });
+      setToast(msg);
+    } finally {
       setPayoutBusy(false);
-      setToast(session.message);
-      return;
     }
-    const { data, error: fnErr } = await supabase.functions.invoke("request-payout", {
-      body: { amount_cents: cents },
-      headers: { Authorization: `Bearer ${session.accessToken}` },
-    });
-    setPayoutBusy(false);
-    if (fnErr) {
-      setToast(fnErr.message);
-      return;
-    }
-    const msg = (data as { message?: string })?.message ?? "Payout request submitted.";
-    setToast(msg);
   }
 
   if (loading) {

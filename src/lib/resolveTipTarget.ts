@@ -1,3 +1,4 @@
+import { QR_RESOLVE_TIMEOUT_MS, logFlow, withOperationTimeout } from "./operationTimeout";
 import { supabase } from "./supabase";
 import { unwrapRpcSingle } from "./rpcData";
 import { stabilLog } from "./stabilLog";
@@ -26,6 +27,8 @@ function mapRow(row: Record<string, unknown>): ResolvedTipTarget | null {
   };
 }
 
+const resolveInflight = new Map<string, Promise<{ target: ResolvedTipTarget | null; error: string | null }>>();
+
 /** Resolve QR/token to guard — uses `resolve_tip_target`, falls back to `resolve_tip_link` + guard row. */
 export async function resolveTipTarget(token: string): Promise<{
   target: ResolvedTipTarget | null;
@@ -36,10 +39,32 @@ export async function resolveTipTarget(token: string): Promise<{
     return { target: null, error: "This tip link is too short or invalid." };
   }
 
+  const inflight = resolveInflight.get(trimmed);
+  if (inflight) return inflight;
+
+  const work = resolveTipTargetInner(trimmed);
+  resolveInflight.set(trimmed, work);
+  try {
+    return await work;
+  } finally {
+    resolveInflight.delete(trimmed);
+  }
+}
+
+async function resolveTipTargetInner(trimmed: string): Promise<{
+  target: ResolvedTipTarget | null;
+  error: string | null;
+}> {
   try {
     stabilLog("qr", "resolve tip target start", { tokenLen: trimmed.length });
+    logFlow("qr", "resolveTipTarget", { tokenLen: trimmed.length });
 
-    const { data, error: rpcErr } = await supabase.rpc("resolve_tip_target", { p_token: trimmed });
+    const { data, error: rpcErr } = await withOperationTimeout(
+      "qr",
+      "resolve_tip_target",
+      supabase.rpc("resolve_tip_target", { p_token: trimmed }),
+      QR_RESOLVE_TIMEOUT_MS,
+    );
     if (!rpcErr && data) {
       const row = Array.isArray(data)
         ? (data[0] as Record<string, unknown> | undefined)
@@ -63,7 +88,12 @@ export async function resolveTipTarget(token: string): Promise<{
       return { target: null, error: rpcErr.message };
     }
 
-    const { data: linkData, error: linkErr } = await supabase.rpc("resolve_tip_link", { p_token: trimmed });
+    const { data: linkData, error: linkErr } = await withOperationTimeout(
+      "qr",
+      "resolve_tip_link",
+      supabase.rpc("resolve_tip_link", { p_token: trimmed }),
+      QR_RESOLVE_TIMEOUT_MS,
+    );
     if (linkErr) {
       return {
         target: null,
@@ -78,11 +108,16 @@ export async function resolveTipTarget(token: string): Promise<{
       return { target: null, error: "This QR code is invalid, expired, or the guard is not verified for payments." };
     }
 
-    const { data: guard, error: gErr } = await supabase
-      .from("guards")
-      .select("id, display_name, verified, merchant_id, location_id")
-      .eq("id", guardId)
-      .maybeSingle();
+    const { data: guard, error: gErr } = await withOperationTimeout(
+      "qr",
+      "guard lookup",
+      supabase
+        .from("guards")
+        .select("id, display_name, verified, merchant_id, location_id")
+        .eq("id", guardId)
+        .maybeSingle(),
+      QR_RESOLVE_TIMEOUT_MS,
+    );
 
     if (gErr) return { target: null, error: gErr.message };
     if (!guard?.id) return { target: null, error: "Guard profile not found for this link." };
