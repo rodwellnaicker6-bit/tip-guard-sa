@@ -1,51 +1,112 @@
-# TipGuard SA — deployment checklist (ecosystem / production)
+# TipGuard SA — Pre-launch deployment checklist
 
-Use this list before **staging** and **production** cutovers. Pair with [PRODUCTION_CHECKLIST.md](./PRODUCTION_CHECKLIST.md) and [SUPABASE_DEPLOY.md](./SUPABASE_DEPLOY.md).
+**Last updated:** 2026-05-25  
+**Target:** https://tipguardsa.co.za (Vercel Production) + Supabase `fyjmujhlqpvfryelnfum`
 
-## Database
+Use this checklist before promoting a release. Pair with [ROLLBACK_PLAN.md](./ROLLBACK_PLAN.md) and [MONITORING_CHECKLIST.md](./MONITORING_CHECKLIST.md).
 
-- [ ] Apply all migrations through **`20260622100000_payment_qr_production.sql`** (see [STAGING_DEPLOYMENT.md](./STAGING_DEPLOYMENT.md)).
-- [ ] Run `npm run seed:demo` on staging DB (optional demo accounts).
-- [ ] Deploy `paystack-verify` Edge Function alongside initialize + webhook.  
-- [ ] Verify extensions: `pgcrypto` (init migration).  
-- [ ] Smoke SQL (staging): `select public.admin_dashboard_metrics();` as admin JWT (via SQL editor with role simulation **not** possible — use app admin login).  
-- [ ] Confirm `post_tip_settlement_hooks` and `apply_loyalty_for_successful_tip` exist: `\df public.post_tip_settlement_hooks` in `psql`.  
-- [ ] Backfill check: `profiles.referral_code` populated (migration includes DO block).
+---
 
-## Edge Functions
+## 1. Pre-merge (developer)
 
-- [ ] Deploy `paystack-webhook`, `paystack-initialize`, `request-payout` after DB migration (webhook calls `post_tip_settlement_hooks`).  
-- [ ] Secrets: `PAYSTACK_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL` (or project URL env).  
-- [ ] Paystack dashboard: webhook URL points to **deployed** `paystack-webhook`; test `charge.success` delivery.  
-- [ ] (Optional next) Deploy signup Edge to call `register_referral_attribution` when `?ref=` present.
+- [ ] `npm run build` — pass
+- [ ] `npm run lint` — pass
+- [ ] `npm run readiness` — 10/10
+- [ ] `npm run verify:supabase` — pass
+- [ ] `npm run verify:paystack` — pass (test or live keys match dashboard)
+- [ ] No secrets in diff (`npm run scan:secrets`)
+- [ ] Onboarding: `[TipGuard:onboarding]` logs present in `Onboarding.tsx` / `AuthProvider.tsx`
 
-## App (Vite)
+---
 
-- [ ] `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PAYSTACK_PUBLIC_KEY` on hosting env.  
-- [ ] Production build (`npm run build`) in CI; no service keys in bundle.  
-- [ ] `npm run lint` green on release branch.
+## 2. Database migrations (apply in order)
 
-## Security & compliance
+Through at minimum:
 
-- [ ] Admin users: minimal set; MFA on Supabase Auth for admin emails.  
-- [ ] RLS: no `anon` insert on `analytics_events` / `activity_logs`.  
-- [ ] POPIA: privacy policy updated for analytics + loyalty + referrals.  
-- [ ] Runbook: who approves `kyc_cases` and `merchants.verified`.
+| Migration | Purpose |
+|-----------|---------|
+| `20260626140000_tip_checkout_schema_hotfix.sql` | `get_platform_fee_bps`, tip/tx columns |
+| `20260626150000_save_onboarding_role_rpc.sql` | Onboarding RPC |
+| `20260626170000_security_hardening_rls.sql` | `platform_settings` RLS, anon RPC revoke |
+| `20260626180000_save_onboarding_role_fix.sql` | Merchant/guard role correction |
 
-## Post-deploy verification
+```bash
+npm run db:push   # or Supabase Dashboard → Migrations
+```
 
-- [ ] Test tip: pending → webhook → guard balance + **loyalty_ledger** row + **analytics_events** row.  
-- [ ] Duplicate webhook delivery: no double loyalty (same `ref_tip_id`).  
-- [ ] Admin overview: new KPI tiles render without RPC error.
+- [ ] `save_onboarding_role` executable by `authenticated`
+- [ ] `platform_settings` has RLS enabled
+- [ ] Optional: set 2% fee — `update platform_settings set fee_bps = 200 where id = 1;`
 
-## Real-world testing (15 minutes, staging)
+---
 
-1. **Auth:** register → verify email path (if enabled) → sign in → sign out → password reset email.  
-2. **Merchant:** `/merchant/setup` → create venue → `/merchant/kyc` draft → submit → row `submitted` in `kyc_cases`.  
-3. **Customer:** `/customer` → pick guard → tip (Paystack test) → success URL → guard balance (or webhook delay note).  
-4. **Admin:** login as admin → metrics load → approve a test guard → security page lists MFA state.  
-5. **Mobile:** repeat steps 2–3 on a narrow viewport (375px); no horizontal scroll on forms.
+## 3. Supabase Edge Functions
 
-## Rollback
+Deploy after DB:
 
-- Keep previous Edge image tag; revert migration only with **forward-fix** migration (avoid `db reset` on production).
+```bash
+supabase functions deploy paystack-initialize
+supabase functions deploy paystack-webhook
+supabase functions deploy paystack-verify
+supabase functions deploy request-payout
+```
+
+**Secrets (Dashboard → Edge → Secrets):**
+
+- [ ] `SUPABASE_URL`
+- [ ] `SUPABASE_SERVICE_ROLE_KEY`
+- [ ] `PAYSTACK_SECRET_KEY` (`sk_test_*` or `sk_live_*` — never in git)
+
+**Paystack Dashboard:**
+
+- [ ] Webhook URL: `https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/paystack-webhook`
+- [ ] Test vs live dashboard matches deployed keys
+
+---
+
+## 4. Vercel (frontend)
+
+**Production env:**
+
+- [ ] `VITE_SUPABASE_URL`
+- [ ] `VITE_SUPABASE_ANON_KEY`
+- [ ] `VITE_PAYSTACK_PUBLIC_KEY` (`pk_test_*` or `pk_live_*`)
+- [ ] Optional: `VITE_SENTRY_DSN`
+
+**Deploy:**
+
+```bash
+git push origin main
+vercel --prod --yes
+```
+
+- [ ] `curl -sS https://tipguardsa.co.za/ | grep tipguard-git-sha` matches release commit
+- [ ] `/api/debug-env` — `hasPaystackPublicKey: true`, no raw secrets in JSON
+
+---
+
+## 5. Post-deploy smoke
+
+```bash
+npm run smoke:production
+```
+
+**Manual (required once per release):**
+
+- [ ] Merchant onboarding: role → profile → finish → `/merchant` or `/merchant/setup`
+- [ ] `/tip/demo-staging-qr-01` resolves (after `npm run seed:demo` if needed)
+- [ ] Paystack test card flow → `/payment/success`
+- [ ] Hard refresh after deploy (Cmd+Shift+R)
+
+---
+
+## 6. Go / no-go
+
+| Gate | Owner |
+|------|-------|
+| Automated readiness 10/10 | CI / operator script |
+| Manual E2E signed-in | Product owner |
+| Paystack live keys | Finance + [LIVE_KEY_CUTOVER.md](./LIVE_KEY_CUTOVER.md) |
+| POPIA / terms live | Compliance |
+
+**No-go if:** webhook HMAC fails, onboarding stuck on Saving >15s without fail-safe log, or `service_role` in client bundle.

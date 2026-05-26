@@ -1,6 +1,12 @@
 # Rollback plan (TipGuard SA)
 
+**Last updated:** 2026-05-25 · See [DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md) and [MONITORING_CHECKLIST.md](./MONITORING_CHECKLIST.md).
+
 Use this when a production deploy causes regressions, payment failures, or data-risk incidents.
+
+### Onboarding regression (`fbc0662`+)
+
+If merchant onboarding sticks on **Saving…** after a deploy, promote the previous Vercel deployment, then confirm `tipguard-git-sha` meta tag. Forward-fix is in `Onboarding.tsx` (fail-safe to `/merchant/setup` at 11s). Do not roll back migration `20260626180000` without DBA review.
 
 ## 1. Vercel — instant frontend rollback
 
