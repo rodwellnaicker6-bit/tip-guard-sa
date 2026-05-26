@@ -5,6 +5,7 @@ import { unwrapRpcSingle } from "../lib/rpcData";
 import { centsFromRandInput, zarFromCents } from "../lib/money";
 import { hasPaystackPublicKey } from "../services/paymentService";
 import { startTipCheckout } from "../payments/checkoutFlow";
+import { releaseTipCheckoutLock } from "../services/paystackCore";
 import type { PublicGuardRow } from "./CustomerHome";
 import { useToast } from "../context/useToast";
 import { Skeleton } from "../components/Skeleton";
@@ -53,6 +54,8 @@ export default function TipCheckout() {
     };
   }, [guardId, reload]);
 
+  useEffect(() => () => releaseTipCheckoutLock(), []);
+
   async function startPayment() {
     console.info("[TipGuard:pay] Pay clicked (tip checkout)", {
       guardId,
@@ -71,10 +74,12 @@ export default function TipCheckout() {
         amountCents: cents,
         navigate,
         onError: (msg) => {
+          releaseTipCheckoutLock();
           setError(msg);
           toast.error(msg);
         },
         onCheckoutDismissed: () => {
+          releaseTipCheckoutLock();
           toast.info("Checkout closed — no charge yet.");
         },
         onCheckoutPhase: setCheckoutPhase,

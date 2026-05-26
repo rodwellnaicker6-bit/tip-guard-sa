@@ -22,7 +22,68 @@ import { ensurePaymentAccessToken } from "../lib/paymentSession";
 
 /** Prevents double-invoke (double-tap) opening two Paystack sessions. */
 let tipCheckoutInFlight = false;
+let tipCheckoutStartedAt = 0;
 let walletTopUpInFlight = false;
+let walletTopUpStartedAt = 0;
+
+/** Max age before a checkout lock is treated as stale and auto-cleared. */
+const CHECKOUT_LOCK_STALE_MS = 90_000;
+
+/** Clears a stuck module-level checkout lock (unmount, cancel, failed init). */
+export function releaseTipCheckoutLock(): void {
+  tipCheckoutInFlight = false;
+  tipCheckoutStartedAt = 0;
+}
+
+export function releaseWalletTopUpLock(): void {
+  walletTopUpInFlight = false;
+  walletTopUpStartedAt = 0;
+}
+
+function tipCheckoutLockIsStale(): boolean {
+  return tipCheckoutInFlight && Date.now() - tipCheckoutStartedAt > CHECKOUT_LOCK_STALE_MS;
+}
+
+function walletTopUpLockIsStale(): boolean {
+  return walletTopUpInFlight && Date.now() - walletTopUpStartedAt > CHECKOUT_LOCK_STALE_MS;
+}
+
+function acquireTipCheckoutLock(): boolean {
+  if (tipCheckoutInFlight && !tipCheckoutLockIsStale()) return false;
+  if (tipCheckoutInFlight) {
+    console.warn("[TipGuard:pay] clearing stale tip checkout lock");
+    releaseTipCheckoutLock();
+  }
+  tipCheckoutInFlight = true;
+  tipCheckoutStartedAt = Date.now();
+  return true;
+}
+
+function acquireWalletTopUpLock(): boolean {
+  if (walletTopUpInFlight && !walletTopUpLockIsStale()) return false;
+  if (walletTopUpInFlight) {
+    console.warn("[TipGuard:pay] clearing stale wallet top-up lock");
+    releaseWalletTopUpLock();
+  }
+  walletTopUpInFlight = true;
+  walletTopUpStartedAt = Date.now();
+  return true;
+}
+
+function scheduleCheckoutLockWatchdog(
+  isLocked: () => boolean,
+  isStale: () => boolean,
+  release: () => void,
+  opts: { onCheckoutPhase?: (p: CheckoutPhase) => void; onCheckoutDismissed?: () => void },
+): void {
+  window.setTimeout(() => {
+    if (!isLocked() || !isStale()) return;
+    console.warn("[TipGuard:pay] checkout lock watchdog — releasing stale lock");
+    release();
+    setPhase(opts, "idle");
+    opts.onCheckoutDismissed?.();
+  }, CHECKOUT_LOCK_STALE_MS + 500);
+}
 
 export type PaystackInitResponse = {
   access_code: string;
@@ -135,65 +196,74 @@ export async function payTipWithPaystack(opts: {
     functionsUrl: edgeFunctionUrl("paystack-initialize"),
   });
 
-  if (tipCheckoutInFlight) {
+  if (!acquireTipCheckoutLock()) {
     opts.onError("Checkout already starting. Please wait.");
     return;
   }
   const key = getPaystackPublicKey();
   if (!key) {
+    releaseTipCheckoutLock();
     opts.onError(paystackEnvIssue() ?? "Missing VITE_PAYSTACK_PUBLIC_KEY");
     return;
   }
-  tipCheckoutInFlight = true;
-  setPhase(opts, "initializing");
-  const session = await ensurePaymentAccessToken();
-  if (!session.ok) {
-    tipCheckoutInFlight = false;
-    setPhase(opts, "idle");
-    console.warn("[TipGuard:pay] tip checkout aborted —", session.code);
-    opts.onError(session.message);
-    return;
-  }
 
-  const { data, errorMessage } = await initializePaystackTransaction({
-    kind: "tip",
-    guard_id: opts.guardId,
-    amount_cents: opts.amountCents,
-    source_link_token: opts.sourceLinkToken,
-  });
-  if (errorMessage || !data) {
-    tipCheckoutInFlight = false;
-    setPhase(opts, "idle");
-    opts.onError(errorMessage ?? "Could not start checkout");
-    return;
-  }
+  let paystackModalOpen = false;
+  try {
+    setPhase(opts, "initializing");
+    const session = await ensurePaymentAccessToken();
+    if (!session.ok) {
+      console.warn("[TipGuard:pay] tip checkout aborted —", session.code);
+      opts.onError(session.message);
+      return;
+    }
 
-  setPhase(opts, "opening_checkout");
-  const opened = await openPaystackInline({
-    key,
-    email: data.email,
-    amountSubunits: zarSubunitsFromCents(opts.amountCents),
-    currency: "ZAR",
-    reference: data.reference,
-    accessCode: data.access_code,
-    onSuccess: (ref) => {
-      tipCheckoutInFlight = false;
+    const { data, errorMessage } = await initializePaystackTransaction({
+      kind: "tip",
+      guard_id: opts.guardId,
+      amount_cents: opts.amountCents,
+      source_link_token: opts.sourceLinkToken,
+    });
+    if (errorMessage || !data) {
+      opts.onError(errorMessage ?? "Could not start checkout");
+      return;
+    }
+
+    setPhase(opts, "opening_checkout");
+    const opened = await openPaystackInline({
+      key,
+      email: data.email,
+      amountSubunits: zarSubunitsFromCents(opts.amountCents),
+      currency: "ZAR",
+      reference: data.reference,
+      accessCode: data.access_code,
+      onSuccess: (ref) => {
+        releaseTipCheckoutLock();
+        setPhase(opts, "idle");
+        opts.navigate(
+          `/payment/success?ref=${encodeURIComponent(ref)}&kind=tip&amount_cents=${encodeURIComponent(String(opts.amountCents))}`,
+        );
+      },
+      onClose: () => {
+        releaseTipCheckoutLock();
+        setPhase(opts, "idle");
+        opts.onCheckoutDismissed?.();
+        opts.navigate(`/payment/failure?reason=${encodeURIComponent("cancelled")}&kind=tip`);
+      },
+    });
+    if (!opened.ok) {
+      opts.onError(opened.message);
+      return;
+    }
+    paystackModalOpen = true;
+    scheduleCheckoutLockWatchdog(() => tipCheckoutInFlight, tipCheckoutLockIsStale, releaseTipCheckoutLock, opts);
+  } catch (e) {
+    console.error("[TipGuard:pay] tip checkout failed", e);
+    opts.onError(e instanceof Error ? e.message : "Could not start checkout");
+  } finally {
+    if (!paystackModalOpen) {
+      releaseTipCheckoutLock();
       setPhase(opts, "idle");
-      opts.navigate(
-        `/payment/success?ref=${encodeURIComponent(ref)}&kind=tip&amount_cents=${encodeURIComponent(String(opts.amountCents))}`,
-      );
-    },
-    onClose: () => {
-      tipCheckoutInFlight = false;
-      setPhase(opts, "idle");
-      opts.onCheckoutDismissed?.();
-      opts.navigate(`/payment/failure?reason=${encodeURIComponent("cancelled")}&kind=tip`);
-    },
-  });
-  if (!opened.ok) {
-    tipCheckoutInFlight = false;
-    setPhase(opts, "idle");
-    opts.onError(opened.message);
+    }
   }
 }
 
@@ -209,59 +279,68 @@ export async function payWalletTopUpWithPaystack(opts: {
     functionsUrl: edgeFunctionUrl("paystack-initialize"),
   });
 
-  if (walletTopUpInFlight) {
+  if (!acquireWalletTopUpLock()) {
     opts.onError("Deposit already starting. Please wait.");
     return;
   }
   const key = getPaystackPublicKey();
   if (!key) {
+    releaseWalletTopUpLock();
     opts.onError(paystackEnvIssue() ?? "Missing VITE_PAYSTACK_PUBLIC_KEY");
     return;
   }
-  walletTopUpInFlight = true;
-  setPhase(opts, "initializing");
-  const session = await ensurePaymentAccessToken();
-  if (!session.ok) {
-    walletTopUpInFlight = false;
-    setPhase(opts, "idle");
-    opts.onError(session.message);
-    return;
-  }
 
-  const { data, errorMessage } = await initializePaystackTransaction({
-    kind: "wallet_topup",
-    amount_cents: opts.amountCents,
-  });
-  if (errorMessage || !data) {
-    walletTopUpInFlight = false;
-    setPhase(opts, "idle");
-    opts.onError(errorMessage ?? "Could not start deposit");
-    return;
-  }
+  let paystackModalOpen = false;
+  try {
+    setPhase(opts, "initializing");
+    const session = await ensurePaymentAccessToken();
+    if (!session.ok) {
+      opts.onError(session.message);
+      return;
+    }
 
-  setPhase(opts, "opening_checkout");
-  const opened = await openPaystackInline({
-    key,
-    email: data.email,
-    amountSubunits: zarSubunitsFromCents(opts.amountCents),
-    currency: "ZAR",
-    reference: data.reference,
-    accessCode: data.access_code,
-    onSuccess: (ref) => {
-      walletTopUpInFlight = false;
+    const { data, errorMessage } = await initializePaystackTransaction({
+      kind: "wallet_topup",
+      amount_cents: opts.amountCents,
+    });
+    if (errorMessage || !data) {
+      opts.onError(errorMessage ?? "Could not start deposit");
+      return;
+    }
+
+    setPhase(opts, "opening_checkout");
+    const opened = await openPaystackInline({
+      key,
+      email: data.email,
+      amountSubunits: zarSubunitsFromCents(opts.amountCents),
+      currency: "ZAR",
+      reference: data.reference,
+      accessCode: data.access_code,
+      onSuccess: (ref) => {
+        releaseWalletTopUpLock();
+        setPhase(opts, "idle");
+        opts.navigate(`/payment/success?ref=${encodeURIComponent(ref)}&kind=wallet_topup`);
+      },
+      onClose: () => {
+        releaseWalletTopUpLock();
+        setPhase(opts, "idle");
+        opts.onCheckoutDismissed?.();
+        opts.navigate(`/payment/failure?reason=${encodeURIComponent("cancelled")}&kind=wallet_topup`);
+      },
+    });
+    if (!opened.ok) {
+      opts.onError(opened.message);
+      return;
+    }
+    paystackModalOpen = true;
+    scheduleCheckoutLockWatchdog(() => walletTopUpInFlight, walletTopUpLockIsStale, releaseWalletTopUpLock, opts);
+  } catch (e) {
+    console.error("[TipGuard:pay] wallet top-up failed", e);
+    opts.onError(e instanceof Error ? e.message : "Could not start deposit");
+  } finally {
+    if (!paystackModalOpen) {
+      releaseWalletTopUpLock();
       setPhase(opts, "idle");
-      opts.navigate(`/payment/success?ref=${encodeURIComponent(ref)}&kind=wallet_topup`);
-    },
-    onClose: () => {
-      walletTopUpInFlight = false;
-      setPhase(opts, "idle");
-      opts.onCheckoutDismissed?.();
-      opts.navigate(`/payment/failure?reason=${encodeURIComponent("cancelled")}&kind=wallet_topup`);
-    },
-  });
-  if (!opened.ok) {
-    walletTopUpInFlight = false;
-    setPhase(opts, "idle");
-    opts.onError(opened.message);
+    }
   }
 }

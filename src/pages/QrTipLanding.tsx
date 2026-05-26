@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { centsFromRandInput, zarFromCents } from "../lib/money";
 import { useAuth } from "../context/useAuth";
 import { startTipCheckout } from "../payments/checkoutFlow";
+import { releaseTipCheckoutLock } from "../services/paystackCore";
 import { hasPaystackPublicKey } from "../services/paymentService";
 import { resolveTipTarget } from "../lib/resolveTipTarget";
 import { paystackEnvIssue } from "../lib/paystackEnv";
@@ -30,6 +31,8 @@ export default function QrTipLanding() {
   const [checkoutPhase, setCheckoutPhase] = useState<CheckoutPhase>("idle");
   const [reload, setReload] = useState(0);
   const online = useOnlineStatus();
+
+  useEffect(() => () => releaseTipCheckoutLock(), []);
 
   const cents = useMemo(() => centsFromRandInput(amount), [amount]);
   const amountLabel = cents != null ? zarFromCents(cents) : "R 0.00";
@@ -103,8 +106,14 @@ export default function QrTipLanding() {
         sourceLinkToken: token,
         amountCents: cents,
         navigate,
-        onError: (msg) => setError(msg),
-        onCheckoutDismissed: () => setPaying(false),
+        onError: (msg) => {
+          releaseTipCheckoutLock();
+          setError(msg);
+        },
+        onCheckoutDismissed: () => {
+          releaseTipCheckoutLock();
+          setPaying(false);
+        },
         onCheckoutPhase: setCheckoutPhase,
       });
     } finally {
