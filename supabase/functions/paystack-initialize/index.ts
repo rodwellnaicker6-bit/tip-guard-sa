@@ -103,11 +103,12 @@ serve(async (req) => {
       windowSec: RATE_WINDOW_SEC,
     });
     if (!allowed) {
-      await service.from("fraud_events").insert({
+      const { error: fraudLogErr } = await service.from("fraud_events").insert({
         user_id: user.id,
         kind: "rate_limit",
         detail: { route: "paystack-initialize" },
-      }).catch(() => undefined);
+      });
+      if (fraudLogErr) console.error("fraud_events rate_limit log", fraudLogErr.message);
       return new Response(JSON.stringify({ error: "Too many payment attempts. Try again shortly.", code: "rate_limit" }), {
         status: 429,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -405,7 +406,7 @@ serve(async (req) => {
       await service.from("tips").update({ paystack_access_code: accessCode }).eq("paystack_reference", reference);
     }
 
-    await service.from("payment_events").upsert(
+    const { error: paymentEventErr } = await service.from("payment_events").upsert(
       {
         provider: "paystack",
         provider_event_id: `init:${reference}`,
@@ -416,7 +417,8 @@ serve(async (req) => {
         payload: { kind, amount_cents: amountCents, device_fingerprint: deviceHash, user_id: user.id },
       },
       { onConflict: "provider,provider_event_id", ignoreDuplicates: true },
-    ).catch((e) => console.error("payment_events_init", e));
+    );
+    if (paymentEventErr) console.error("payment_events_init", paymentEventErr.message);
 
     return new Response(
       JSON.stringify({

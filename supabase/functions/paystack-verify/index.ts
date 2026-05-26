@@ -143,7 +143,7 @@ serve(async (req) => {
       .eq("paystack_reference", reference)
       .maybeSingle();
 
-    await service.from("payment_events").upsert(
+    const { error: paymentEventErr } = await service.from("payment_events").upsert(
       {
         provider: "paystack",
         provider_event_id: `verify:${reference}:${paystackStatus}`,
@@ -153,7 +153,8 @@ serve(async (req) => {
         payload: { paystack_status: paystackStatus, verified: success },
       },
       { onConflict: "provider,provider_event_id", ignoreDuplicates: true },
-    ).catch((e) => console.error("payment_events_verify", e));
+    );
+    if (paymentEventErr) console.error("payment_events_verify", paymentEventErr.message);
 
     return new Response(
       JSON.stringify({
