@@ -100,9 +100,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      await loadMetrics();
-      await loadPlatform();
-      await loadLists();
+      await Promise.all([loadMetrics(), loadPlatform(), loadLists()]);
       if (!cancelled) setReady(true);
     })();
     return () => {

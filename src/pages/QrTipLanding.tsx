@@ -199,7 +199,7 @@ function QrTipLandingContent() {
   }
 
   return (
-    <div className="shell qr-landing mx-auto min-h-[100dvh] max-w-md px-4 py-6 pb-[max(7rem,env(safe-area-inset-bottom))]">
+    <div className="shell qr-landing mx-auto min-h-[100dvh] max-w-md overflow-x-hidden px-4 py-6 pb-[max(7rem,env(safe-area-inset-bottom))]">
       {checkoutPhase !== "idle" && overlayMsg ? <CheckoutLoadingOverlay message={overlayMsg} /> : null}
       <header className="fx-fade-up mb-4 text-center">
         <p className="text-xs font-bold uppercase tracking-wider text-amber-400/90">TipGuard SA</p>
@@ -255,7 +255,7 @@ function QrTipLandingContent() {
 
       <button
         type="button"
-        className={`tap-target w-full rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 text-lg font-black text-black shadow-lg ${!paying ? "fx-glow-pulse" : ""}`}
+        className={`tap-target min-h-[48px] w-full rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 text-lg font-black text-black shadow-lg ${!paying ? "fx-glow-pulse" : ""}`}
         disabled={paying || !hasPaystackPublicKey() || (!user?.id && authReady)}
         onClick={() => void pay()}
       >
@@ -277,7 +277,7 @@ function QrTipLandingContent() {
 
 function PageWrap({ children }: { children: ReactNode }) {
   return (
-    <div className="shell mx-auto flex min-h-[100dvh] max-w-md flex-col items-center justify-center gap-4 px-4 py-10 pb-[env(safe-area-inset-bottom)] text-center">
+    <div className="shell mx-auto flex min-h-[100dvh] max-w-md flex-col items-center justify-center gap-4 overflow-x-hidden px-4 py-10 pb-[env(safe-area-inset-bottom)] text-center">
       {children}
     </div>
   );

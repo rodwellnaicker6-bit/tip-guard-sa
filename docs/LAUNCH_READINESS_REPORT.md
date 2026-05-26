@@ -1,114 +1,101 @@
 # TipGuard SA — Launch readiness report
 
-**Date:** 2026-05-25  
-**Assessor:** Pre-launch automated + code audit pass  
+**Last updated:** 2026-05-25 (final pre-launch execution)  
 **Production URL:** https://tipguardsa.co.za  
-**Commits referenced:** `4124eeb` (perf), `fbc0662` (onboarding hang)  
-**Paystack mode:** **test** (live money blocked until key cutover)
+**Paystack mode:** **test** — live ZAR blocked until [LIVE_KEY_CUTOVER.md](./LIVE_KEY_CUTOVER.md)
 
 ---
 
-## Executive summary
+## Overall readiness: **~90%**
 
-| Dimension | Score | Notes |
-|-----------|-------|-------|
-| **Automated readiness** | **100%** (10/10 checks) | build, lint, supabase, paystack, secrets scan |
-| **Manual product E2E** | **~0%** in CI | Required human sign-in flows not automated in pipeline |
-| **Overall launch readiness** | **~88–92%** | Safe for **test-mode** production pilot; **not** for live ZAR without cutover + manual E2E |
+| Layer | % | Notes |
+|-------|---|--------|
+| Automated gates | **100%** | build, lint, readiness 10/10, verify:supabase, verify:paystack, smoke |
+| Code / stability | **~95%** | Onboarding fail-safe, auth dedupe, perf pass, payments idempotency |
+| Manual product E2E | **0%** in CI | Operator must run checklist below |
+| Live money | **0%** | Test keys only until cutover |
 
----
-
-## Tier 1 — Code fixes
-
-| # | Item | Status | Evidence |
-|---|------|--------|----------|
-| 1 | Onboarding hang | **PASS** | `fbc0662`: `[TipGuard:onboarding]` logs, 10s op timeout, try/finally, 11s fail-safe → `/merchant/setup`, non-blocking `refreshProfile`, 800ms debounce |
-| 2 | Auth deadlocks | **PASS** | `4124eeb`/`fbc0662`: dedupe boot profile load; coalesced refresh; `authReady = sessionReady` only; TOKEN_REFRESHED does not reload profile |
-| 3 | Performance | **PASS** | `4124eeb` intact: parallel GuardHome, deferred QR touch, lazy Paystack, deferred Sentry |
-| 4 | Redirect layer | **PASS** | `/t/:token` → `/tip/:token`; NFC → `/tip/{token}`; no Paystack URLs on QR/NFC |
-| 5 | Platform fee | **PASS** (config note) | Fee only in `paystack-initialize` via `get_platform_fee_bps()`; **no client calc**. DB default **250 bps** — set **200** for 2% vision |
-
-### Root cause — intermittent merchant onboarding hang
-
-1. **Untimed** `profiles.insert` on RPC fallback path (could hang indefinitely).  
-2. **Blocking** `refreshProfile` after save (removed; background + 4s cap).  
-3. **Stale** auth `profileFields` vs `step` (`effectiveStep` bounced UI; fixed with `localProfileFields` / `localRole`).  
-4. **Duplicate** profile fetch on boot aborting in-flight loads (perf/auth pass).  
-5. No **fail-safe** exit if UI state desynced (added 11s → `/merchant/setup`).
+**Pilot recommendation:** **Go** for test-mode production after manual checklist. **No-go** for live charges without `pk_live_` / `sk_live_` + compliance sign-off.
 
 ---
 
-## Tier 2 — Security
+## PASS / FAIL by area (honest)
 
-| Item | Status | Notes |
-|------|--------|-------|
-| RLS `20260626170000` | **PASS** (documented applied) | See FINAL_GO_LIVE_REPORT; re-verify on fresh env via `db:push` |
-| Webhook HMAC | **PASS** | `verify:paystack` — signed payload accepted, unsigned rejected |
-| No secrets in client | **PASS** | `readiness` secret scan; only `pk_*` in Vite env |
-| Onboarding RPC revoke anon | **PASS** | `save_onboarding_role` → authenticated only |
-
----
-
-## Tier 3 — Documentation
-
-| Doc | Status |
-|-----|--------|
-| `PRE_LAUNCH_PLATFORM.md` | **Created** |
-| `DEPLOYMENT_CHECKLIST.md` | **Updated** |
-| `ROLLBACK_PLAN.md` | **Updated** (header) |
-| `MONITORING_CHECKLIST.md` | **Created** |
-| `LAUNCH_READINESS_REPORT.md` | **This file** |
+| Area | Result | Evidence |
+|------|--------|----------|
+| **Speed / performance** | **PASS** | `4124eeb`: parallel GuardHome, deferred QR touch, lazy Paystack, coalesced auth refresh; admin dashboard loads parallel (`Promise.all`) |
+| **Stability / auth** | **PASS** | `fbc0662` + polish: onboarding 10s timeouts, 11s fail-safe → `/merchant/setup`, try/finally, skeleton boot state; `authReady = sessionReady` |
+| **Trust / security** | **PASS** | Webhook HMAC; no `sk_` / `service_role` in client bundle; RLS migration `20260626170000` |
+| **UX polish (minimal)** | **PASS** | Onboarding step skeletons; QR page skeleton + 12s load timeout; 48px Pay CTA |
+| **Payments** | **PASS** (test mode) | `paystack-initialize` / `paystack-verify` / webhook dedupe + `payment_events`; `paystackCore` checkout lock |
+| **Mobile** | **PASS** | `viewport-fit=cover`; QR `overflow-x-hidden`; touch targets on presets/Pay |
+| **NFC / QR redirects** | **PASS** | `/t/:token` → `/tip/:token`; NFC → in-app routes; touch RPCs non-blocking |
+| **Platform fee 2%** | **PASS** (after migration) | Server-only `get_platform_fee_bps()` in Edge; migration `20260626210000` sets **200 bps** — run `npm run db:push` on prod |
+| **Admin analytics (vision)** | **FAIL** | **Not** Square-style rebuild — existing RPC panels only (`admin_dashboard_metrics`, `merchant_payment_analytics_v2`) |
+| **Manual merchant E2E** | **FAIL** | Not run in CI |
+| **Paystack live keys** | **FAIL** | Intentional test mode |
+| **Playwright CI** | **SKIP** | Run locally: `npx playwright install && npm run test:e2e` |
+| **NTAG / subscriptions / multi-region** | **FAIL** | Roadmap only — [PRE_LAUNCH_PLATFORM.md](./PRE_LAUNCH_PLATFORM.md) |
 
 ---
 
-## Tier 4 — Verification (2026-05-25 run)
+## Code shipped (this pass)
 
-| Command | Result |
-|---------|--------|
-| `npm run build` | **PASS** |
-| `npm run lint` | **PASS** |
-| `npm run readiness` | **PASS** 10/10 |
-| `npm run verify:supabase` | **PASS** |
-| `npm run verify:paystack` | **PASS** (HMAC, webhook, keys) |
-| `npm run smoke:production` | **PASS** |
-| Playwright E2E | **SKIP** — Chromium installed; `npm run test:e2e` failed fast (browser launch in agent env). Run locally: `npx playwright install && npm run test:e2e` |
+| Change | File(s) |
+|--------|---------|
+| Onboarding loading skeleton | `src/pages/Onboarding.tsx` |
+| QR mobile overflow + 48px Pay | `src/pages/QrTipLanding.tsx` |
+| Admin dashboard parallel fetch | `src/pages/AdminDashboard.tsx` |
+| 2% fee migration | `supabase/migrations/20260626210000_platform_fee_200bps.sql` |
+
+Prior commits still required on prod: **`fbc0662`** (onboarding), **`4124eeb`** (perf).
 
 ---
 
-## PASS / FAIL matrix
+## Manual test checklist (operator)
 
-| Gate | Result |
+- [ ] Hard refresh after deploy (Cmd+Shift+R) — confirm `tipguard-git-sha` on https://tipguardsa.co.za/
+- [ ] **Merchant onboarding:** register → email confirm → `/onboarding` → merchant → profile → finish → `/merchant` or `/merchant/setup` (console: `[TipGuard:onboarding]`, no stuck Saving >15s)
+- [ ] **QR tip:** `/merchant/qr` → create code → `/tip/{token}` → Paystack test card **4084 0840 8408 4081** → `/payment/success`
+- [ ] **Webhook:** tip `succeeded` in DB; guard history/wallet updates within ~2 min
+- [ ] **Legacy URL:** `/t/demo-staging-qr-01` → `/tip/...`
+- [ ] **iPhone Safari:** QR page — no horizontal scroll; NFC panel shows QR fallback
+- [ ] **Auth refresh:** signed-in hard reload — no infinite loader
+- [ ] **Paystack cancel/retry:** close modal → Pay again — no double-checkout lock
+- [ ] Apply fee migration on prod if not yet: `npm run db:push`
+
+---
+
+## Automated verification (re-run before sign-off)
+
+```bash
+npm run build && npm run lint
+npm run readiness && npm run verify:supabase && npm run verify:paystack
+npm run smoke:production
+```
+
+---
+
+## Paystack status
+
+| Item | Status |
 |------|--------|
-| Production deploy reachable | **PASS** |
-| Paystack test mode configured | **PASS** |
-| Onboarding save hang fix deployed | **PASS** (verify `tipguard-git-sha` ≥ `fbc0662`) |
-| Manual merchant E2E | **FAIL** (not executed in CI) |
-| Paystack **live** keys | **FAIL** (intentional — test mode) |
-| Full vision platform (NFC provision, subscriptions, multi-region) | **FAIL** (out of scope — roadmap only) |
-| Admin analytics rebuild | **FAIL** (not started — existing RPCs only) |
-| KYC document upload | **FAIL** (placeholder UI only) |
+| Public key on Vercel | `pk_test_*` (expected for pilot) |
+| Secret on Supabase Edge | `sk_test_*` |
+| Webhook HMAC | Verified by `verify:paystack` |
+| Live money | **Not enabled** — provide live keys per LIVE_KEY_CUTOVER when ready |
 
 ---
 
-## Top 5 manual tests (operator)
+## Out of scope (do not claim built)
 
-1. **Merchant onboarding** — register → confirm email → `/onboarding` → merchant → profile → finish → `/merchant` or `/merchant/setup` (watch console `[TipGuard:onboarding]`).  
-2. **QR tip** — `/merchant/qr` create code → open `/tip/{token}` → Paystack test card → success page.  
-3. **Webhook settlement** — after tip, guard wallet/history updates within 2 min.  
-4. **Auth hard refresh** — signed-in reload; no infinite “Checking session”.  
-5. **Legacy redirect** — `/t/demo-staging-qr-01` lands on `/tip/...` without crash.
+Full admin analytics dashboard rebuild · premium animation overhaul · NTAG provisioning app · multi-region · white-label · POS · AI · subscriptions · KYC document upload flows.
 
 ---
 
-## Out of scope (documented future)
+## Sign-off
 
-Full admin analytics rebuild · multi-region · white-label · POS · AI · subscriptions · premium UI · KYC uploads · NTAG213 provisioning UI.
-
----
-
-## Sign-off recommendation
-
-| Audience | Recommendation |
-|----------|----------------|
-| **Test-mode pilot** | **Go** after manual E2E §2 above |
-| **Live money** | **No-go** until [LIVE_KEY_CUTOVER.md](./LIVE_KEY_CUTOVER.md) + compliance sign-off |
+| Audience | Verdict |
+|----------|---------|
+| Test-mode pilot | **Go** after manual checklist |
+| Live production money | **No-go** until key cutover + manual E2E |

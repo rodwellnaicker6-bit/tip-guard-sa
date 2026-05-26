@@ -4,6 +4,7 @@ import { useAuth } from "../context/useAuth";
 import type { AuthAccountSnapshot, AuthRole, AuthProfileFields } from "../context/authTypes";
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import PaystackTestBanner from "../components/PaystackTestBanner";
+import { Skeleton } from "../components/Skeleton";
 import { supabase } from "../lib/supabase";
 import { pathAfterSignIn } from "../lib/postAuthRedirect";
 import { isProfileComplete, profileCompletionPercent } from "../lib/profileCompletion";
@@ -368,8 +369,17 @@ export default function Onboarding() {
 
   if (!sessionReady || !user) {
     return (
-      <div className="shell mx-auto max-w-lg px-5 py-10">
-        <p className="text-slate-400">Loading your account…</p>
+      <div className="shell mx-auto max-w-lg space-y-4 px-5 py-10 pb-20" role="status" aria-live="polite">
+        <Skeleton style={{ height: 12, width: "35%", margin: "0 auto" }} />
+        <Skeleton style={{ height: 32, width: "70%", margin: "12px auto 0" }} />
+        <Skeleton style={{ height: 14, width: "55%", margin: "8px auto 0" }} />
+        <div className="flex justify-center gap-2 pt-4">
+          <Skeleton style={{ height: 6, width: 40, borderRadius: 999 }} />
+          <Skeleton style={{ height: 6, width: 40, borderRadius: 999 }} />
+          <Skeleton style={{ height: 6, width: 40, borderRadius: 999 }} />
+        </div>
+        <Skeleton style={{ height: 220, width: "100%", borderRadius: 20, marginTop: 16 }} />
+        <p className="text-center text-sm text-slate-500">Loading your account…</p>
       </div>
     );
   }
