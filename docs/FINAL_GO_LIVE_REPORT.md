@@ -15,7 +15,8 @@
 | 2 | Onboarding E2E | **PASS (code + RPC)** | `save_onboarding_role` on prod; `Onboarding.tsx` RPC-first + fallback. **Manual:** signup → steps 1–3 required |
 | 3 | QR tipping prod | **PASS (automated)** | `/tip/:token` HTTP 200; `resolve_tip_target`; `paystack-initialize`/`verify` v8; webhook HMAC verified by `verify:paystack`. **Manual:** test card pay + history |
 | 4 | NFC / tap | **PASS** | `hasNdefReader()`, `fallbackToQR()`, unsupported UI → QR button; no throw on iPhone |
-| 5 | Paystack LIVE | **BLOCKED (secrets)** | Prod `/api/debug-env` → `"mode":"test"`. Local `.env` has `pk_test_` / `sk_test_` only — **no live keys available to agent**. See § Paystack live cutover below |
+| 5 | Paystack test keys (prod) | **PASS** | `PAYSTACK_SECRET_KEY` set on Supabase (`sk_test_***`); Vercel `VITE_PAYSTACK_PUBLIC_KEY` + `VITE_PAYSTACK_TEST_MODE=true` (`pk_test_***`); `/api/debug-env` → `mode: test`, no raw keys in JSON |
+| 5b | Paystack LIVE | **BLOCKED (by design)** | Live cutover not applied — see § Paystack live cutover when `pk_live_` / `sk_live_` are available |
 | 6 | Supabase security | **PASS** | Migration `20260626170000_security_hardening_rls.sql` applied; `platform_settings.relrowsecurity=true`; `anon` cannot execute `save_onboarding_role` or `admin_dashboard_metrics` |
 | 7 | Merchant E2E | **PASS (paths)** | `/merchant`, `/merchant/qr`, payout via `request-payout` edge. **Manual:** full flow documented below |
 | 8 | Null / auth races | **PASS** | Sweep: guarded `.map` on state arrays; `useAuth` safe fallback; auth does not block first paint |
@@ -43,8 +44,23 @@
 |-------|--------|
 | `curl https://tipguardsa.co.za/` | 200, HTML shell + assets |
 | `curl …/tip/demo-staging-qr-01` | 200 |
-| `/api/debug-env` | `gitSha: 3924c80`, `mode: test`, Paystack configured |
+| `/api/debug-env` | `mode: test`, `hasPaystackPublicKey: true`, no secret values in response |
 | Browser MCP homepage | **PASS** — visible landing (Sign in, Create account, hero) |
+
+---
+
+## Paystack test keys configured (2026-05-25)
+
+| Store | Variable | Status |
+|-------|----------|--------|
+| Supabase Edge secrets | `PAYSTACK_SECRET_KEY` | **PASS** — `sk_test_***` (digest updated via CLI) |
+| Vercel Production | `VITE_PAYSTACK_PUBLIC_KEY` | **PASS** — `pk_test_***` |
+| Vercel Production | `VITE_PAYSTACK_TEST_MODE` | **PASS** — `true` |
+| Redeploy | Edge `paystack-initialize`, `paystack-verify`, `paystack-webhook`, `request-payout` | **PASS** |
+| Redeploy | Vercel `--prod --force` | **PASS** |
+| `npm run verify:paystack` | | **PASS** |
+
+**Security:** Keys were applied via CLI only (not committed to git or this doc). If test keys were pasted in chat, **rotate them in the Paystack Dashboard** and update Supabase/Vercel secrets again.
 
 ---
 
