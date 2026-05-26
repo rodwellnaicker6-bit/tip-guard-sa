@@ -14,6 +14,25 @@ function randomRef(prefix: string): string {
   return prefix + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function dbErrorDetail(err: { message?: string; code?: string; details?: string; hint?: string }): string {
+  const parts = [err.message, err.details, err.hint].filter(Boolean);
+  return parts.join(" — ") || "database error";
+}
+
+function jsonDbError(
+  userMessage: string,
+  code: string,
+  err: { message?: string; code?: string; details?: string; hint?: string },
+  status = 500,
+): Response {
+  const detail = dbErrorDetail(err);
+  console.error(`paystack-initialize: ${code}`, detail, err.code);
+  return new Response(
+    JSON.stringify({ error: `${userMessage}: ${detail}`, code, db_code: err.code ?? null }),
+    { status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+  );
+}
+
 type InitBody = {
   kind?: "tip" | "wallet_topup" | "subscription";
   guard_id?: string;
@@ -236,55 +255,78 @@ serve(async (req) => {
       const commissionCents = Math.max(0, Math.round((amountCents * feeBps) / 10000));
       const netCents = amountCents - commissionCents;
 
-      const { error: tipErr } = await service.from("tips").insert({
+      const tipRow: Record<string, unknown> = {
         guard_id: guard.id,
         payer_id: user.id,
         amount_cents: amountCents,
         commission_cents: commissionCents,
         net_amount_cents: netCents,
         payer_device_hash: deviceHash,
-        qr_code_id: qrCodeId,
         paystack_reference: reference,
         status: "pending",
-      });
+      };
+      if (qrCodeId) tipRow.qr_code_id = qrCodeId;
+
+      const { error: tipErr } = await service.from("tips").insert(tipRow);
 
       if (tipErr) {
-        console.error(tipErr);
-        return new Response(JSON.stringify({ error: "Could not create tip record", code: "tip_insert_failed" }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        if (tipErr.message?.includes("qr_code_id")) {
+          delete tipRow.qr_code_id;
+          const { error: tipRetry } = await service.from("tips").insert(tipRow);
+          if (tipRetry) {
+            return jsonDbError("Could not create tip record", "tip_insert_failed", tipRetry);
+          }
+        } else {
+          return jsonDbError("Could not create tip record", "tip_insert_failed", tipErr);
+        }
       }
 
-      const { data: txRow, error: txErr } = await service.from("transactions").insert({
+      const txMeta: Record<string, unknown> = {
+        guard_id: guard.id,
+        guard_display_name: metadata.guard_display_name,
+        fee_bps: feeBps,
+        commission_cents: commissionCents,
+        net_amount_cents: netCents,
+        device_fingerprint: deviceHash,
+        payer_device_hash: deviceHash,
+      };
+      if (qrCodeId) txMeta.qr_code_id = qrCodeId;
+      if (sourceLinkToken) txMeta.source_link_token = sourceLinkToken;
+
+      const txRowPayload: Record<string, unknown> = {
         user_id: user.id,
         type: "tip",
         amount_cents: amountCents,
-        commission_cents: commissionCents,
-        payer_device_hash: deviceHash,
-        guard_id: guard.id,
         currency: "ZAR",
         status: "pending",
         paystack_reference: reference,
-        metadata: {
-          guard_id: guard.id,
-          guard_display_name: metadata.guard_display_name,
-          fee_bps: feeBps,
-          device_fingerprint: deviceHash,
-        },
-      }).select("id").maybeSingle();
+        metadata: txMeta,
+      };
+      if (commissionCents != null) txRowPayload.commission_cents = commissionCents;
+      if (deviceHash) txRowPayload.payer_device_hash = deviceHash;
+      txRowPayload.guard_id = guard.id;
+
+      let { data: txRow, error: txErr } = await service
+        .from("transactions")
+        .insert(txRowPayload)
+        .select("id")
+        .maybeSingle();
+
+      if (txErr && (txErr.message?.includes("commission_cents") || txErr.message?.includes("payer_device_hash") || txErr.message?.includes("guard_id"))) {
+        const slim = { ...txRowPayload };
+        delete slim.commission_cents;
+        delete slim.payer_device_hash;
+        delete slim.guard_id;
+        ({ data: txRow, error: txErr } = await service.from("transactions").insert(slim).select("id").maybeSingle());
+      }
 
       if (txErr) {
-        console.error(txErr);
         await service.from("tips").delete().eq("paystack_reference", reference);
-        return new Response(JSON.stringify({ error: "Could not create transaction record", code: "tx_insert_failed" }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return jsonDbError("Could not create transaction record", "tx_insert_failed", txErr);
       }
       transactionId = (txRow as { id?: string } | null)?.id ?? null;
     } else {
-      const { data: txRow, error: txErr } = await service.from("transactions").insert({
+      const topupPayload: Record<string, unknown> = {
         user_id: user.id,
         type: "wallet_topup",
         amount_cents: amountCents,
@@ -292,15 +334,23 @@ serve(async (req) => {
         status: "pending",
         paystack_reference: reference,
         metadata: { device_fingerprint: deviceHash },
-        payer_device_hash: deviceHash,
-      }).select("id").maybeSingle();
+      };
+      if (deviceHash) topupPayload.payer_device_hash = deviceHash;
+
+      let { data: txRow, error: txErr } = await service
+        .from("transactions")
+        .insert(topupPayload)
+        .select("id")
+        .maybeSingle();
+
+      if (txErr && txErr.message?.includes("payer_device_hash")) {
+        const slim = { ...topupPayload };
+        delete slim.payer_device_hash;
+        ({ data: txRow, error: txErr } = await service.from("transactions").insert(slim).select("id").maybeSingle());
+      }
 
       if (txErr) {
-        console.error(txErr);
-        return new Response(JSON.stringify({ error: "Could not create transaction record", code: "tx_insert_failed" }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return jsonDbError("Could not create transaction record", "tx_insert_failed", txErr);
       }
       transactionId = (txRow as { id?: string } | null)?.id ?? null;
     }
