@@ -1,139 +1,205 @@
 # TipGuard SA — Final Go-Live Report
 
-**Date:** 2026-05-25  
-**Commit:** `cea7b3c` (deployed)  
-**Production:** https://tipguardsa.co.za  
-**Supabase:** `fyjmujhlqpvfryelnfum`
+**Last verified:** 2026-05-25  
+**Production URL:** https://tipguardsa.co.za  
+**Vercel alias:** https://tipguard-sa.vercel.app  
+**Git commit (prod):** `d6dd073`  
+**Supabase project:** `fyjmujhlqpvfryelnfum`  
+**Paystack mode (prod):** `test` (`/api/debug-env`)
 
 ---
 
-## Objective PASS / FAIL
+## 1. Production URL
 
-| # | Objective | Result | Evidence |
-|---|-----------|--------|----------|
-| 1 | Black screen / loading loops | **PASS** | `TimedPageLoader`, 5s auth hydration, `RequireAuth` loaders, `EmergencyErrorBoundary`, `HubSafePlaceholder`, null-safe `GuardHome`/`QrTipLanding` |
-| 2 | Onboarding E2E | **PASS (code + RPC)** | `save_onboarding_role` on prod; `Onboarding.tsx` RPC-first + fallback. **Manual:** signup → steps 1–3 required |
-| 3 | QR tipping prod | **PASS (automated)** | `/tip/:token` HTTP 200; `resolve_tip_target`; `paystack-initialize`/`verify` v8; webhook HMAC verified by `verify:paystack`. **Manual:** test card pay + history |
-| 4 | NFC / tap | **PASS** | `hasNdefReader()`, `fallbackToQR()`, unsupported UI → QR button; no throw on iPhone |
-| 5 | Paystack test keys (prod) | **PASS** | `PAYSTACK_SECRET_KEY` set on Supabase (`sk_test_***`); Vercel `VITE_PAYSTACK_PUBLIC_KEY` + `VITE_PAYSTACK_TEST_MODE=true` (`pk_test_***`); `/api/debug-env` → `mode: test`, no raw keys in JSON |
-| 5b | Paystack LIVE | **BLOCKED (by design)** | Live cutover not applied — see § Paystack live cutover when `pk_live_` / `sk_live_` are available |
-| 6 | Supabase security | **PASS** | Migration `20260626170000_security_hardening_rls.sql` applied; `platform_settings.relrowsecurity=true`; `anon` cannot execute `save_onboarding_role` or `admin_dashboard_metrics` |
-| 7 | Merchant E2E | **PASS (paths)** | `/merchant`, `/merchant/qr`, payout via `request-payout` edge. **Manual:** full flow documented below |
-| 8 | Null / auth races | **PASS** | Sweep: guarded `.map` on state arrays; `useAuth` safe fallback; auth does not block first paint |
-| 9 | Boundaries / loaders / telemetry | **PASS** | App + hub + QR + payment boundaries; `stabilLog`; prod bootstrap no longer logs Supabase URL |
-| 10 | Mobile / PWA | **PASS** | `manifest.webmanifest` valid; no app SW registration (only `sw-push.stub.js` unused); viewport + safe-area CSS |
+| Surface | URL |
+|---------|-----|
+| **Primary** | https://tipguardsa.co.za |
+| Landing | https://tipguardsa.co.za/ |
+| Login / register | https://tipguardsa.co.za/login · https://tipguardsa.co.za/register |
+| Onboarding | https://tipguardsa.co.za/onboarding |
+| Demo QR tip | https://tipguardsa.co.za/tip/demo-staging-qr-01 |
+| Merchant hub | https://tipguardsa.co.za/merchant |
+| Merchant QR admin | https://tipguardsa.co.za/merchant/qr |
+| Guard hub | https://tipguardsa.co.za/guard |
+| Admin | https://tipguardsa.co.za/admin |
+| Deploy fingerprint | https://tipguardsa.co.za/api/debug-env |
+| Paystack webhook | https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/paystack-webhook |
+| Edge initialize | https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/paystack-initialize |
 
 ---
 
-## CI / smoke (this run)
+## 2. Admin checklist (pre-launch ops)
 
-| Command | Result |
+Run before announcing live payments or onboarding merchants at scale.
+
+### Environment and deploy
+
+- [ ] `/api/debug-env` returns `mode: test` (or `live` after cutover), `hasPaystackPublicKey: true`, **no** raw keys in JSON
+- [ ] `tipguard-git-sha` meta tag matches latest `main` deploy
+- [ ] Supabase Edge secrets: `PAYSTACK_SECRET_KEY` = `sk_test_***` or `sk_live_***` (never in git)
+- [ ] Vercel Production: `VITE_PAYSTACK_PUBLIC_KEY` = `pk_test_***` or `pk_live_***`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+- [ ] Paystack Dashboard webhook URL points to `paystack-webhook` (live vs test dashboard matches keys)
+
+### Automated gates (operator machine)
+
+```bash
+npm run lint && npm run build
+npm run readiness && npm run verify:supabase && npm run verify:paystack
+npm run smoke:production
+```
+
+### Manual product E2E (required)
+
+- [ ] **Merchant onboarding:** register → email confirm → `/onboarding` role **merchant** → steps 2–3 → `/merchant` loads
+- [ ] **QR create:** `/merchant/qr` → create code → open `/tip/{code_token}`
+- [ ] **Test payment:** sign in → Pay → Paystack test card **4084 0840 8408 4081**, CVV **408**, future expiry, PIN **0000**, OTP **123456**
+- [ ] **Success:** `/payment/success?ref=…` and tip row `paid` in DB or guard `/guard/history`
+- [ ] **Payout:** guard with balance → request payout → admin `/admin` → approve via `admin_update_payout_status`
+- [ ] **Auth refresh:** hard reload while signed in — session persists
+- [ ] **Payment retry:** cancel Paystack modal → pay again — no stuck “Checkout already starting”
+- [ ] **iPhone Safari:** `/tip/demo-staging-qr-01` — NFC panel shows QR fallback, no crash
+
+### Cron and monitoring (first 24h)
+
+- [ ] [OPERATOR_DAILY_CHECKLIST.md](./OPERATOR_DAILY_CHECKLIST.md) — morning and evening
+- [ ] Supabase Edge logs: `paystack-initialize` 200, `paystack-webhook` 200 on `charge.success`
+- [ ] Reconcile: `/admin/transactions` → daily reconcile (admin session)
+
+---
+
+## 3. Remaining warnings
+
+### Must complete before live money
+
+| Warning | Action |
 |---------|--------|
-| `npm run lint` | PASS |
-| `npm run build` | PASS |
-| `npm run readiness` | PASS (10/10) |
-| `npm run verify:supabase` | PASS |
-| `npm run verify:paystack` | PASS |
-| `npm run smoke:production` | PASS |
+| **Paystack still in test mode** | Apply [LIVE_KEY_CUTOVER.md](./LIVE_KEY_CUTOVER.md) when compliance approves (`pk_live_` / `sk_live_` only in Supabase + Vercel) |
+| **Manual signed-in E2E** | No substitute for human run of checklist §2 |
+| **Playwright not installed in CI/agent** | `npx playwright install && npm run test:e2e` locally |
+
+### Security advisors (Supabase)
+
+| Item | Severity | Status |
+|------|----------|--------|
+| `platform_settings` RLS | was ERROR | **Mitigated** — migration `20260626170000_security_hardening_rls.sql` applied |
+| Anon execute on admin/wallet RPCs | WARN | **Mitigated** — revoke on `admin_*`, `credit_wallet`, `save_onboarding_role`, etc. |
+| `payouts` / `tip_transactions` SECURITY DEFINER views | ERROR | **Open** — review with DBA; not app-breaking for tipping |
+| `guard-photos` public bucket listing | WARN | **Open** — optional tighten SELECT policy |
+| Leaked-password protection (Auth) | WARN | **Open** — enable in Supabase Auth settings |
+
+### Edge log notes (recent prod)
+
+- `paystack-initialize`: **200** on authenticated tips (expected)
+- `paystack-verify`: **401** without JWT (expected for unauthenticated probes)
+- `paystack-webhook`: **200** on valid HMAC; **400** on bad/unsigned payloads (expected)
+
+### Keys in chat
+
+If test keys were pasted in chat, **rotate in Paystack Dashboard** and update Supabase/Vercel secrets. Never commit keys to the repository.
 
 ---
 
-## Production verification
+## 4. Rollback instructions
 
-| Check | Result |
-|-------|--------|
-| `curl https://tipguardsa.co.za/` | 200, HTML shell + assets |
-| `curl …/tip/demo-staging-qr-01` | 200 |
-| `/api/debug-env` | `mode: test`, `hasPaystackPublicKey: true`, no secret values in response |
-| Browser MCP homepage | **PASS** — visible landing (Sign in, Create account, hero) |
+### Vercel (fastest — frontend only)
 
----
+1. Vercel Dashboard → **tipguard-sa** → **Deployments**
+2. Select last known-good deployment (note `gitSha` from `/api/debug-env`)
+3. **⋯** → **Promote to Production**
 
-## Paystack test keys configured (2026-05-25)
+CLI:
 
-| Store | Variable | Status |
-|-------|----------|--------|
-| Supabase Edge secrets | `PAYSTACK_SECRET_KEY` | **PASS** — `sk_test_***` (digest updated via CLI) |
-| Vercel Production | `VITE_PAYSTACK_PUBLIC_KEY` | **PASS** — `pk_test_***` |
-| Vercel Production | `VITE_PAYSTACK_TEST_MODE` | **PASS** — `true` |
-| Redeploy | Edge `paystack-initialize`, `paystack-verify`, `paystack-webhook`, `request-payout` | **PASS** |
-| Redeploy | Vercel `--prod --force` | **PASS** |
-| `npm run verify:paystack` | | **PASS** |
+```bash
+vercel rollback   # interactive — pick previous production deployment
+# or
+vercel deploy --prod --force   # redeploy current git ref after fix
+```
 
-**Security:** Keys were applied via CLI only (not committed to git or this doc). If test keys were pasted in chat, **rotate them in the Paystack Dashboard** and update Supabase/Vercel secrets again.
+### Git (code revert)
 
----
+```bash
+git revert <bad-commit-sha>   # prefer revert over reset on shared main
+git push origin main
+npx vercel deploy --prod --force
+```
 
-## Paystack LIVE — secrets-only blockers
+### Supabase Edge (payment functions)
 
-**Not executed** — no `pk_live_` / `sk_live_` in workspace or Vercel/Supabase secrets accessible to automation.
+```bash
+supabase link --project-ref fyjmujhlqpvfryelnfum
+git checkout <known-good-tag-or-commit>
+supabase functions deploy paystack-initialize paystack-verify paystack-webhook request-payout
+```
 
-### Operator must set
+Restore previous `PAYSTACK_SECRET_KEY` in Dashboard → Edge secrets if key rotation caused failures.
 
-1. **Supabase Edge secret** (Dashboard → Edge Functions → Secrets):
-   - `PAYSTACK_SECRET_KEY` = `sk_live_…` (from Paystack Dashboard → Live keys)
+### Database migrations (caution)
 
-2. **Vercel Production** env:
-   - `VITE_PAYSTACK_PUBLIC_KEY` = `pk_live_…`
-   - Remove or set `VITE_PAYSTACK_TEST_MODE` = `false`
+Migration `20260626170000_security_hardening_rls.sql` enables RLS and revokes anon grants. **Do not** roll back casually without a down migration — prefer fixing forward. If required, craft explicit `REVOKE`/`DROP POLICY` reversal in a new migration rather than deleting history.
 
-3. **Paystack Dashboard** webhook (live):
-   - URL: `https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/paystack-webhook`
-   - Events: `charge.success`, `charge.failed`, transfer events if using payouts
+### Paystack keys emergency rollback
 
-4. **Redeploy:**
-   ```bash
-   supabase functions deploy paystack-initialize paystack-verify paystack-webhook request-payout
-   npx vercel deploy --prod --force
-   ```
-
-5. **Verify:** `/api/debug-env` shows `mode: live` (or no test banner); `PaystackTestBanner` hidden when `pk_live_` detected.
-
-Full checklist: [LIVE_KEY_CUTOVER.md](./LIVE_KEY_CUTOVER.md)
+1. Supabase: set `PAYSTACK_SECRET_KEY` back to `sk_test_***`
+2. Vercel: restore `pk_test_***` and `VITE_PAYSTACK_TEST_MODE=true`
+3. Redeploy Edge + Vercel Production
+4. Optional: `VITE_MAINTENANCE_MODE=true` — see [ROLLBACK_PLAN.md](./ROLLBACK_PLAN.md)
 
 ---
 
-## Manual E2E — merchant (production)
+## 5. Verification PASS / FAIL
 
-1. https://tipguardsa.co.za/register — new merchant account  
-2. Confirm email → https://tipguardsa.co.za/auth/callback  
-3. https://tipguardsa.co.za/onboarding — role **merchant** → profile → finish  
-4. https://tipguardsa.co.za/merchant — dashboard loads  
-5. https://tipguardsa.co.za/merchant/qr — create QR → open `/tip/{code_token}`  
-6. Pay with Paystack **test** card (until live cutover): 4084 0840 8408 4081, CVV 408, PIN 0000, OTP 123456  
-7. https://tipguardsa.co.za/payment/success?ref=…  
-8. Guard https://tipguardsa.co.za/guard/history or customer https://tipguardsa.co.za/customer/history  
-9. Payout: guard wallet → request payout (JWT `request-payout` edge)
+| # | Verification item | Result | Notes |
+|---|-------------------|--------|-------|
+| V1 | `npm run lint` | **PASS** | |
+| V2 | `npm run build` | **PASS** | |
+| V3 | `npm run readiness` | **PASS** | 10/10 |
+| V4 | `npm run verify:supabase` | **PASS** | |
+| V5 | `npm run verify:paystack` | **PASS** | Webhook HMAC, API, edge |
+| V6 | `npm run smoke:production` | **PASS** | |
+| V7 | `/api/debug-env` | **PASS** | `mode: test`, `hasPaystackPublicKey: true`, no secrets in body |
+| V8 | Route HTTP 200 | **PASS** | `/`, `/tip/demo-staging-qr-01`, `/merchant`, `/onboarding` |
+| V9 | Prod gitSha match | **PASS** | `d6dd073` on tipguardsa.co.za |
+| V10 | Merchant onboarding (code) | **PASS** | `Onboarding.tsx` → `save_onboarding_role` RPC + profile steps → `pathAfterSignIn` |
+| V11 | Merchant onboarding (E2E) | **MANUAL** | Operator checklist §2 |
+| V12 | QR resolve (code) | **PASS** | `resolveTipTarget.ts` RPC + fallback |
+| V13 | paystack-initialize (prod logs) | **PASS** | Recent **200** responses |
+| V14 | paystack-verify (prod logs) | **PASS** | JWT required (**401** without token — correct) |
+| V15 | Real QR payment (browser) | **MANUAL** | Paystack test card on `/tip/demo-staging-qr-01` |
+| V16 | NFC / NDEFReader fallback | **PASS** | `hasNdefReader()`, `fallbackToQR()`, `NfcTapPanel` no throw on unsupported |
+| V17 | Payout path (code) | **PASS** | `request-payout` edge → `hold_guard_payout`; admin `admin_update_payout_status` |
+| V18 | Payout (E2E) | **MANUAL** | Guard request + admin approve |
+| V19 | Mobile homepage (browser MCP) | **PASS** | 390×844 viewport — Sign in, hero visible |
+| V20 | Mobile QR page (browser MCP) | **MANUAL** | MCP showed empty/black before hydration; HTTP 200 — verify on real device |
+| V21 | Playwright E2E | **SKIP** | Browsers not installed (`npx playwright install`) |
+| V22 | Paystack test secrets configured | **PASS** | Supabase `PAYSTACK_SECRET_KEY` + Vercel vars (masked `pk_test_***` / `sk_test_***`) |
+| V23 | Paystack LIVE cutover | **NOT DONE** | By design until `pk_live_` / `sk_live_` supplied |
+| V24 | Security RLS migration | **PASS** | `20260626170000` applied; anon revoked on sensitive RPCs |
 
 ---
 
-## Deploy record
+## Code path reference (onboarding + pay)
 
-| Item | Value |
+| Step | Module |
 |------|--------|
-| Git | `main` @ `3924c80` on production |
-| Vercel alias | https://tipguard-sa.vercel.app |
-| Custom domain | https://tipguardsa.co.za |
-| Edge functions | paystack-initialize v8, paystack-verify v8 (unchanged this pass) |
-| DB | `20260626170000_security_hardening_rls` applied via Supabase MCP |
+| Register | `Register.tsx` → Supabase `signUp` |
+| Auth callback | `AuthCallback.tsx` → 8s timeout → `/login` on failure |
+| Role save | `Onboarding.tsx` → `save_onboarding_role` RPC |
+| Merchant dashboard | `MerchantDashboard.tsx` — null-safe, empty venue placeholder |
+| QR admin | `MerchantQr.tsx` — missing merchant error state |
+| QR pay | `QrTipLanding.tsx` → `startTipCheckout` → `paystackCore.ts` |
+| Webhook finalize | `paystack-webhook/index.ts` → `verifySignature` |
 
 ---
 
 ## Launch readiness
 
-**~90%** automated. **100%** after: (1) manual signed-in E2E on prod, (2) Paystack live key cutover when compliance approved.
-
-### Top remaining actions (human)
-
-1. Run merchant E2E checklist above on https://tipguardsa.co.za  
-2. Paste **live** Paystack keys into Supabase + Vercel (see § Paystack LIVE)  
-3. Confirm `/api/debug-env` `mode` is live after redeploy  
-4. Optional: `npx playwright install && npm run test:e2e`
+**~92%** automated verification complete. **Production-ready for Paystack test traffic** after operator completes manual E2E (§2). **Live ZAR** requires LIVE_KEY_CUTOVER only.
 
 ---
 
-## Related docs
+## Related documentation
 
-- [FINAL_LAUNCH_SUMMARY.md](./FINAL_LAUNCH_SUMMARY.md)
 - [FULL_AUDIT_REPORT.md](./FULL_AUDIT_REPORT.md)
 - [LIVE_KEY_CUTOVER.md](./LIVE_KEY_CUTOVER.md)
+- [OPERATOR_LIVE_SMOKE.md](./OPERATOR_LIVE_SMOKE.md)
+- [ROLLBACK_PLAN.md](./ROLLBACK_PLAN.md)
