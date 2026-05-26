@@ -107,7 +107,7 @@ export default function CustomerHome() {
                   </span>
                 </div>
                 <p className="mt-1 truncate text-xs text-slate-500">
-                  {g.location ?? "South Africa"} · {g.rating.toFixed(1)}★ · {g.tips_count} tips
+                  {g.location ?? "South Africa"} · {(g.rating ?? 0).toFixed(1)}★ · {g.tips_count ?? 0} tips
                 </p>
               </div>
             </button>

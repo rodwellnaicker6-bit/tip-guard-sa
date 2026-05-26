@@ -30,7 +30,9 @@ type PayoutRow = {
   created_at: string;
 };
 
-export default function GuardHome() {
+import { EmergencyErrorBoundary } from "../lib/emergencySafeMode";
+
+function GuardHomeContent() {
   const { user, profileFields, signOut } = useAuth();
   const [guard, setGuard] = useState<GuardRow | null>(null);
   const [recentTips, setRecentTips] = useState<TipRow[]>([]);
@@ -217,7 +219,7 @@ export default function GuardHome() {
     );
   }
 
-  const first = guard.display_name.split(" ")[0];
+  const first = (guard.display_name ?? "Guard").split(/\s+/).filter(Boolean)[0] ?? "there";
 
   return (
     <div className="shell dashboard-hub mx-auto max-w-lg space-y-5 px-4 py-8 pb-16 sm:px-5">
@@ -268,8 +270,8 @@ export default function GuardHome() {
         </GlassPanel>
         <GlassPanel glow="slate" className="fx-fade-up">
           <p className="text-xs font-semibold uppercase text-slate-500">Tips</p>
-          <p className="mt-1 text-2xl font-black text-white">{guard.tips_count}</p>
-          <p className="text-xs text-slate-500">{guard.rating.toFixed(1)}★ avg</p>
+          <p className="mt-1 text-2xl font-black text-white">{guard.tips_count ?? 0}</p>
+          <p className="text-xs text-slate-500">{(guard.rating ?? 0).toFixed(1)}★ avg</p>
         </GlassPanel>
       </section>
 
@@ -371,5 +373,13 @@ export default function GuardHome() {
         </Link>
       </div>
     </div>
+  );
+}
+
+export default function GuardHome() {
+  return (
+    <EmergencyErrorBoundary>
+      <GuardHomeContent />
+    </EmergencyErrorBoundary>
   );
 }

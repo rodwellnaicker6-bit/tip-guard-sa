@@ -119,6 +119,15 @@ export async function payTipWithPaystack(opts: {
   onCheckoutDismissed?: () => void;
   onCheckoutPhase?: (phase: import("../payments/types").CheckoutPhase) => void;
 }): Promise<void> {
+  if (!opts.guardId?.trim()) {
+    opts.onError("Tip target is missing. Reload the page and try again.");
+    return;
+  }
+  if (!Number.isFinite(opts.amountCents) || opts.amountCents < 100) {
+    opts.onError("Choose a valid tip amount.");
+    return;
+  }
+
   console.info("[TipGuard:pay] tip checkout start", {
     guardId: opts.guardId,
     amountCents: opts.amountCents,
@@ -160,33 +169,31 @@ export async function payTipWithPaystack(opts: {
   }
 
   setPhase(opts, "opening_checkout");
-  try {
-    await openPaystackInline({
-      key,
-      email: data.email,
-      amountSubunits: zarSubunitsFromCents(opts.amountCents),
-      currency: "ZAR",
-      reference: data.reference,
-      accessCode: data.access_code,
-      onSuccess: (ref) => {
-        tipCheckoutInFlight = false;
-        setPhase(opts, "idle");
-        opts.navigate(
-          `/payment/success?ref=${encodeURIComponent(ref)}&kind=tip&amount_cents=${encodeURIComponent(String(opts.amountCents))}`,
-        );
-      },
-      onClose: () => {
-        tipCheckoutInFlight = false;
-        setPhase(opts, "idle");
-        opts.onCheckoutDismissed?.();
-        opts.navigate(`/payment/failure?reason=${encodeURIComponent("cancelled")}&kind=tip`);
-      },
-    });
-  } catch (e) {
+  const opened = await openPaystackInline({
+    key,
+    email: data.email,
+    amountSubunits: zarSubunitsFromCents(opts.amountCents),
+    currency: "ZAR",
+    reference: data.reference,
+    accessCode: data.access_code,
+    onSuccess: (ref) => {
+      tipCheckoutInFlight = false;
+      setPhase(opts, "idle");
+      opts.navigate(
+        `/payment/success?ref=${encodeURIComponent(ref)}&kind=tip&amount_cents=${encodeURIComponent(String(opts.amountCents))}`,
+      );
+    },
+    onClose: () => {
+      tipCheckoutInFlight = false;
+      setPhase(opts, "idle");
+      opts.onCheckoutDismissed?.();
+      opts.navigate(`/payment/failure?reason=${encodeURIComponent("cancelled")}&kind=tip`);
+    },
+  });
+  if (!opened.ok) {
     tipCheckoutInFlight = false;
     setPhase(opts, "idle");
-    console.error("[TipGuard:pay] Paystack inline failed", e);
-    opts.onError((e as Error).message ?? "Paystack failed to open");
+    opts.onError(opened.message);
   }
 }
 
@@ -233,30 +240,28 @@ export async function payWalletTopUpWithPaystack(opts: {
   }
 
   setPhase(opts, "opening_checkout");
-  try {
-    await openPaystackInline({
-      key,
-      email: data.email,
-      amountSubunits: zarSubunitsFromCents(opts.amountCents),
-      currency: "ZAR",
-      reference: data.reference,
-      accessCode: data.access_code,
-      onSuccess: (ref) => {
-        walletTopUpInFlight = false;
-        setPhase(opts, "idle");
-        opts.navigate(`/payment/success?ref=${encodeURIComponent(ref)}&kind=wallet_topup`);
-      },
-      onClose: () => {
-        walletTopUpInFlight = false;
-        setPhase(opts, "idle");
-        opts.onCheckoutDismissed?.();
-        opts.navigate(`/payment/failure?reason=${encodeURIComponent("cancelled")}&kind=wallet_topup`);
-      },
-    });
-  } catch (e) {
+  const opened = await openPaystackInline({
+    key,
+    email: data.email,
+    amountSubunits: zarSubunitsFromCents(opts.amountCents),
+    currency: "ZAR",
+    reference: data.reference,
+    accessCode: data.access_code,
+    onSuccess: (ref) => {
+      walletTopUpInFlight = false;
+      setPhase(opts, "idle");
+      opts.navigate(`/payment/success?ref=${encodeURIComponent(ref)}&kind=wallet_topup`);
+    },
+    onClose: () => {
+      walletTopUpInFlight = false;
+      setPhase(opts, "idle");
+      opts.onCheckoutDismissed?.();
+      opts.navigate(`/payment/failure?reason=${encodeURIComponent("cancelled")}&kind=wallet_topup`);
+    },
+  });
+  if (!opened.ok) {
     walletTopUpInFlight = false;
     setPhase(opts, "idle");
-    console.error("[TipGuard:pay] Paystack inline failed", e);
-    opts.onError((e as Error).message ?? "Paystack failed to open");
+    opts.onError(opened.message);
   }
 }

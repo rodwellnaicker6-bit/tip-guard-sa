@@ -183,8 +183,8 @@ export default function QrTipLanding() {
       {checkoutPhase !== "idle" && overlayMsg ? <CheckoutLoadingOverlay message={overlayMsg} /> : null}
       <header className="fx-fade-up mb-4 text-center">
         <p className="text-xs font-bold uppercase tracking-wider text-amber-400/90">TipGuard SA</p>
-        <h1 className="mt-1 text-2xl font-black text-white">Tip {target.guard_display_name}</h1>
-        <p className="mt-1 text-xs text-slate-500">{target.scan_count} scans · ZAR only</p>
+        <h1 className="mt-1 text-2xl font-black text-white">Tip {target.guard_display_name ?? "Guard"}</h1>
+        <p className="mt-1 text-xs text-slate-500">{target.scan_count ?? 0} scans · ZAR only</p>
       </header>
 
       <TrustRibbon />

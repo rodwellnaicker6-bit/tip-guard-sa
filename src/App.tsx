@@ -5,6 +5,7 @@ import { AuthProvider } from "./context/AuthProvider";
 import { ToastProvider } from "./context/ToastProvider";
 import { AppBootGate } from "./components/AppBootGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { EmergencyErrorBoundary } from "./lib/emergencySafeMode";
 import { BuildDeployBadge } from "./components/BuildDeployBadge";
 import { bootLog, logBootHealth } from "./lib/bootDebug";
 import { SessionIdleWatcher } from "./components/SessionIdleWatcher";
@@ -492,7 +493,9 @@ export default function App() {
           <AuthProvider>
             <SessionIdleWatcher />
             <AppBootGate>
-              <AppRoutes />
+              <EmergencyErrorBoundary>
+                <AppRoutes />
+              </EmergencyErrorBoundary>
             </AppBootGate>
             <BuildDeployBadge />
           </AuthProvider>

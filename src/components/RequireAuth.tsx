@@ -1,8 +1,6 @@
 import type { ReactElement } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
-import PageLoader from "./PageLoader";
-
 function loginRedirectState(pathname: string, search: string) {
   return { from: `${pathname}${search}` };
 }
@@ -11,7 +9,7 @@ function loginRedirectState(pathname: string, search: string) {
 export function RequireAuth({ children }: { children: ReactElement }) {
   const { user, authReady } = useAuth();
   const location = useLocation();
-  if (!authReady) return <PageLoader />;
+  if (!authReady) return children;
   if (!user?.id) {
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
@@ -23,7 +21,7 @@ export function RequireAuth({ children }: { children: ReactElement }) {
 export function RequireAdmin({ children }: { children: ReactElement }) {
   const { user, role, authReady } = useAuth();
   const location = useLocation();
-  if (!authReady) return <PageLoader />;
+  if (!authReady) return children;
   if (!user?.id) {
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
@@ -39,7 +37,7 @@ export function RequireAdmin({ children }: { children: ReactElement }) {
 export function RequireGuard({ children }: { children: ReactElement }) {
   const { user, authReady, isGuardUser } = useAuth();
   const location = useLocation();
-  if (!authReady) return <PageLoader />;
+  if (!authReady) return children;
   if (!user?.id) {
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
@@ -55,7 +53,7 @@ export function RequireGuard({ children }: { children: ReactElement }) {
 export function RequireMerchant({ children }: { children: ReactElement }) {
   const { user, authReady, isMerchantUser } = useAuth();
   const location = useLocation();
-  if (!authReady) return <PageLoader />;
+  if (!authReady) return children;
   if (!user?.id) {
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />

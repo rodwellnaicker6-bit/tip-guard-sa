@@ -114,7 +114,7 @@ export default function MerchantDashboard() {
     <div className="shell dashboard-hub mx-auto max-w-lg space-y-5 px-4 py-8 pb-16 sm:px-5">
       <header className="page-header fx-fade-up min-w-0">
         <p className="muted-label">Venue hub</p>
-        <h2 className="font-black text-white break-words">{merchant.business_name}</h2>
+        <h2 className="font-black text-white break-words">{merchant.business_name ?? "Your venue"}</h2>
         <p className="text-slate-400">{merchant.location ?? "South Africa"}</p>
         {(merchant.risk_score ?? 0) > 0 && (
           <span

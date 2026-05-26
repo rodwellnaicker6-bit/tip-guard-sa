@@ -42,7 +42,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sessionReadyRef = useRef(false);
   const reconnectBusyRef = useRef(false);
 
-  const authReady = sessionReady && profileReady;
+  /** Emergency: session hydration only — profile loads in background (no route black screen). */
+  const authReady = sessionReady;
   const loading = !authReady;
 
   useEffect(() => {

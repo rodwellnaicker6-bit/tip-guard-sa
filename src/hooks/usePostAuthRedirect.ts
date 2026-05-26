@@ -64,6 +64,7 @@ export function usePostAuthRedirect(options: PostAuthNavigateOptions & { enabled
     // eslint-disable-next-line react-hooks/exhaustive-deps -- role/hasGuardRow/hasMerchantRow read at redirect start only
   }, [enabled, authReady, sessionReady, user?.id, navigate, from, preferOnboarding]);
 
-  const showLoader = Boolean(user?.id && (routing || (!authReady && sessionReady)));
+  /** Emergency: never block login/register UI with a full-page loader. */
+  const showLoader = false;
   return { routing, showLoader };
 }
