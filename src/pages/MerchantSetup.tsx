@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import PageLoader from "../components/PageLoader";
 import { sanitizeDisplayName } from "../lib/sanitize";
+import { invalidateMerchantVenueCache } from "../hooks/useMerchantVenue";
 
 type Step = 1 | 2 | 3;
 
@@ -64,6 +65,7 @@ export default function MerchantSetup() {
       setMerchantId(row.id);
     }
     setBusy(false);
+    invalidateMerchantVenueCache(user.id);
     await refreshProfile();
     setStep(2);
   }

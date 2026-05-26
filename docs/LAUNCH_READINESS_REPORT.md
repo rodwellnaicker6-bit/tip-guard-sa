@@ -1,6 +1,6 @@
 # TipGuard SA — Launch readiness report
 
-**Last updated:** 2026-05-25 (final pre-launch execution)  
+**Last updated:** 2026-05-26 (merchant venue load fix)  
 **Production URL:** https://tipguardsa.co.za  
 **Paystack mode:** **test** — live ZAR blocked until [LIVE_KEY_CUTOVER.md](./LIVE_KEY_CUTOVER.md)
 
@@ -39,14 +39,16 @@
 
 ---
 
-## Code shipped (this pass)
+## Code shipped (recent)
 
 | Change | File(s) |
 |--------|---------|
+| **Merchant venue load fix** | `useMerchantVenue.ts`, `MerchantDashboard.tsx` — prod missing `risk_score` column caused 42703 |
 | Onboarding loading skeleton | `src/pages/Onboarding.tsx` |
 | QR mobile overflow + 48px Pay | `src/pages/QrTipLanding.tsx` |
 | Admin dashboard parallel fetch | `src/pages/AdminDashboard.tsx` |
 | 2% fee migration | `supabase/migrations/20260626210000_platform_fee_200bps.sql` |
+| `risk_score` column migration | `supabase/migrations/20260626220000_merchants_risk_score.sql` |
 
 Prior commits still required on prod: **`fbc0662`** (onboarding), **`4124eeb`** (perf).
 
