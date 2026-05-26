@@ -11,7 +11,6 @@ import { bootLog, logBootHealth } from "./lib/bootDebug";
 import { SessionIdleWatcher } from "./components/SessionIdleWatcher";
 import { RequireAdmin, RequireAuth, RequireGuard, RequireMerchant } from "./components/RequireAuth";
 import { HubLayout } from "./layouts/HubLayout";
-import { TimedPageLoader } from "./components/TimedPageLoader";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -62,7 +61,11 @@ const AdminFraud = lazy(() => import("./pages/AdminFraud"));
 const MerchantDisputes = lazy(() => import("./pages/MerchantDisputes"));
 
 function RouteFallback() {
-  return <TimedPageLoader label="Loading page…" />;
+  return (
+    <div className="shell mx-auto max-w-lg px-5 py-10 text-center text-slate-400" role="status" aria-live="polite">
+      Loading page…
+    </div>
+  );
 }
 
 function Lazy({ children }: { children: ReactNode }) {

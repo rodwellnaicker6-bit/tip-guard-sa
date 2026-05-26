@@ -40,6 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const mountedRef = useRef(true);
   const accountAbortRef = useRef<AbortController | null>(null);
   const accountLoadGenRef = useRef(0);
+  const profileLoadInflightUidRef = useRef<string | null>(null);
+  const refreshInFlightRef = useRef<Promise<AuthAccountSnapshot | null> | null>(null);
   const sessionReadyRef = useRef(false);
   const reconnectBusyRef = useRef(false);
 
@@ -139,27 +141,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfileReady(true);
         return null;
       }
-      const ac = new AbortController();
-      accountAbortRef.current?.abort();
-      accountAbortRef.current = ac;
-      if (!options?.silent) setProfileReady(false);
-      const gen = ++accountLoadGenRef.current;
-      return loadAccount(user.id, ac.signal, gen);
+      if (refreshInFlightRef.current) return refreshInFlightRef.current;
+      const run = async () => {
+        const ac = new AbortController();
+        accountAbortRef.current?.abort();
+        accountAbortRef.current = ac;
+        if (!options?.silent) setProfileReady(false);
+        const gen = ++accountLoadGenRef.current;
+        return loadAccount(user.id, ac.signal, gen);
+      };
+      const p = run().finally(() => {
+        refreshInFlightRef.current = null;
+      });
+      refreshInFlightRef.current = p;
+      return p;
     },
     [loadAccount, user],
   );
 
   /** Never call Supabase data APIs inside onAuthStateChange — defer to avoid auth deadlocks. */
   const scheduleLoadAccount = useCallback(
-    (uid: string) => {
+    (uid: string, options?: { force?: boolean }) => {
       if (!mountedRef.current) return;
+      if (!options?.force && profileLoadInflightUidRef.current === uid) return;
+      profileLoadInflightUidRef.current = uid;
       const gen = ++accountLoadGenRef.current;
       setProfileReady(false);
       accountAbortRef.current?.abort();
       const ac = new AbortController();
       accountAbortRef.current = ac;
       queueMicrotask(() => {
-        void loadAccount(uid, ac.signal, gen);
+        void loadAccount(uid, ac.signal, gen).finally(() => {
+          if (profileLoadInflightUidRef.current === uid) {
+            profileLoadInflightUidRef.current = null;
+          }
+        });
       });
     },
     [loadAccount],
@@ -219,7 +235,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         next?.user?.id &&
         (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "USER_UPDATED")
       ) {
-        scheduleLoadAccount(next.user.id);
+        scheduleLoadAccount(next.user.id, {
+          force: event === "SIGNED_IN" || event === "USER_UPDATED",
+        });
       }
       if (
         event === "INITIAL_SESSION" ||
@@ -246,7 +264,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setAuthBootError(null);
           if (next) {
             applySession(next);
-            if (next.user?.id) scheduleLoadAccount(next.user.id);
+            // Profile load is handled by onAuthStateChange INITIAL_SESSION (avoids duplicate fetch).
           } else {
             applySession(null);
           }
@@ -268,7 +286,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         stabilLog("auth", "session hydration timeout — unblocking UI");
         markSessionReady();
       }
-    }, 5_000);
+    }, 4_000);
 
     const profileFallback = window.setTimeout(() => {
       if (mountedRef.current) {
@@ -277,7 +295,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return true;
         });
       }
-    }, 8_000);
+    }, 6_000);
 
     return () => {
       effectCancelled = true;
@@ -321,7 +339,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [scheduleLoadAccount]);
+  }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!isSupabaseBrowserConfigured) {

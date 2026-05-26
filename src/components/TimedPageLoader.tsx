@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import PageLoader from "./PageLoader";
 
-const DEFAULT_TIMEOUT_MS = 4_500;
+const DEFAULT_TIMEOUT_MS = 3_500;
 
 type Props = {
   label?: string;

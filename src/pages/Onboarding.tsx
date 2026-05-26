@@ -156,21 +156,14 @@ export default function Onboarding() {
         roleSaved = intent;
       }
 
-      let snap: AuthAccountSnapshot | null = null;
-      try {
-        snap = await withSaveTimeout(refreshProfile({ silent: true }), "Profile refresh");
-      } catch (refreshErr) {
-        console.warn("[Onboarding] refreshProfile after role", refreshErr);
-      }
+      void refreshProfile({ silent: true });
 
-      const merged: AuthAccountSnapshot =
-        snap ??
-        ({
-          role: (roleSaved as AuthRole) ?? intent,
-          profileFields,
-          hasGuardRow,
-          hasMerchantRow,
-        } satisfies AuthAccountSnapshot);
+      const merged: AuthAccountSnapshot = {
+        role: (roleSaved as AuthRole) ?? intent,
+        profileFields,
+        hasGuardRow: intent === "guard" ? true : hasGuardRow,
+        hasMerchantRow: intent === "merchant" ? true : hasMerchantRow,
+      };
 
       const effectiveRole = merged.role ?? roleSaved ?? intent;
       if (effectiveRole !== intent) {
@@ -225,20 +218,13 @@ export default function Onboarding() {
         if (import.meta.env.DEV) console.warn("[Onboarding] profile save", error);
         return;
       }
-      let snap: AuthAccountSnapshot | null = null;
-      try {
-        snap = await withSaveTimeout(refreshProfile({ silent: true }), "Profile refresh");
-      } catch (refreshErr) {
-        console.warn("[Onboarding] refreshProfile after profile", refreshErr);
-      }
-      const merged =
-        snap ??
-        ({
-          role: role ?? intent,
-          profileFields: { full_name: name, phone: phoneVal },
-          hasGuardRow,
-          hasMerchantRow,
-        } satisfies AuthAccountSnapshot);
+      void refreshProfile({ silent: true });
+      const merged = {
+        role: role ?? intent,
+        profileFields: { full_name: name, phone: phoneVal },
+        hasGuardRow,
+        hasMerchantRow,
+      } satisfies AuthAccountSnapshot;
       if (tryLeaveOnboarding(merged, intent)) return;
       setStep("finish");
     } catch (e) {

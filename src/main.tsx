@@ -59,16 +59,25 @@ function bootstrap(): void {
     if (!envCheck.ok) {
       bootLog("env check issues (rendering anyway)", envCheck.message, envCheck.missing);
     }
-    try {
-      initSentry();
-    } catch (e) {
-      console.error("[TipGuard] initSentry failed", e);
-    }
-    try {
-      initAnalytics();
-    } catch (e) {
-      console.error("[TipGuard] initAnalytics failed", e);
-    }
+    const deferNonCritical = (fn: () => void) => {
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(fn, { timeout: 2500 });
+      } else {
+        window.setTimeout(fn, 0);
+      }
+    };
+    deferNonCritical(() => {
+      try {
+        initSentry();
+      } catch (e) {
+        console.error("[TipGuard] initSentry failed", e);
+      }
+      try {
+        initAnalytics();
+      } catch (e) {
+        console.error("[TipGuard] initAnalytics failed", e);
+      }
+    });
 
     const rootEl = document.getElementById("root");
     if (!rootEl) {

@@ -43,31 +43,14 @@ export function MerchantAnalyticsPanel() {
   }, [period]);
 
   useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      setLoading(true);
-      setError(null);
-      const { data: raw, error: err } = await supabase.rpc("merchant_payment_analytics_v2", { p_period: period });
-      if (cancelled) return;
-      if (err) {
-        setError(err.message);
-        setData(null);
-      } else {
-        setData((raw as Analytics) ?? null);
-      }
-      setLoading(false);
-    };
     queueMicrotask(() => {
-      void run();
+      void load();
     });
     const id = setInterval(() => {
-      if (document.visibilityState === "visible") void run();
+      if (document.visibilityState === "visible") void load();
     }, 30_000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [period]);
+    return () => clearInterval(id);
+  }, [load]);
 
   if (loading && !data) {
     return (

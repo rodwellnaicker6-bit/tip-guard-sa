@@ -39,11 +39,6 @@ export async function resolveTipTarget(token: string): Promise<{
   try {
     stabilLog("qr", "resolve tip target start", { tokenLen: trimmed.length });
 
-    await Promise.allSettled([
-      supabase.rpc("touch_tip_link", { p_token: trimmed }),
-      supabase.rpc("touch_qr_code", { p_code_token: trimmed }),
-    ]);
-
     const { data, error: rpcErr } = await supabase.rpc("resolve_tip_target", { p_token: trimmed });
     if (!rpcErr && data) {
       const row = Array.isArray(data)
@@ -52,6 +47,10 @@ export async function resolveTipTarget(token: string): Promise<{
       const mapped = row ? mapRow(row) : null;
       if (mapped) {
         stabilLog("qr", "resolve tip target ok", { guardId: mapped.guard_id });
+        void Promise.allSettled([
+          supabase.rpc("touch_tip_link", { p_token: trimmed }),
+          supabase.rpc("touch_qr_code", { p_code_token: trimmed }),
+        ]);
         return { target: mapped, error: null };
       }
     }
@@ -92,6 +91,10 @@ export async function resolveTipTarget(token: string): Promise<{
     }
 
     stabilLog("qr", "resolve tip target ok", { guardId: guard.id });
+    void Promise.allSettled([
+      supabase.rpc("touch_tip_link", { p_token: trimmed }),
+      supabase.rpc("touch_qr_code", { p_code_token: trimmed }),
+    ]);
     return {
       target: {
         guard_id: guard.id,

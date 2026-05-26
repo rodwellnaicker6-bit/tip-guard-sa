@@ -57,7 +57,13 @@ function GuardHomeContent() {
     (async () => {
       setLoading(true);
       setError(null);
-      const { data, error: err } = await supabase.from("guards").select("*").eq("user_id", user.id).maybeSingle();
+      const { data, error: err } = await supabase
+        .from("guards")
+        .select(
+          "id, display_name, location, province, avatar_initials, verified, rating, tips_count, balance_cents, payout_schedule, next_payout_at, minimum_payout_threshold_cents",
+        )
+        .eq("user_id", user.id)
+        .maybeSingle();
       if (cancelled) return;
       if (err) {
         setError("We could not load your guard profile. Please try again.");
@@ -72,7 +78,7 @@ function GuardHomeContent() {
       }) ?? null;
       setGuard(g);
       if (g) {
-        const hasPayoutCols = "payout_schedule" in g;
+        const hasPayoutCols = g.payout_schedule != null || g.next_payout_at != null;
         setPayoutSchemaComplete(hasPayoutCols);
         const sched = g.payout_schedule ?? "";
         setPayoutSchedule(isPayoutSchedule(sched) ? sched : "weekly");
@@ -80,35 +86,59 @@ function GuardHomeContent() {
         setMinPayoutCents(g.minimum_payout_threshold_cents ?? 10000);
       }
       if (g?.id) {
-        const { data: w } = await supabase
-          .from("wallet_accounts")
-          .select("available_cents, pending_cents")
-          .eq("guard_id", g.id)
-          .maybeSingle();
-        if (!cancelled) {
-          setWalletAvail((w?.available_cents as number | undefined) ?? g.balance_cents ?? 0);
-          setWalletPending((w?.pending_cents as number | undefined) ?? 0);
+        const keys: string[] = [];
+        for (let i = 13; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          d.setHours(0, 0, 0, 0);
+          keys.push(d.toISOString().slice(0, 10));
         }
-        const { data: tips, error: tErr } = await supabase
-          .from("tips")
-          .select("id, amount_cents, status, created_at")
-          .eq("guard_id", g.id)
-          .order("created_at", { ascending: false })
-          .limit(12);
-        if (!cancelled && !tErr && tips) setRecentTips(tips as TipRow[]);
-        else if (!cancelled) setRecentTips([]);
-        if (!cancelled && user?.id) {
-          const { data: payouts } = await supabase
+        const since = `${keys[0]}T00:00:00.000Z`;
+        const [walletRes, tipsRes, payoutsRes, sparkRes] = await Promise.all([
+          supabase
+            .from("wallet_accounts")
+            .select("available_cents, pending_cents")
+            .eq("guard_id", g.id)
+            .maybeSingle(),
+          supabase
+            .from("tips")
+            .select("id, amount_cents, status, created_at")
+            .eq("guard_id", g.id)
+            .order("created_at", { ascending: false })
+            .limit(12),
+          supabase
             .from("payouts")
             .select("id, amount_cents, status, created_at")
             .eq("user_id", user.id)
             .order("created_at", { ascending: false })
-            .limit(5);
-          if (!cancelled) setRecentPayouts((payouts as PayoutRow[]) ?? []);
+            .limit(5),
+          supabase
+            .from("tips")
+            .select("amount_cents, created_at")
+            .eq("guard_id", g.id)
+            .eq("status", "succeeded")
+            .gte("created_at", since),
+        ]);
+        if (!cancelled) {
+          const w = walletRes.data;
+          setWalletAvail((w?.available_cents as number | undefined) ?? g.balance_cents ?? 0);
+          setWalletPending((w?.pending_cents as number | undefined) ?? 0);
+          if (!tipsRes.error && tipsRes.data) setRecentTips(tipsRes.data as TipRow[]);
+          else setRecentTips([]);
+          setRecentPayouts((payoutsRes.data as PayoutRow[]) ?? []);
+          if (!sparkRes.error && sparkRes.data) {
+            const totals: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 0]));
+            for (const row of sparkRes.data) {
+              const day = (row.created_at as string).slice(0, 10);
+              if (totals[day] != null) totals[day] += row.amount_cents as number;
+            }
+            setSparkValues(keys.map((k) => totals[k] ?? 0));
+          }
         }
       } else if (!cancelled) {
         setRecentTips([]);
         setRecentPayouts([]);
+        setSparkValues([]);
       }
       if (!cancelled) setLoading(false);
     })();
@@ -116,37 +146,6 @@ function GuardHomeContent() {
       cancelled = true;
     };
   }, [user?.id, reload]);
-
-  useEffect(() => {
-    if (!guard?.id) return;
-    let cancelled = false;
-    (async () => {
-      const keys: string[] = [];
-      for (let i = 13; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        d.setHours(0, 0, 0, 0);
-        keys.push(d.toISOString().slice(0, 10));
-      }
-      const since = `${keys[0]}T00:00:00.000Z`;
-      const { data, error: qErr } = await supabase
-        .from("tips")
-        .select("amount_cents, created_at")
-        .eq("guard_id", guard.id)
-        .eq("status", "succeeded")
-        .gte("created_at", since);
-      if (cancelled || qErr || !data) return;
-      const totals: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 0]));
-      for (const row of data) {
-        const day = (row.created_at as string).slice(0, 10);
-        if (totals[day] != null) totals[day] += row.amount_cents as number;
-      }
-      setSparkValues(keys.map((k) => totals[k] ?? 0));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [guard?.id]);
 
   async function onRequestPayout(e: FormEvent) {
     e.preventDefault();
