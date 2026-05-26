@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
-import type { AuthAccountSnapshot } from "../context/authTypes";
+import type { AuthAccountSnapshot, AuthRole } from "../context/authTypes";
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import PaystackTestBanner from "../components/PaystackTestBanner";
 import { supabase } from "../lib/supabase";
@@ -15,17 +15,23 @@ type IntentRole = "customer" | "guard" | "merchant";
 const STEPS = ["role", "profile", "finish"] as const;
 type Step = (typeof STEPS)[number];
 
-function profileSaveErrorMessage(message: string): string {
+function profileSaveErrorMessage(message: string, code?: string): string {
+  let msg: string;
   if (/profile role cannot be changed/i.test(message)) {
-    return "We could not save your role. Ask an admin to apply the latest database migration, then try again.";
+    msg = "We could not save your role. Ask an admin to apply the latest database migration, then try again.";
+  } else if (/permission denied|row-level security|42501/i.test(message)) {
+    msg = "We could not save your profile (access denied). Sign out, sign in again, or contact support.";
+  } else if (/network|fetch|failed to fetch|timeout/i.test(message)) {
+    msg = "Network error while saving. Check your connection and try again.";
+  } else if (/profile row missing|not authenticated/i.test(message)) {
+    msg = "Your account profile is missing. Sign out, sign in again, then retry.";
+  } else {
+    msg = message;
   }
-  if (/permission denied|row-level security|42501/i.test(message)) {
-    return "We could not save your profile (access denied). Sign out, sign in again, or contact support.";
+  if (import.meta.env.DEV && (code || message)) {
+    return `${msg} [${code ?? "error"}: ${message}]`;
   }
-  if (/network|fetch|failed to fetch|timeout/i.test(message)) {
-    return "Network error while saving. Check your connection and try again.";
-  }
-  return message;
+  return msg;
 }
 
 export default function Onboarding() {
@@ -78,32 +84,78 @@ export default function Onboarding() {
     if (!user?.id || saving) return;
     setSaving(true);
     setSaveError(null);
-    const { data, error } = await supabase
-      .from("profiles")
-      .update({ role: intent })
-      .eq("id", user.id)
-      .select("role")
-      .maybeSingle();
-    if (error) {
+
+    const { data: savedRole, error: rpcErr } = await supabase.rpc("save_onboarding_role", {
+      p_role: intent,
+    });
+
+    let roleSaved = typeof savedRole === "string" ? savedRole : null;
+
+    if (rpcErr) {
+      const { data: row, error: updErr } = await supabase
+        .from("profiles")
+        .update({ role: intent })
+        .eq("id", user.id)
+        .select("role")
+        .maybeSingle();
+      if (updErr) {
+        setSaving(false);
+        setSaveError(profileSaveErrorMessage(updErr.message, updErr.code));
+        if (import.meta.env.DEV) console.warn("[Onboarding] role save", rpcErr, updErr);
+        return;
+      }
+      roleSaved = row?.role ?? null;
+      if (!roleSaved) {
+        const { error: insErr } = await supabase.from("profiles").insert({
+          id: user.id,
+          role: "customer",
+          full_name:
+            profileFields.full_name ??
+            (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null) ??
+            "Member",
+        });
+        if (insErr) {
+          setSaving(false);
+          setSaveError(profileSaveErrorMessage(insErr.message, insErr.code));
+          return;
+        }
+        const retry = await supabase
+          .from("profiles")
+          .update({ role: intent })
+          .eq("id", user.id)
+          .select("role")
+          .maybeSingle();
+        if (retry.error) {
+          setSaving(false);
+          setSaveError(profileSaveErrorMessage(retry.error.message, retry.error.code));
+          return;
+        }
+        roleSaved = retry.data?.role ?? null;
+      }
+    }
+
+    const snap =
+      (await refreshProfile({ silent: true })) ??
+      ({
+        role: (roleSaved as AuthRole) ?? intent,
+        profileFields,
+        hasGuardRow,
+        hasMerchantRow,
+      } satisfies AuthAccountSnapshot);
+    const effectiveRole = snap.role ?? intent;
+    if (effectiveRole !== intent) {
       setSaving(false);
-      setSaveError(profileSaveErrorMessage(error.message));
-      if (import.meta.env.DEV) console.warn("[Onboarding] role save", error);
+      setSaveError(
+        profileSaveErrorMessage(
+          `Role did not persist (expected ${intent}, got ${effectiveRole ?? "none"}).`,
+        ),
+      );
       return;
     }
-    if (!data?.role) {
-      setSaving(false);
-      setSaveError("Your profile could not be updated. Sign out and sign in again, then retry.");
-      return;
-    }
-    const snap = (await refreshProfile({ silent: true })) ?? {
-      role: intent,
-      profileFields,
-      hasGuardRow,
-      hasMerchantRow,
-    };
+
     setSaving(false);
     if (tryLeaveOnboarding(snap, intent)) return;
-    setStep(isProfileComplete(snap.profileFields) ? "finish" : "profile");
+    setStep(isProfileComplete(snap.profileFields ?? profileFields) ? "finish" : "profile");
   }
 
   async function saveProfile(e: FormEvent<HTMLFormElement>) {
@@ -134,7 +186,7 @@ export default function Onboarding() {
       .eq("id", user.id);
     if (error) {
       setSaving(false);
-      setSaveError(profileSaveErrorMessage(error.message));
+      setSaveError(profileSaveErrorMessage(error.message, error.code));
       if (import.meta.env.DEV) console.warn("[Onboarding] profile save", error);
       return;
     }
