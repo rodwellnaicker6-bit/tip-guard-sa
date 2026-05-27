@@ -9,10 +9,13 @@ export default function handler(
     status: (code: number) => { json: (body: unknown) => void };
   },
 ): void {
-  const supabaseUrl = (process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "").trim();
+  // Vercel runtime provides `process.env`, but some TS configs don't include Node types.
+  const env = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+
+  const supabaseUrl = (env.VITE_SUPABASE_URL ?? env.SUPABASE_URL ?? "").trim();
   const base = supabaseUrl.replace(/\/$/, "");
   const invokeUrl = base ? `${base}/functions/v1/paystack-initialize` : "";
-  const pk = (process.env.VITE_PAYSTACK_PUBLIC_KEY ?? "").trim();
+  const pk = (env.VITE_PAYSTACK_PUBLIC_KEY ?? "").trim();
   const mode = pk.startsWith("pk_live_")
     ? "live"
     : pk.startsWith("pk_test_")
@@ -24,10 +27,10 @@ export default function handler(
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   res.setHeader("Content-Type", "application/json");
   res.status(200).json({
-    buildId: process.env.BUILD_ID ?? process.env.VERCEL_DEPLOYMENT_ID ?? "unknown",
-    gitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
-    vercelEnv: process.env.VERCEL_ENV ?? null,
-    deploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,
+    buildId: env.BUILD_ID ?? env.VERCEL_DEPLOYMENT_ID ?? "unknown",
+    gitSha: env.VERCEL_GIT_COMMIT_SHA ?? null,
+    vercelEnv: env.VERCEL_ENV ?? null,
+    deploymentId: env.VERCEL_DEPLOYMENT_ID ?? null,
     supabaseUrl: base || null,
     invokeUrl: invokeUrl || null,
     mode,
