@@ -5,7 +5,9 @@ import { useAuth } from "../context/useAuth";
 import { startTipCheckout } from "../payments/checkoutFlow";
 import { releaseTipCheckoutLock } from "../services/paystackCore";
 import { hasPaystackPublicKey } from "../services/paymentService";
+import { resolveAuthUserId } from "../lib/resolveAuthUser";
 import { resolveTipTarget } from "../lib/resolveTipTarget";
+import { logAuth } from "../lib/authDebug";
 import { paystackEnvIssue } from "../lib/paystackEnv";
 import { CheckoutLoadingOverlay } from "../components/CheckoutLoadingOverlay";
 import type { CheckoutPhase } from "../payments/types";
@@ -98,10 +100,15 @@ function QrTipLandingContent() {
       setError("Still signing you in — wait a moment and tap Pay again.");
       return;
     }
-    if (!user?.id) {
+    const payerId = await resolveAuthUserId(user?.id);
+    if (!payerId) {
+      logAuth("QR pay redirect to login (no session after resolve)", { token });
       sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
       navigate("/login", { replace: true });
       return;
+    }
+    if (!user?.id) {
+      logAuth("QR pay using recovered session (React user was briefly null)", { payerId });
     }
     const payIssue = paystackEnvIssue();
     if (!hasPaystackPublicKey()) {

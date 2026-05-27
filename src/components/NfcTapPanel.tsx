@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { fallbackToQR, getNfcSupport, prepareNfcTap, type NfcPayload } from "../lib/nfc";
 
 /** Web NFC scaffold — safe no-op on iOS Safari and desktop. */
-export function NfcTapPanel() {
+export function NfcTapPanel({ fallbackTipToken }: { fallbackTipToken?: string | null }) {
   const navigate = useNavigate();
   const support = getNfcSupport();
   const [message, setMessage] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export function NfcTapPanel() {
         <button
           type="button"
           className="tap-target mt-3 w-full rounded-xl border border-white/15 py-2.5 text-sm font-bold text-amber-200"
-          onClick={() => fallbackToQR((p) => navigate(p))}
+          onClick={() => fallbackToQR(navigate, fallbackTipToken ?? undefined)}
         >
           Open QR tipping
         </button>

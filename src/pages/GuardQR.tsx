@@ -17,6 +17,7 @@ export default function GuardQR() {
   const toast = useToast();
   const [guard, setGuard] = useState<GuardMeta | null>(null);
   const [tipUrl, setTipUrl] = useState<string | null>(null);
+  const [tipToken, setTipToken] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [printCardUrl, setPrintCardUrl] = useState<string | null>(null);
   const [links, setLinks] = useState<LinkRow[]>([]);
@@ -80,6 +81,7 @@ export default function GuardQR() {
         if (!cancelled) {
           setQrDataUrl(null);
           setPrintCardUrl(null);
+          setTipToken(null);
         }
       });
       return () => {
@@ -132,6 +134,7 @@ export default function GuardQR() {
       console.warn("[GuardQR] qr_codes:", qcErr.message);
     }
     setTipUrl(url);
+    setTipToken(token);
     setLinks((prev) => [{ token, created_at: new Date().toISOString(), scan_count: 0 }, ...prev]);
     setBusy(false);
     toast.success("New tip link ready.");
@@ -184,7 +187,7 @@ export default function GuardQR() {
 
       {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>}
 
-      <NfcTapPanel />
+      <NfcTapPanel fallbackTipToken={tipToken} />
 
       <button
         className="tap-target w-full rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 font-black text-black disabled:opacity-50"
@@ -215,7 +218,7 @@ export default function GuardQR() {
                 <button
                   type="button"
                   className="text-sm font-bold text-amber-400 underline disabled:opacity-50"
-                  onClick={() => void buildPrintCard(tipUrl, guard!.display_name, guard!.merchant_name)}
+                onClick={() => void buildPrintCard(tipUrl, guard?.display_name ?? "Guard", guard?.merchant_name ?? null)}
                   disabled={cardBusy}
                 >
                   {cardBusy ? "Rendering card…" : "Refresh print card"}

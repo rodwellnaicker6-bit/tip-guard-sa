@@ -165,7 +165,7 @@ serve(async (req) => {
       reference,
       route: "paystack-initialize",
     });
-    if (fraud.blocked) {
+    if (fraud.blocked && !fraud.rpcUnavailable) {
       return new Response(
         JSON.stringify({ error: "Payment blocked by fraud policy", code: "fraud_blocked", rules: fraud.triggered }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },

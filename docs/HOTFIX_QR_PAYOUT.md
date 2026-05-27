@@ -61,6 +61,20 @@ curl -s https://tipguardsa.co.za/api/readiness | jq .
 4. **Payout schedule** — Save weekly/monthly on guard/merchant dashboard; button clears on error.
 5. **Merchant setup** — New merchant flow; Continue never spins forever.
 
+## Follow-up: auth kick-out (`94e7426` → next commit)
+
+**Symptom:** User “kicked out” to `/login` after Pay or on `/merchant` refresh.
+
+| Trigger | File:line | Cause |
+|---------|-----------|--------|
+| Transient null on refresh | `AuthProvider.tsx` `applySession` | `TOKEN_REFRESHED` with `session=null` cleared React `user` |
+| Boot network error | `AuthProvider.tsx` `getSession` | `applySession(null)` overwrote good `INITIAL_SESSION` |
+| Payment timeout → “sign in” | `paymentSession.ts` (94e7426) | `withOperationTimeout` on `refreshSession` raced auth; looked like logout |
+| QR Pay | `QrTipLanding.tsx` ~101 | `!user?.id` → `/login` without re-reading local session |
+| Protected routes | `RequireAuth.tsx` ~15 | Immediate `<Navigate to="/login">` when `user` briefly null |
+
+**Fix:** `authDebug.ts`, session snapshot + preserve on `TOKEN_REFRESHED`, payment session without auth `signOut`, `resolveAuthUserId`, 1.5s grace on `RequireAuth`.
+
 ## Deploy notes
 
 - Frontend: `vercel --prod --force` after commit push.

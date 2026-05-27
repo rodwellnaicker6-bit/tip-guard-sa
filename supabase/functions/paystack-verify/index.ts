@@ -80,7 +80,7 @@ serve(async (req) => {
       reference,
       route: "paystack-verify",
     });
-    if (fraud.blocked) {
+    if (fraud.blocked && !fraud.rpcUnavailable) {
       return new Response(
         JSON.stringify({ error: "Verify blocked by fraud policy", code: "fraud_blocked" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },

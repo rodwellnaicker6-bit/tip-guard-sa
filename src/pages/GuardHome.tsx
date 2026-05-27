@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { parseFunctionsInvokeError } from "../lib/edgeFunctionInvoke";
 import { PAYOUT_REQUEST_TIMEOUT_MS, logFlow, withOperationTimeout } from "../lib/operationTimeout";
@@ -43,6 +43,8 @@ function GuardHomeContent() {
   const [reload, setReload] = useState(0);
   const [payoutAmount, setPayoutAmount] = useState("500");
   const [payoutBusy, setPayoutBusy] = useState(false);
+  const payoutLastSubmitRef = useRef(0);
+  const PAYOUT_DEBOUNCE_MS = 2_500;
   const [toast, setToast] = useState<string | null>(null);
   const [sparkValues, setSparkValues] = useState<number[]>([]);
   const [walletAvail, setWalletAvail] = useState<number | null>(null);
@@ -151,6 +153,10 @@ function GuardHomeContent() {
 
   async function onRequestPayout(e: FormEvent) {
     e.preventDefault();
+    if (payoutBusy) return;
+    const now = Date.now();
+    if (now - payoutLastSubmitRef.current < PAYOUT_DEBOUNCE_MS) return;
+    payoutLastSubmitRef.current = now;
     setToast(null);
     const raw = payoutAmount.replace(/\D/g, "");
     const rands = Number(raw || "0");
@@ -161,12 +167,7 @@ function GuardHomeContent() {
     }
     setPayoutBusy(true);
     try {
-      const session = await withOperationTimeout(
-        "payout",
-        "payment session",
-        ensurePaymentAccessToken(),
-        PAYOUT_REQUEST_TIMEOUT_MS,
-      );
+      const session = await ensurePaymentAccessToken();
       if (!session.ok) {
         setToast(session.message);
         return;

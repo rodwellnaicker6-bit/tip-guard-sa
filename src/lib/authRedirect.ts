@@ -1,5 +1,6 @@
 import type { NavigateFunction } from "react-router-dom";
 import type { AuthProfileFields, AuthRole } from "../context/authTypes";
+import { logAuthKickout } from "./authDebug";
 import { isSupabaseBrowserConfigured, supabase } from "./supabase";
 import { pathAfterSignIn } from "./postAuthRedirect";
 
@@ -70,9 +71,13 @@ export async function navigateAfterAuth(
       if (sessErr || !session?.user?.id) {
         if (!userId) {
           console.error("[AuthCrash] navigateAfterAuth: no session before redirect", sessErr?.message);
+          logAuthKickout("navigateAfterAuth no session", "authRedirect", { message: sessErr?.message });
           authNavigate(navigate, "/login");
           return;
         }
+        logAuthKickout("navigateAfterAuth using userId param despite getSession miss", "authRedirect", {
+          message: sessErr?.message,
+        });
       } else {
         userId = session.user.id;
       }
@@ -107,6 +112,14 @@ export async function navigateAfterAuth(
     );
   } catch (e) {
     console.error("[AuthCrash] navigateAfterAuth", e);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id) {
+      authNavigate(navigate, pathAfterSignIn(undefined, false, false, null));
+      return;
+    }
+    logAuthKickout("navigateAfterAuth exception", "authRedirect", {
+      message: e instanceof Error ? e.message : String(e),
+    });
     authNavigate(navigate, "/login");
   }
 }

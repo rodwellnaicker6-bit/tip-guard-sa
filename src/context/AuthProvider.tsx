@@ -12,6 +12,7 @@ import { isTransientNetworkError } from "../lib/networkUtils";
 import { resetPostAuthRedirectState } from "../hooks/usePostAuthRedirect";
 import { clearAuthRedirectStorage } from "../lib/authRedirect";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
+import { logAuth, logAuthKickout } from "../lib/authDebug";
 import { bootLog } from "../lib/bootDebug";
 import { logOnboarding } from "../lib/onboardingDebug";
 import { stabilLog } from "../lib/stabilLog";
@@ -46,6 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshSourceRef = useRef<string | null>(null);
   const sessionReadyRef = useRef(false);
   const reconnectBusyRef = useRef(false);
+  /** Last known good session — guards against transient null during TOKEN_REFRESHED. */
+  const sessionSnapshotRef = useRef<AuthContextValue["session"]>(null);
 
   /** Emergency: session hydration only — profile loads in background (no route black screen). */
   const authReady = sessionReady;
@@ -225,6 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const bootGen = ++authBootRef.current;
     sessionReadyRef.current = false;
+    sessionSnapshotRef.current = null;
     let effectCancelled = false;
     bootLog("AuthProvider boot", { configured: isSupabaseBrowserConfigured });
 
@@ -244,16 +248,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const applySession = (next: AuthContextValue["session"]) => {
+    const applySession = (next: AuthContextValue["session"], event?: string) => {
       if (!mountedRef.current) return;
-      setSession(next);
-      setUser(next?.user ?? null);
-      if (!next?.user?.id) {
+
+      if (next?.user?.id) {
+        sessionSnapshotRef.current = next;
+        setSession(next);
+        setUser(next.user);
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        sessionSnapshotRef.current = null;
+        logAuthKickout("SIGNED_OUT", "AuthProvider.applySession", { event });
+        setSession(null);
+        setUser(null);
         setRole(null);
         setHasGuardRow(false);
         setHasMerchantRow(false);
         setProfileReady(true);
+        return;
       }
+
+      if (event === "TOKEN_REFRESHED" && sessionSnapshotRef.current?.user?.id) {
+        logAuth("preserved session during TOKEN_REFRESHED (transient null)", {
+          uid: sessionSnapshotRef.current.user.id,
+        });
+        return;
+      }
+
+      if (sessionSnapshotRef.current?.user?.id && event !== "INITIAL_SESSION") {
+        logAuth("preserved session (transient null)", { event });
+        return;
+      }
+
+      sessionSnapshotRef.current = null;
+      if (event === "INITIAL_SESSION") {
+        logAuth("no session on INITIAL_SESSION");
+      } else {
+        logAuthKickout("session cleared", "AuthProvider.applySession", { event });
+      }
+      setSession(null);
+      setUser(null);
+      setRole(null);
+      setHasGuardRow(false);
+      setHasMerchantRow(false);
+      setProfileReady(true);
     };
 
     const {
@@ -266,8 +306,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           sessionReady: sessionReadyRef.current,
           uid: next?.user?.id ?? null,
         });
+        logAuth("onAuthStateChange", {
+          event,
+          uid: next?.user?.id ?? null,
+          hadSnapshot: !!sessionSnapshotRef.current?.user?.id,
+        });
       }
-      applySession(next);
+      applySession(next, event);
       // TOKEN_REFRESHED can fire in a tight loop and abort in-flight profile loads,
       // leaving profileReady false and blocking post-login redirects.
       if (
@@ -295,17 +340,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (bootGen !== authBootRef.current || effectCancelled || !mountedRef.current) return;
           if (error) {
             bootLog("getSession error", error.message);
-            setAuthBootError("We could not restore your session. Sign in again or reload the page.");
-            applySession(null);
+            const transient = isTransientNetworkError(error.message);
+            setAuthBootError(
+              transient
+                ? "We could not reach the auth server. You can keep using the app offline briefly — try again."
+                : "We could not restore your session. Sign in again or reload the page.",
+            );
+            if (!sessionSnapshotRef.current?.user?.id) {
+              logAuthKickout("boot getSession error", "AuthProvider.getSession", { message: error.message });
+              applySession(null);
+            } else {
+              logAuth("boot getSession error — keeping snapshot session", { message: error.message });
+            }
             markSessionReady();
             return;
           }
           setAuthBootError(null);
           if (next) {
-            applySession(next);
-            // Profile load is handled by onAuthStateChange INITIAL_SESSION (avoids duplicate fetch).
-          } else {
-            applySession(null);
+            applySession(next, "BOOT_GET_SESSION");
+          } else if (!sessionSnapshotRef.current?.user?.id) {
+            applySession(null, "BOOT_GET_SESSION");
           }
           markSessionReady();
         })
@@ -314,7 +368,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const msg = e instanceof Error ? e.message : "Session check failed";
           console.error("[AuthCrash] AuthProvider.getSession", e);
           setAuthBootError(msg);
-          applySession(null);
+          if (!sessionSnapshotRef.current?.user?.id) {
+            logAuthKickout("boot getSession exception", "AuthProvider.getSession", { message: msg });
+            applySession(null);
+          } else {
+            logAuth("boot getSession exception — keeping snapshot session", { message: msg });
+          }
           markSessionReady();
         });
     });
@@ -532,6 +591,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (import.meta.env.DEV) console.warn("[AuthProvider] signOut", e);
     }
     if (!mountedRef.current) return;
+    logAuth("signOut (user initiated)");
+    sessionSnapshotRef.current = null;
     setAuthBootError(null);
     setSession(null);
     setUser(null);
