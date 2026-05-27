@@ -20,9 +20,10 @@ import PasswordReset from "./pages/PasswordReset";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import TipResolve from "./pages/TipResolve";
-import PaymentSuccess from "./pages/PaymentSuccess";
-import PaymentFailure from "./pages/PaymentFailure";
 import NotFound from "./pages/NotFound";
+
+const PaymentSuccess = lazy(() => import("./pages/PaymentSuccess"));
+const PaymentFailure = lazy(() => import("./pages/PaymentFailure"));
 
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const Settings = lazy(() => import("./pages/Settings"));
@@ -52,12 +53,7 @@ const CookiesPolicy = lazy(() => import("./pages/CookiesPolicy"));
 const RefundPolicy = lazy(() => import("./pages/RefundPolicy"));
 const MerchantOnboardingLegal = lazy(() => import("./pages/MerchantOnboardingLegal"));
 const Contact = lazy(() => import("./pages/Contact"));
-const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
-const AdminSecurity = lazy(() => import("./pages/AdminSecurity"));
-const AdminTransactions = lazy(() => import("./pages/AdminTransactions"));
-const AdminAnalytics = lazy(() => import("./pages/AdminAnalytics"));
-const AdminMetrics = lazy(() => import("./pages/AdminMetrics"));
-const AdminFraud = lazy(() => import("./pages/AdminFraud"));
+const AdminRoutes = lazy(() => import("./routes/AdminRoutes"));
 const MerchantDisputes = lazy(() => import("./pages/MerchantDisputes"));
 
 function RouteFallback() {
@@ -161,7 +157,9 @@ function AppRoutes() {
         path="/payment/success"
         element={
           <EmergencyErrorBoundary>
-            <PaymentSuccess />
+            <Lazy>
+              <PaymentSuccess />
+            </Lazy>
           </EmergencyErrorBoundary>
         }
       />
@@ -169,7 +167,9 @@ function AppRoutes() {
         path="/payment/failure"
         element={
           <EmergencyErrorBoundary>
-            <PaymentFailure />
+            <Lazy>
+              <PaymentFailure />
+            </Lazy>
           </EmergencyErrorBoundary>
         }
       />
@@ -434,61 +434,11 @@ function AppRoutes() {
       </Route>
 
       <Route
-        path="/admin"
+        path="/admin/*"
         element={
           <RequireAdmin>
             <Lazy>
-              <AdminDashboard />
-            </Lazy>
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/admin/security"
-        element={
-          <RequireAdmin>
-            <Lazy>
-              <AdminSecurity />
-            </Lazy>
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/admin/transactions"
-        element={
-          <RequireAdmin>
-            <Lazy>
-              <AdminTransactions />
-            </Lazy>
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/admin/analytics"
-        element={
-          <RequireAdmin>
-            <Lazy>
-              <AdminAnalytics />
-            </Lazy>
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/admin/metrics"
-        element={
-          <RequireAdmin>
-            <Lazy>
-              <AdminMetrics />
-            </Lazy>
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/admin/fraud"
-        element={
-          <RequireAdmin>
-            <Lazy>
-              <AdminFraud />
+              <AdminRoutes />
             </Lazy>
           </RequireAdmin>
         }

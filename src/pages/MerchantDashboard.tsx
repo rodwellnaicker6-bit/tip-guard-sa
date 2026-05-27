@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import { PAYMENT_PROVIDERS } from "../lib/paymentProviders";
@@ -8,8 +9,10 @@ import { FetchError } from "../components/FetchError";
 import { MerchantAnalyticsPanel } from "../components/MerchantAnalyticsPanel";
 import { PayoutSchedulePanel } from "../components/PayoutSchedulePanel";
 import { useMerchantVenue } from "../hooks/useMerchantVenue";
+import { SlowLoadHint } from "../components/SlowLoadHint";
+import { useUiWatchdog } from "../lib/uiWatchdog";
 
-export default function MerchantDashboard() {
+function MerchantDashboardPage() {
   const { role, profileFields, signOut } = useAuth();
   const {
     merchant,
@@ -21,6 +24,7 @@ export default function MerchantDashboard() {
     payoutSchemaComplete,
     reload,
   } = useMerchantVenue();
+  const slowLoad = useUiWatchdog(loading);
 
   if (loading) {
     return (
@@ -30,6 +34,7 @@ export default function MerchantDashboard() {
           <Skeleton style={{ height: 28, width: "70%", marginTop: 8 }} />
         </header>
         <StatCardsSkeleton />
+        <SlowLoadHint show={slowLoad} />
         <p className="text-center text-sm text-slate-500" role="status">
           Loading your venue…
         </p>
@@ -201,3 +206,5 @@ export default function MerchantDashboard() {
     </div>
   );
 }
+
+export default memo(MerchantDashboardPage);

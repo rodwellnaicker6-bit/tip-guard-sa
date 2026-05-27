@@ -32,7 +32,8 @@ async function queryMerchantRow(userId: string): Promise<{ row: MerchantVenueRow
     let { data, error } = await withOperationTimeout(
       "venue",
       "merchants select",
-      supabase.from("merchants").select(FULL_COLS).eq("user_id", userId).maybeSingle(),
+      (signal) =>
+        supabase.from("merchants").select(FULL_COLS).eq("user_id", userId).abortSignal(signal).maybeSingle(),
       VENUE_LOAD_TIMEOUT_MS,
     );
 
@@ -41,7 +42,8 @@ async function queryMerchantRow(userId: string): Promise<{ row: MerchantVenueRow
       const retry = await withOperationTimeout(
         "venue",
         "merchants core select",
-        supabase.from("merchants").select(CORE_COLS).eq("user_id", userId).maybeSingle(),
+        (signal) =>
+          supabase.from("merchants").select(CORE_COLS).eq("user_id", userId).abortSignal(signal).maybeSingle(),
         VENUE_LOAD_TIMEOUT_MS,
       );
       data = retry.data as typeof data;

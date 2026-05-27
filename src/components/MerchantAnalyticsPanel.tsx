@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, memo } from "react";
 import { RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
 import { perfLog } from "../lib/perfLog";
 import { supabase } from "../lib/supabase";
@@ -25,7 +25,7 @@ const PERIODS = [
   { id: "all", label: "All" },
 ] as const;
 
-export function MerchantAnalyticsPanel() {
+export const MerchantAnalyticsPanel = memo(function MerchantAnalyticsPanel() {
   const [period, setPeriod] = useState<(typeof PERIODS)[number]["id"]>("30d");
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,7 +44,7 @@ export function MerchantAnalyticsPanel() {
       const { data: raw, error: err } = await withOperationTimeout(
         "rpc",
         "merchant_payment_analytics_v2",
-        supabase.rpc("merchant_payment_analytics_v2", { p_period: period }),
+        (signal) => supabase.rpc("merchant_payment_analytics_v2", { p_period: period }).abortSignal(signal),
         RPC_DEFAULT_TIMEOUT_MS,
       );
       if (gen !== loadGenRef.current) return;
@@ -168,7 +168,7 @@ export function MerchantAnalyticsPanel() {
       </div>
     </div>
   );
-}
+});
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (

@@ -1,9 +1,11 @@
 /** Production-safe venue/merchant fetch diagnostics. */
 
+import { devInfo } from "./prodLog";
+
 export function logVenue(message: string, extra?: Record<string, unknown>): void {
   if (typeof console === "undefined") return;
   const payload = extra && Object.keys(extra).length > 0 ? extra : undefined;
-  console.info(`[TipGuard:venue] ${message}`, payload ?? "");
+  devInfo(`[TipGuard:venue] ${message}`, payload ?? "");
 }
 
 export function isMissingColumnError(err: { code?: string; message?: string } | null | undefined): boolean {

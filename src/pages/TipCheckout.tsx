@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
 import { perfLog } from "../lib/perfLog";
+import { stabilLog } from "../lib/stabilLog";
+import { SlowLoadHint } from "../components/SlowLoadHint";
+import { useUiWatchdog } from "../lib/uiWatchdog";
 import { supabase } from "../lib/supabase";
 import { unwrapRpcSingle } from "../lib/rpcData";
 import { centsFromRandInput, zarFromCents } from "../lib/money";
@@ -19,7 +22,7 @@ import type { CheckoutPhase } from "../payments/types";
 
 const PRESETS = [10, 20, 50] as const;
 
-export default function TipCheckout() {
+function TipCheckoutPage() {
   const { guardId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -30,6 +33,7 @@ export default function TipCheckout() {
   const [checkoutPhase, setCheckoutPhase] = useState<CheckoutPhase>("idle");
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
+  const slowLoad = useUiWatchdog(loading);
 
   const cents = useMemo(() => centsFromRandInput(amount), [amount]);
   const amountLabel = cents != null ? zarFromCents(cents) : "R 0.00";
@@ -50,7 +54,7 @@ export default function TipCheckout() {
         const { data, error: err } = await withOperationTimeout(
           "rpc",
           "get_public_guard",
-          supabase.rpc("get_public_guard", { p_id: guardId }),
+          (signal) => supabase.rpc("get_public_guard", { p_id: guardId }).abortSignal(signal),
           RPC_DEFAULT_TIMEOUT_MS,
         );
         if (cancelled) return;
@@ -80,11 +84,8 @@ export default function TipCheckout() {
 
   useEffect(() => () => releaseTipCheckoutLock(), []);
 
-  async function startPayment() {
-    console.info("[TipGuard:pay] Pay clicked (tip checkout)", {
-      guardId,
-      amountCents: cents,
-    });
+  const startPayment = useCallback(async () => {
+    stabilLog("pay", "Pay clicked (tip checkout)", { hasGuard: !!guardId, hasAmount: cents != null });
     setError(null);
     if (!guardId || cents == null) {
       setError("Enter a valid Rand amount.");
@@ -112,7 +113,9 @@ export default function TipCheckout() {
       setStarting(false);
       setCheckoutPhase("idle");
     }
-  }
+  }, [guardId, cents, navigate, toast]);
+
+  const onRetryLoad = useCallback(() => setReload((n) => n + 1), []);
 
   const overlayMsg =
     checkoutPhase === "initializing"
@@ -128,6 +131,7 @@ export default function TipCheckout() {
         <Skeleton style={{ height: 16, width: "40%" }} />
         <Skeleton style={{ height: 48, width: "100%", marginTop: 16 }} />
         <Skeleton style={{ height: 52, width: "100%", borderRadius: 16, marginTop: 12 }} />
+        <SlowLoadHint show={slowLoad} />
       </div>
     );
   }
@@ -136,7 +140,7 @@ export default function TipCheckout() {
     return (
       <div className="shell mx-auto max-w-md space-y-4 px-5 py-8">
         {error ? (
-          <FetchError message={error} onRetry={() => setReload((n) => n + 1)} retryLabel="Reload guard" />
+          <FetchError message={error} onRetry={onRetryLoad} retryLabel="Reload guard" />
         ) : (
           <p>Could not load this guard.</p>
         )}
@@ -237,3 +241,5 @@ export default function TipCheckout() {
     </div>
   );
 }
+
+export default memo(TipCheckoutPage);

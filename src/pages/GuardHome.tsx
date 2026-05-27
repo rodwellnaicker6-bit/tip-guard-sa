@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { parseFunctionsInvokeError } from "../lib/edgeFunctionInvoke";
 import { PAYOUT_REQUEST_TIMEOUT_MS, DASHBOARD_LOAD_TIMEOUT_MS, logFlow, withOperationTimeout } from "../lib/operationTimeout";
 import { perfLog } from "../lib/perfLog";
+import { SlowLoadHint } from "../components/SlowLoadHint";
+import { useUiWatchdog } from "../lib/uiWatchdog";
 import { ensurePaymentAccessToken } from "../lib/paymentSession";
 import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
@@ -55,6 +57,7 @@ function GuardHomeContent() {
   const [minPayoutCents, setMinPayoutCents] = useState(10000);
   const [payoutSchemaComplete, setPayoutSchemaComplete] = useState(true);
   const [recentPayouts, setRecentPayouts] = useState<PayoutRow[]>([]);
+  const slowLoad = useUiWatchdog(loading);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -73,13 +76,14 @@ function GuardHomeContent() {
         await withOperationTimeout(
           "dashboard",
           "guard home load",
-          (async () => {
+          async (signal) => {
             const { data, error: err } = await supabase
               .from("guards")
               .select(
                 "id, display_name, location, province, avatar_initials, verified, rating, tips_count, balance_cents, payout_schedule, next_payout_at, minimum_payout_threshold_cents",
               )
               .eq("user_id", user.id)
+              .abortSignal(signal)
               .maybeSingle();
             if (cancelled) return;
             if (err) {
@@ -115,25 +119,29 @@ function GuardHomeContent() {
                   .from("wallet_accounts")
                   .select("available_cents, pending_cents")
                   .eq("guard_id", g.id)
+                  .abortSignal(signal)
                   .maybeSingle(),
                 supabase
                   .from("tips")
                   .select("id, amount_cents, status, created_at")
                   .eq("guard_id", g.id)
                   .order("created_at", { ascending: false })
-                  .limit(12),
+                  .limit(12)
+                  .abortSignal(signal),
                 supabase
                   .from("payouts")
                   .select("id, amount_cents, status, created_at")
                   .eq("user_id", user.id)
                   .order("created_at", { ascending: false })
-                  .limit(5),
+                  .limit(5)
+                  .abortSignal(signal),
                 supabase
                   .from("tips")
                   .select("amount_cents, created_at")
                   .eq("guard_id", g.id)
                   .eq("status", "succeeded")
-                  .gte("created_at", since),
+                  .gte("created_at", since)
+                  .abortSignal(signal),
               ]);
               if (!cancelled) {
                 const w = walletRes.data;
@@ -156,7 +164,7 @@ function GuardHomeContent() {
               setRecentPayouts([]);
               setSparkValues([]);
             }
-          })(),
+          },
           DASHBOARD_LOAD_TIMEOUT_MS,
         );
         perfLog("guard home load", Math.round(performance.now() - t0), { ok: true });
@@ -234,6 +242,7 @@ function GuardHomeContent() {
           <p className="text-slate-400">Loading…</p>
         </header>
         <StatCardsSkeleton />
+        <SlowLoadHint show={slowLoad} />
       </div>
     );
   }

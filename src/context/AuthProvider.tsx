@@ -16,6 +16,7 @@ import { logAuth, logAuthKickout } from "../lib/authDebug";
 import { bootLog } from "../lib/bootDebug";
 import { logOnboarding } from "../lib/onboardingDebug";
 import { stabilLog } from "../lib/stabilLog";
+import { subscriptionManager } from "../lib/subscriptionManager";
 import { isSupabaseBrowserConfigured, supabase } from "../lib/supabase";
 import { AuthContext } from "./authReactContext";
 import type {
@@ -335,6 +336,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
+    subscriptionManager.register("auth:session", () => {
+      subscription.unsubscribe();
+      accountAbortRef.current?.abort();
+    });
+
     queueMicrotask(() => {
       void supabase.auth
         .getSession()
@@ -401,8 +407,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       effectCancelled = true;
       window.clearTimeout(bootFallback);
       window.clearTimeout(profileFallback);
-      subscription.unsubscribe();
-      accountAbortRef.current?.abort();
+      subscriptionManager.cleanup("auth:session");
     };
   }, [markSessionReady, scheduleLoadAccount]);
 
@@ -438,9 +443,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
-    return () => {
+    subscriptionManager.register("auth:reconnect", () => {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
+    });
+    return () => {
+      subscriptionManager.cleanup("auth:reconnect");
     };
   }, []);
 

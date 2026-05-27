@@ -48,7 +48,7 @@ export default function CustomerHome() {
         const { data, error: err } = await withOperationTimeout(
           "rpc",
           "list_public_guards",
-          supabase.rpc("list_public_guards"),
+          (signal) => supabase.rpc("list_public_guards").abortSignal(signal),
           RPC_DEFAULT_TIMEOUT_MS,
         );
         if (cancelled) return;

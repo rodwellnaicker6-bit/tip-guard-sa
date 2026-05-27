@@ -5,6 +5,8 @@ import "./styles/fintech.css";
 import App from "./App.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BUILD_ID } from "./lib/buildInfo";
+import { attachPerfTelemetryGlobal } from "./lib/perfTelemetry";
+import { devInfo } from "./lib/prodLog";
 import { bootLog, logBootHealth, logRuntimeEnvPresence } from "./lib/bootDebug";
 import { validateClientEnv } from "./lib/env";
 import { initAnalytics } from "./lib/analytics";
@@ -48,10 +50,9 @@ function renderBootstrapFallback(rootEl: HTMLElement | null, err: unknown): void
 function bootstrap(): void {
   try {
     if (import.meta.env.DEV) {
-      console.log("DEV_BUILD_ACTIVE", BUILD_ID);
-    } else {
-      console.log("PROD_BUILD_ACTIVE", BUILD_ID);
+      devInfo("DEV_BUILD_ACTIVE", BUILD_ID);
     }
+    attachPerfTelemetryGlobal();
     bootLog("main.tsx bootstrap start", { buildId: BUILD_ID });
     logRuntimeEnvPresence();
     applyThemeFromStorage();
