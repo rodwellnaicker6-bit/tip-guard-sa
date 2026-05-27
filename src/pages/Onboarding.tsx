@@ -6,12 +6,15 @@ import type { AuthAccountSnapshot, AuthRole, AuthProfileFields } from "../contex
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import PaystackTestBanner from "../components/PaystackTestBanner";
 import { Skeleton } from "../components/Skeleton";
+import { SlowLoadHint } from "../components/SlowLoadHint";
+import { useUiWatchdog } from "../lib/uiWatchdog";
 import { supabase } from "../lib/supabase";
 import { pathAfterSignIn } from "../lib/postAuthRedirect";
 import { isProfileComplete, profileCompletionPercent } from "../lib/profileCompletion";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { unwrapRpcSingle } from "../lib/rpcData";
 import { logOnboarding, ONBOARDING_FAILSAFE_MS, withOnboardingTimeout } from "../lib/onboardingDebug";
+import { recordError } from "../lib/errorTelemetry";
 
 type LocationState = { registeredRole?: "customer" | "guard" | "merchant" };
 type IntentRole = "customer" | "guard" | "merchant";
@@ -70,6 +73,8 @@ export default function Onboarding() {
   const displayUser = user ?? session?.user ?? null;
   const sessionMissing = sessionReady && authReady && !sessionUserId;
   const sessionGraceElapsed = useGracePeriod(sessionMissing, SESSION_RESTORE_GRACE_MS);
+  const bootLoading = !sessionReady || !authReady || (!sessionUserId && !sessionGraceElapsed);
+  const slowLoad = useUiWatchdog(bootLoading);
 
   const savingRef = useRef(false);
   const lastContinueAtRef = useRef(0);
@@ -290,6 +295,7 @@ export default function Onboarding() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Could not save your role.";
       console.error("[Onboarding] continueFromRole", e);
+      recordError("onboarding_role", msg, { code: "save_failed" });
       setSaveError(profileSaveErrorMessage(msg));
     } finally {
       clearFailSafe();
@@ -399,6 +405,7 @@ export default function Onboarding() {
         <p className="text-center text-sm text-slate-500">
           {!sessionReady || !authReady ? "Loading your account…" : "Restoring your session…"}
         </p>
+        <SlowLoadHint show={slowLoad} message="Connection is slow — still working…" />
       </div>
     );
   }

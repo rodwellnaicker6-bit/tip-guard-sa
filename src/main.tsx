@@ -6,6 +6,7 @@ import App from "./App.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BUILD_ID } from "./lib/buildInfo";
 import { attachPerfTelemetryGlobal } from "./lib/perfTelemetry";
+import { attachErrorTelemetryGlobal, installUnhandledRejectionCapture } from "./lib/errorTelemetry";
 import { devInfo } from "./lib/prodLog";
 import { bootLog, logBootHealth, logRuntimeEnvPresence } from "./lib/bootDebug";
 import { validateClientEnv } from "./lib/env";
@@ -53,6 +54,8 @@ function bootstrap(): void {
       devInfo("DEV_BUILD_ACTIVE", BUILD_ID);
     }
     attachPerfTelemetryGlobal();
+    attachErrorTelemetryGlobal();
+    installUnhandledRejectionCapture();
     bootLog("main.tsx bootstrap start", { buildId: BUILD_ID });
     logRuntimeEnvPresence();
     applyThemeFromStorage();
