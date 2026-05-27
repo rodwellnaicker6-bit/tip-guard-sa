@@ -74,6 +74,29 @@ function writeCachedResolve(token: string, value: ResolveTipTargetResult): void 
   }
 }
 
+/** Sync read for instant tip-page paint (warm NFC / repeat scan). */
+export function peekCachedResolve(token: string | undefined): ResolveTipTargetResult | null {
+  if (!token) return null;
+  return readCachedResolve(token.trim());
+}
+
+/** Last-known resolve — used when network/RPC fails (up to 24h, public tip metadata only). */
+function readStaleCachedResolve(token: string): ResolveTipTargetResult | null {
+  const mem = resolveMemCache.get(token);
+  if (mem?.value.target) return mem.value;
+  if (typeof sessionStorage === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(`${CACHE_KEY_PREFIX}${token}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { at: number; value: ResolveTipTargetResult };
+    const maxStaleMs = 24 * 60 * 60 * 1000;
+    if (Date.now() - parsed.at > maxStaleMs) return null;
+    return parsed.value?.target ? parsed.value : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Optimistic display name from prior resolve (no PII beyond public guard/venue label). */
 export function readCachedTipDisplayName(token: string | undefined): string | null {
   if (!token || typeof sessionStorage === "undefined") return null;
@@ -142,6 +165,11 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       rpcErr?.code === "PGRST202";
 
     if (!isMissingRpc && rpcErr) {
+      const stale = readStaleCachedResolve(trimmed);
+      if (stale?.target) {
+        stabilLog("qr", "resolve stale cache fallback after rpc error", { message: rpcErr.message });
+        return stale;
+      }
       return { target: null, error: rpcErr.message };
     }
 
@@ -202,6 +230,13 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       error: null,
     };
   } catch (e) {
+    const stale = readStaleCachedResolve(trimmed);
+    if (stale?.target) {
+      stabilLog("qr", "resolve stale cache fallback after error", {
+        message: e instanceof Error ? e.message : String(e),
+      });
+      return stale;
+    }
     const msg = e instanceof Error ? e.message : "Could not load this tip link.";
     console.error("[TipGuard:qr] resolveTipTarget failed", e);
     return { target: null, error: msg };

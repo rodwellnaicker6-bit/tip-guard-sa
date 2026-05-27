@@ -24,6 +24,8 @@ export function NfcTapPanel({ fallbackTipToken }: { fallbackTipToken?: string | 
   async function startScan() {
     setMessage(null);
     setScanning(true);
+    void import("../pages/QrTipLanding");
+    void import("../pages/TipCheckout");
     try {
       const result = await prepareNfcTap(onPayload);
       setMessage(result.message);

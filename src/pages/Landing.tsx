@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import PaystackTestBanner from "../components/PaystackTestBanner";
@@ -6,6 +7,10 @@ import { TipGuardLogo } from "../components/TipGuardLogo";
 
 export default function Landing() {
   const { user, role, isGuardUser, isMerchantUser } = useAuth();
+
+  useEffect(() => {
+    void import("./QrTipLanding");
+  }, []);
 
   return (
     <div className="marketing-page">

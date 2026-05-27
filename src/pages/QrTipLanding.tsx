@@ -6,7 +6,7 @@ import { startTipCheckout } from "../payments/checkoutFlow";
 import { releaseTipCheckoutLock } from "../services/paystackCore";
 import { hasPaystackPublicKey } from "../services/paymentService";
 import { resolveAuthUserId } from "../lib/resolveAuthUser";
-import { readCachedTipDisplayName, resolveTipTarget } from "../lib/resolveTipTarget";
+import { peekCachedResolve, readCachedTipDisplayName, resolveTipTarget } from "../lib/resolveTipTarget";
 import { perfMark } from "../lib/perfTelemetry";
 import { SlowLoadHint } from "../components/SlowLoadHint";
 import { useUiWatchdog } from "../lib/uiWatchdog";
@@ -25,15 +25,25 @@ import { EmergencyErrorBoundary } from "../lib/emergencySafeMode";
 const PRESETS = [10, 20, 50] as const;
 const QR_LOAD_TIMEOUT_MS = 10_000;
 
+function initialTipState(token: string | undefined) {
+  const cached = token ? peekCachedResolve(token) : null;
+  return {
+    target: cached?.target ?? null,
+    loading: !cached?.target,
+  };
+}
+
 /** Mobile-first QR landing: presets → auth → Paystack checkout. */
 function QrTipLandingContent() {
   const { token } = useParams<{ token: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, authReady, sessionReady } = useAuth();
-  const [target, setTarget] = useState<Awaited<ReturnType<typeof resolveTipTarget>>["target"]>(null);
+  const [target, setTarget] = useState<Awaited<ReturnType<typeof resolveTipTarget>>["target"]>(() =>
+    initialTipState(token).target,
+  );
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => initialTipState(token).loading);
   const [amount, setAmount] = useState("20");
   const [paying, setPaying] = useState(false);
   const [checkoutPhase, setCheckoutPhase] = useState<CheckoutPhase>("idle");
@@ -51,9 +61,12 @@ function QrTipLandingContent() {
     if (!token) return;
     let cancelled = false;
     const endHydration = perfMark("qr:tip_page_hydration");
+    const hadCache = Boolean(peekCachedResolve(token)?.target);
     void (async () => {
-      setLoading(true);
-      setError(null);
+      if (!hadCache) {
+        setLoading(true);
+        setError(null);
+      }
       const { target: resolved, error: resolveErr } = await resolveTipTarget(token);
       if (cancelled) return;
       if (resolveErr || !resolved) {
@@ -300,9 +313,10 @@ function PageWrap({ children }: { children: ReactNode }) {
 }
 
 export default function QrTipLanding() {
+  const { token } = useParams<{ token: string }>();
   return (
     <EmergencyErrorBoundary>
-      <QrTipLandingContent />
+      <QrTipLandingContent key={token ?? "missing"} />
     </EmergencyErrorBoundary>
   );
 }
