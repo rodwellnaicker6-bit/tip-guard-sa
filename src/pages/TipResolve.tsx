@@ -9,6 +9,7 @@ export default function TipResolve() {
 
   useEffect(() => {
     if (!token) return;
+    void import("./QrTipLanding");
     const qs = window.location.search;
     navigate(`/tip/${encodeURIComponent(token)}${qs}`, { replace: true });
     const t = window.setTimeout(() => setStuck(true), 5_000);

@@ -1,4 +1,5 @@
 import { QR_RESOLVE_TIMEOUT_MS, logFlow, withOperationTimeout } from "./operationTimeout";
+import { perfMark } from "./perfTelemetry";
 import { supabase } from "./supabase";
 import { unwrapRpcSingle } from "./rpcData";
 import { stabilLog } from "./stabilLog";
@@ -12,6 +13,18 @@ export type ResolvedTipTarget = {
   scan_count: number;
   qr_type?: string | null;
 };
+
+export type ResolveTipTargetResult = {
+  target: ResolvedTipTarget | null;
+  error: string | null;
+};
+
+const RESOLVE_CACHE_TTL_MS = 120_000;
+const CACHE_KEY_PREFIX = "tipguard_resolve_";
+const resolveMemCache = new Map<string, { at: number; value: ResolveTipTargetResult }>();
+const resolveInflight = new Map<string, Promise<ResolveTipTargetResult>>();
+
+const QR_TIMEOUT_OPTS = { queued: false as const };
 
 function mapRow(row: Record<string, unknown>): ResolvedTipTarget | null {
   const guardId = row.guard_id as string | undefined;
@@ -27,16 +40,61 @@ function mapRow(row: Record<string, unknown>): ResolvedTipTarget | null {
   };
 }
 
-const resolveInflight = new Map<string, Promise<{ target: ResolvedTipTarget | null; error: string | null }>>();
+function readCachedResolve(token: string): ResolveTipTargetResult | null {
+  const mem = resolveMemCache.get(token);
+  if (mem && Date.now() - mem.at < RESOLVE_CACHE_TTL_MS) return mem.value;
+
+  if (typeof sessionStorage === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(`${CACHE_KEY_PREFIX}${token}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { at: number; value: ResolveTipTargetResult };
+    if (Date.now() - parsed.at >= RESOLVE_CACHE_TTL_MS) {
+      sessionStorage.removeItem(`${CACHE_KEY_PREFIX}${token}`);
+      return null;
+    }
+    resolveMemCache.set(token, parsed);
+    return parsed.value;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedResolve(token: string, value: ResolveTipTargetResult): void {
+  const entry = { at: Date.now(), value };
+  resolveMemCache.set(token, entry);
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.setItem(`${CACHE_KEY_PREFIX}${token}`, JSON.stringify(entry));
+    if (value.target?.guard_display_name) {
+      sessionStorage.setItem(`${CACHE_KEY_PREFIX}${token}:name`, value.target.guard_display_name);
+    }
+  } catch {
+    /* ignore quota */
+  }
+}
+
+/** Optimistic display name from prior resolve (no PII beyond public guard/venue label). */
+export function readCachedTipDisplayName(token: string | undefined): string | null {
+  if (!token || typeof sessionStorage === "undefined") return null;
+  try {
+    return sessionStorage.getItem(`${CACHE_KEY_PREFIX}${token.trim()}:name`);
+  } catch {
+    return null;
+  }
+}
 
 /** Resolve QR/token to guard — uses `resolve_tip_target`, falls back to `resolve_tip_link` + guard row. */
-export async function resolveTipTarget(token: string): Promise<{
-  target: ResolvedTipTarget | null;
-  error: string | null;
-}> {
+export async function resolveTipTarget(token: string): Promise<ResolveTipTargetResult> {
   const trimmed = token.trim();
   if (trimmed.length < 4) {
     return { target: null, error: "This tip link is too short or invalid." };
+  }
+
+  const cached = readCachedResolve(trimmed);
+  if (cached?.target) {
+    stabilLog("qr", "resolve tip target cache hit", { tokenLen: trimmed.length });
+    return cached;
   }
 
   const inflight = resolveInflight.get(trimmed);
@@ -45,16 +103,16 @@ export async function resolveTipTarget(token: string): Promise<{
   const work = resolveTipTargetInner(trimmed);
   resolveInflight.set(trimmed, work);
   try {
-    return await work;
+    const result = await work;
+    if (result.target) writeCachedResolve(trimmed, result);
+    return result;
   } finally {
     resolveInflight.delete(trimmed);
   }
 }
 
-async function resolveTipTargetInner(trimmed: string): Promise<{
-  target: ResolvedTipTarget | null;
-  error: string | null;
-}> {
+async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetResult> {
+  const endPerf = perfMark("qr:resolve_tip_target");
   try {
     stabilLog("qr", "resolve tip target start", { tokenLen: trimmed.length });
     logFlow("qr", "resolveTipTarget", { tokenLen: trimmed.length });
@@ -64,6 +122,8 @@ async function resolveTipTargetInner(trimmed: string): Promise<{
       "resolve_tip_target",
       (signal) => supabase.rpc("resolve_tip_target", { p_token: trimmed }).abortSignal(signal),
       QR_RESOLVE_TIMEOUT_MS,
+      undefined,
+      QR_TIMEOUT_OPTS,
     );
     if (!rpcErr && data) {
       const row = Array.isArray(data)
@@ -72,10 +132,7 @@ async function resolveTipTargetInner(trimmed: string): Promise<{
       const mapped = row ? mapRow(row) : null;
       if (mapped) {
         stabilLog("qr", "resolve tip target ok", { guardId: mapped.guard_id });
-        void Promise.allSettled([
-          supabase.rpc("touch_tip_link", { p_token: trimmed }),
-          supabase.rpc("touch_qr_code", { p_code_token: trimmed }),
-        ]);
+        void fireTouchAnalytics(trimmed);
         return { target: mapped, error: null };
       }
     }
@@ -93,6 +150,8 @@ async function resolveTipTargetInner(trimmed: string): Promise<{
       "resolve_tip_link",
       (signal) => supabase.rpc("resolve_tip_link", { p_token: trimmed }).abortSignal(signal),
       QR_RESOLVE_TIMEOUT_MS,
+      undefined,
+      QR_TIMEOUT_OPTS,
     );
     if (linkErr) {
       return {
@@ -119,6 +178,8 @@ async function resolveTipTargetInner(trimmed: string): Promise<{
           .abortSignal(signal)
           .maybeSingle(),
       QR_RESOLVE_TIMEOUT_MS,
+      undefined,
+      QR_TIMEOUT_OPTS,
     );
 
     if (gErr) return { target: null, error: gErr.message };
@@ -127,11 +188,8 @@ async function resolveTipTargetInner(trimmed: string): Promise<{
       return { target: null, error: "This guard is not verified for receiving tips yet." };
     }
 
-    stabilLog("qr", "resolve tip target ok", { guardId: guard.id });
-    void Promise.allSettled([
-      supabase.rpc("touch_tip_link", { p_token: trimmed }),
-      supabase.rpc("touch_qr_code", { p_code_token: trimmed }),
-    ]);
+    stabilLog("qr", "resolve tip target ok (fallback)", { guardId: guard.id });
+    void fireTouchAnalytics(trimmed);
     return {
       target: {
         guard_id: guard.id,
@@ -147,5 +205,14 @@ async function resolveTipTargetInner(trimmed: string): Promise<{
     const msg = e instanceof Error ? e.message : "Could not load this tip link.";
     console.error("[TipGuard:qr] resolveTipTarget failed", e);
     return { target: null, error: msg };
+  } finally {
+    endPerf();
   }
+}
+
+function fireTouchAnalytics(trimmed: string): void {
+  void Promise.allSettled([
+    supabase.rpc("touch_tip_link", { p_token: trimmed }),
+    supabase.rpc("touch_qr_code", { p_code_token: trimmed }),
+  ]);
 }

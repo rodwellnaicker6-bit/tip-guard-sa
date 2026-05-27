@@ -11,10 +11,12 @@ export function NfcTapPanel({ fallbackTipToken }: { fallbackTipToken?: string | 
 
   function onPayload(payload: NfcPayload) {
     if (payload.token) {
+      void import("../pages/QrTipLanding");
       navigate(`/tip/${payload.token}`);
       return;
     }
     if (payload.guard_id) {
+      void import("../pages/TipCheckout");
       navigate(`/customer/tip/${payload.guard_id}`);
     }
   }

@@ -19,7 +19,7 @@ type VenueCacheEntry = {
   row: MerchantVenueRow | null;
 };
 
-const CACHE_TTL_MS = 30_000;
+const CACHE_TTL_MS = 90_000;
 const venueCache = new Map<string, VenueCacheEntry>();
 const inflight = new Map<string, Promise<MerchantVenueRow | null>>();
 

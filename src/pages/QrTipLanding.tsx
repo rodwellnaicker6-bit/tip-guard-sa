@@ -6,7 +6,10 @@ import { startTipCheckout } from "../payments/checkoutFlow";
 import { releaseTipCheckoutLock } from "../services/paystackCore";
 import { hasPaystackPublicKey } from "../services/paymentService";
 import { resolveAuthUserId } from "../lib/resolveAuthUser";
-import { resolveTipTarget } from "../lib/resolveTipTarget";
+import { readCachedTipDisplayName, resolveTipTarget } from "../lib/resolveTipTarget";
+import { perfMark } from "../lib/perfTelemetry";
+import { SlowLoadHint } from "../components/SlowLoadHint";
+import { useUiWatchdog } from "../lib/uiWatchdog";
 import { logAuth } from "../lib/authDebug";
 import { stabilLog } from "../lib/stabilLog";
 import { paystackEnvIssue } from "../lib/paystackEnv";
@@ -20,7 +23,7 @@ import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { EmergencyErrorBoundary } from "../lib/emergencySafeMode";
 
 const PRESETS = [10, 20, 50] as const;
-const QR_LOAD_TIMEOUT_MS = 12_000;
+const QR_LOAD_TIMEOUT_MS = 10_000;
 
 /** Mobile-first QR landing: presets → auth → Paystack checkout. */
 function QrTipLandingContent() {
@@ -36,6 +39,8 @@ function QrTipLandingContent() {
   const [checkoutPhase, setCheckoutPhase] = useState<CheckoutPhase>("idle");
   const [reload, setReload] = useState(0);
   const online = useOnlineStatus();
+  const optimisticName = useMemo(() => readCachedTipDisplayName(token), [token]);
+  const slowLoad = useUiWatchdog(loading);
 
   useEffect(() => () => releaseTipCheckoutLock(), []);
 
@@ -45,6 +50,7 @@ function QrTipLandingContent() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
+    const endHydration = perfMark("qr:tip_page_hydration");
     void (async () => {
       setLoading(true);
       setError(null);
@@ -64,11 +70,14 @@ function QrTipLandingContent() {
         }
       }
       setLoading(false);
+      endHydration();
     })();
     return () => {
       cancelled = true;
     };
-  }, [token, searchParams, reload]);
+    // Amount from URL is applied on resolve only — preset buttons update amount directly (no re-resolve).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- searchParams must not retrigger resolve_tip_target
+  }, [token, reload]);
 
   useEffect(() => {
     if (!loading) return;
@@ -154,11 +163,16 @@ function QrTipLandingContent() {
   }
 
   if (loading) {
+    const label = optimisticName ? `Tip ${optimisticName}` : "Loading secure tip page…";
     return (
       <PageWrap>
-        <Skeleton style={{ height: 28, width: "60%", margin: "0 auto" }} />
+        <p className="text-xs font-bold uppercase tracking-wider text-amber-400/90">TipGuard SA</p>
+        <h1 className="mt-2 text-xl font-black text-white">{label}</h1>
         <Skeleton style={{ height: 180, width: "100%", borderRadius: 20, marginTop: 16 }} />
-        <p className="text-sm text-slate-400">Loading secure tip page…</p>
+        <p className="text-sm text-slate-400" role="status">
+          {optimisticName ? "Refreshing tip details…" : "Loading secure tip page…"}
+        </p>
+        <SlowLoadHint show={slowLoad} message="Connection is slow — still loading…" />
       </PageWrap>
     );
   }

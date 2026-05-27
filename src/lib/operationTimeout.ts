@@ -6,7 +6,7 @@ import { requestQueue } from "./requestQueue";
 
 export type FlowScope = "qr" | "pay" | "payout" | "venue" | "rpc" | "dashboard";
 
-export const QR_RESOLVE_TIMEOUT_MS = 12_000;
+export const QR_RESOLVE_TIMEOUT_MS = 8_000;
 export const PAYMENT_SESSION_TIMEOUT_MS = 10_000;
 export const PAYMENT_INIT_TIMEOUT_MS = 15_000;
 export const PAYOUT_REQUEST_TIMEOUT_MS = 15_000;
@@ -30,8 +30,10 @@ export async function withOperationTimeout<T>(
   input: OperationInput<T>,
   ms: number,
   parentSignal?: AbortSignal,
+  options?: { queued?: boolean },
 ): Promise<T> {
-  return requestQueue.run(async () => {
+  const runQueued = options?.queued !== false;
+  const execute = async () => {
     const t0 = performance.now();
     const controller = new AbortController();
     const onParentAbort = () => controller.abort();
@@ -85,5 +87,6 @@ export async function withOperationTimeout<T>(
       window.clearTimeout(timer);
       parentSignal?.removeEventListener("abort", onParentAbort);
     }
-  });
+  };
+  return runQueued ? requestQueue.run(execute) : execute();
 }
