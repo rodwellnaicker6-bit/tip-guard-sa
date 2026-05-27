@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { parseFunctionsInvokeError } from "../lib/edgeFunctionInvoke";
-import { PAYOUT_REQUEST_TIMEOUT_MS, logFlow, withOperationTimeout } from "../lib/operationTimeout";
+import { PAYOUT_REQUEST_TIMEOUT_MS, DASHBOARD_LOAD_TIMEOUT_MS, logFlow, withOperationTimeout } from "../lib/operationTimeout";
+import { perfLog } from "../lib/perfLog";
 import { ensurePaymentAccessToken } from "../lib/paymentSession";
 import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
@@ -58,96 +59,119 @@ function GuardHomeContent() {
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
+    const watchdog = window.setTimeout(() => {
+      if (cancelled) return;
+      setLoading(false);
+      setError((prev) => prev ?? "Dashboard load timed out. Please try again.");
+    }, DASHBOARD_LOAD_TIMEOUT_MS + 1_000);
+
     (async () => {
       setLoading(true);
       setError(null);
-      const { data, error: err } = await supabase
-        .from("guards")
-        .select(
-          "id, display_name, location, province, avatar_initials, verified, rating, tips_count, balance_cents, payout_schedule, next_payout_at, minimum_payout_threshold_cents",
-        )
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (cancelled) return;
-      if (err) {
-        setError("We could not load your guard profile. Please try again.");
-        setGuard(null);
-        setLoading(false);
-        return;
-      }
-      const g = (data as GuardRow & {
-        payout_schedule?: string;
-        next_payout_at?: string | null;
-        minimum_payout_threshold_cents?: number;
-      }) ?? null;
-      setGuard(g);
-      if (g) {
-        const hasPayoutCols = g.payout_schedule != null || g.next_payout_at != null;
-        setPayoutSchemaComplete(hasPayoutCols);
-        const sched = g.payout_schedule ?? "";
-        setPayoutSchedule(isPayoutSchedule(sched) ? sched : "weekly");
-        setNextPayoutAt(g.next_payout_at ?? null);
-        setMinPayoutCents(g.minimum_payout_threshold_cents ?? 10000);
-      }
-      if (g?.id) {
-        const keys: string[] = [];
-        for (let i = 13; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          d.setHours(0, 0, 0, 0);
-          keys.push(d.toISOString().slice(0, 10));
-        }
-        const since = `${keys[0]}T00:00:00.000Z`;
-        const [walletRes, tipsRes, payoutsRes, sparkRes] = await Promise.all([
-          supabase
-            .from("wallet_accounts")
-            .select("available_cents, pending_cents")
-            .eq("guard_id", g.id)
-            .maybeSingle(),
-          supabase
-            .from("tips")
-            .select("id, amount_cents, status, created_at")
-            .eq("guard_id", g.id)
-            .order("created_at", { ascending: false })
-            .limit(12),
-          supabase
-            .from("payouts")
-            .select("id, amount_cents, status, created_at")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: false })
-            .limit(5),
-          supabase
-            .from("tips")
-            .select("amount_cents, created_at")
-            .eq("guard_id", g.id)
-            .eq("status", "succeeded")
-            .gte("created_at", since),
-        ]);
-        if (!cancelled) {
-          const w = walletRes.data;
-          setWalletAvail((w?.available_cents as number | undefined) ?? g.balance_cents ?? 0);
-          setWalletPending((w?.pending_cents as number | undefined) ?? 0);
-          if (!tipsRes.error && tipsRes.data) setRecentTips(tipsRes.data as TipRow[]);
-          else setRecentTips([]);
-          setRecentPayouts((payoutsRes.data as PayoutRow[]) ?? []);
-          if (!sparkRes.error && sparkRes.data) {
-            const totals: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 0]));
-            for (const row of sparkRes.data) {
-              const day = (row.created_at as string).slice(0, 10);
-              if (totals[day] != null) totals[day] += row.amount_cents as number;
+      const t0 = performance.now();
+      try {
+        await withOperationTimeout(
+          "dashboard",
+          "guard home load",
+          (async () => {
+            const { data, error: err } = await supabase
+              .from("guards")
+              .select(
+                "id, display_name, location, province, avatar_initials, verified, rating, tips_count, balance_cents, payout_schedule, next_payout_at, minimum_payout_threshold_cents",
+              )
+              .eq("user_id", user.id)
+              .maybeSingle();
+            if (cancelled) return;
+            if (err) {
+              setError("We could not load your guard profile. Please try again.");
+              setGuard(null);
+              return;
             }
-            setSparkValues(keys.map((k) => totals[k] ?? 0));
-          }
+            const g = (data as GuardRow & {
+              payout_schedule?: string;
+              next_payout_at?: string | null;
+              minimum_payout_threshold_cents?: number;
+            }) ?? null;
+            setGuard(g);
+            if (g) {
+              const hasPayoutCols = g.payout_schedule != null || g.next_payout_at != null;
+              setPayoutSchemaComplete(hasPayoutCols);
+              const sched = g.payout_schedule ?? "";
+              setPayoutSchedule(isPayoutSchedule(sched) ? sched : "weekly");
+              setNextPayoutAt(g.next_payout_at ?? null);
+              setMinPayoutCents(g.minimum_payout_threshold_cents ?? 10000);
+            }
+            if (g?.id) {
+              const keys: string[] = [];
+              for (let i = 13; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                d.setHours(0, 0, 0, 0);
+                keys.push(d.toISOString().slice(0, 10));
+              }
+              const since = `${keys[0]}T00:00:00.000Z`;
+              const [walletRes, tipsRes, payoutsRes, sparkRes] = await Promise.all([
+                supabase
+                  .from("wallet_accounts")
+                  .select("available_cents, pending_cents")
+                  .eq("guard_id", g.id)
+                  .maybeSingle(),
+                supabase
+                  .from("tips")
+                  .select("id, amount_cents, status, created_at")
+                  .eq("guard_id", g.id)
+                  .order("created_at", { ascending: false })
+                  .limit(12),
+                supabase
+                  .from("payouts")
+                  .select("id, amount_cents, status, created_at")
+                  .eq("user_id", user.id)
+                  .order("created_at", { ascending: false })
+                  .limit(5),
+                supabase
+                  .from("tips")
+                  .select("amount_cents, created_at")
+                  .eq("guard_id", g.id)
+                  .eq("status", "succeeded")
+                  .gte("created_at", since),
+              ]);
+              if (!cancelled) {
+                const w = walletRes.data;
+                setWalletAvail((w?.available_cents as number | undefined) ?? g.balance_cents ?? 0);
+                setWalletPending((w?.pending_cents as number | undefined) ?? 0);
+                if (!tipsRes.error && tipsRes.data) setRecentTips(tipsRes.data as TipRow[]);
+                else setRecentTips([]);
+                setRecentPayouts((payoutsRes.data as PayoutRow[]) ?? []);
+                if (!sparkRes.error && sparkRes.data) {
+                  const totals: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 0]));
+                  for (const row of sparkRes.data) {
+                    const day = (row.created_at as string).slice(0, 10);
+                    if (totals[day] != null) totals[day] += row.amount_cents as number;
+                  }
+                  setSparkValues(keys.map((k) => totals[k] ?? 0));
+                }
+              }
+            } else if (!cancelled) {
+              setRecentTips([]);
+              setRecentPayouts([]);
+              setSparkValues([]);
+            }
+          })(),
+          DASHBOARD_LOAD_TIMEOUT_MS,
+        );
+        perfLog("guard home load", Math.round(performance.now() - t0), { ok: true });
+      } catch {
+        if (!cancelled) {
+          setError("Dashboard load timed out. Please try again.");
+          setGuard(null);
         }
-      } else if (!cancelled) {
-        setRecentTips([]);
-        setRecentPayouts([]);
-        setSparkValues([]);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      if (!cancelled) setLoading(false);
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(watchdog);
     };
   }, [user?.id, reload]);
 

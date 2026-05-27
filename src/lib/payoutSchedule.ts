@@ -1,3 +1,4 @@
+import { RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "./operationTimeout";
 import { supabase } from "./supabase";
 
 export type PayoutSchedule = "instant" | "daily" | "weekly" | "monthly";
@@ -100,6 +101,22 @@ function prefsFromRow(row: PayoutRowSlice, schemaComplete: boolean): EntityPayou
 
 /** Load payout prefs; falls back to id-only select when migration columns are missing. */
 export async function fetchEntityPayoutPrefs(
+  table: EntityTable,
+  userId: string,
+): Promise<{ prefs: EntityPayoutPrefs | null; error: string | null }> {
+  try {
+    return await withOperationTimeout(
+      "rpc",
+      "payout prefs",
+      loadEntityPayoutPrefs(table, userId),
+      RPC_DEFAULT_TIMEOUT_MS,
+    );
+  } catch {
+    return { prefs: null, error: "Payout preferences load timed out." };
+  }
+}
+
+async function loadEntityPayoutPrefs(
   table: EntityTable,
   userId: string,
 ): Promise<{ prefs: EntityPayoutPrefs | null; error: string | null }> {

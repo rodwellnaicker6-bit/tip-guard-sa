@@ -50,11 +50,12 @@ export default function PaymentSuccess() {
       }
       if (data?.verified || data?.tip_status === "succeeded" || data?.transaction_status === "succeeded") {
         setVerifyState("confirmed");
-        if (data.amount_cents != null) setConfirmedCents(data.amount_cents);
+        const cents = data.amount_cents ?? (amountParam && !Number.isNaN(Number(amountParam)) ? Number(amountParam) : null);
+        if (cents != null) setConfirmedCents(cents);
         if (kind === "tip") {
           const next = recordSuccessfulTip();
           setLoyaltySnap(next);
-          toast.info(`Tip confirmed · ${zarFromCents(data.amount_cents ?? confirmedCents ?? 0)}`);
+          toast.info(`Tip confirmed · ${zarFromCents(cents ?? 0)}`);
         } else {
           toast.info("Payment confirmed");
         }
@@ -80,7 +81,7 @@ export default function PaymentSuccess() {
     return () => {
       cancelled = true;
     };
-  }, [ref, kind, navigate, toast, confirmedCents]);
+  }, [ref, kind, navigate, toast, amountParam]);
 
   function downloadReceipt() {
     const cents = confirmedCents;

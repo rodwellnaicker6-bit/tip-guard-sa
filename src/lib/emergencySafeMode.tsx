@@ -1,14 +1,23 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 /** Minimal visible fallback when a route shell crashes (emergency stability). */
-export function EmergencySafeFallback() {
+export function EmergencySafeFallback({ onRetry }: { onRetry?: () => void }) {
   return (
     <div
       className="shell mx-auto flex min-h-[40vh] max-w-lg flex-col items-center justify-center gap-3 px-5 py-12 text-center"
       style={{ color: "white" }}
     >
       <p className="text-lg font-bold">TIPGUARD SAFE MODE</p>
-      <p className="text-sm text-slate-400">This screen hit an error. Reload or go home.</p>
+      <p className="text-sm text-slate-400">This screen hit an error. Try again, reload, or go home.</p>
+      {onRetry ? (
+        <button
+          type="button"
+          className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 font-semibold text-amber-200"
+          onClick={onRetry}
+        >
+          Try again
+        </button>
+      ) : null}
       <button
         type="button"
         className="rounded-2xl border border-white/15 px-4 py-3 font-semibold"
@@ -39,8 +48,12 @@ export class EmergencyErrorBoundary extends Component<BoundaryProps, BoundarySta
     console.error("[TipGuard] EmergencyErrorBoundary", error.message, info.componentStack);
   }
 
+  private handleRetry = () => {
+    this.setState({ crashed: false });
+  };
+
   render() {
-    if (this.state.crashed) return <EmergencySafeFallback />;
+    if (this.state.crashed) return <EmergencySafeFallback onRetry={this.handleRetry} />;
     return this.props.children;
   }
 }

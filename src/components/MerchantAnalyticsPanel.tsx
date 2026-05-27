@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
+import { perfLog } from "../lib/perfLog";
 import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
 import { Skeleton } from "./Skeleton";
@@ -28,18 +30,40 @@ export function MerchantAnalyticsPanel() {
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const loadInflightRef = useRef(false);
+  const loadGenRef = useRef(0);
 
   const load = useCallback(async () => {
+    if (loadInflightRef.current) return;
+    loadInflightRef.current = true;
+    const gen = ++loadGenRef.current;
     setLoading(true);
     setError(null);
-    const { data: raw, error: err } = await supabase.rpc("merchant_payment_analytics_v2", { p_period: period });
-    if (err) {
-      setError(err.message);
-      setData(null);
-    } else {
-      setData((raw as Analytics) ?? null);
+    const t0 = performance.now();
+    try {
+      const { data: raw, error: err } = await withOperationTimeout(
+        "rpc",
+        "merchant_payment_analytics_v2",
+        supabase.rpc("merchant_payment_analytics_v2", { p_period: period }),
+        RPC_DEFAULT_TIMEOUT_MS,
+      );
+      if (gen !== loadGenRef.current) return;
+      if (err) {
+        setError(err.message);
+        setData(null);
+      } else {
+        setData((raw as Analytics) ?? null);
+      }
+      perfLog("merchant_payment_analytics_v2", Math.round(performance.now() - t0), { ok: !err });
+    } catch {
+      if (gen === loadGenRef.current) {
+        setError("Analytics load timed out. Please try again.");
+        setData(null);
+      }
+    } finally {
+      loadInflightRef.current = false;
+      if (gen === loadGenRef.current) setLoading(false);
     }
-    setLoading(false);
   }, [period]);
 
   useEffect(() => {

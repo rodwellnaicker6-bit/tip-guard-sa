@@ -4,6 +4,8 @@ import {
   logPayInvokeSuccess,
   parseFunctionsInvokeError,
 } from "./edgeFunctionInvoke";
+import { PAYMENT_VERIFY_TIMEOUT_MS, withOperationTimeout } from "./operationTimeout";
+import { perfLog } from "./perfLog";
 import { ensurePaymentAccessToken } from "./paymentSession";
 import { supabase } from "./supabase";
 
@@ -27,10 +29,26 @@ export async function verifyPaystackReference(
 
   const started = Date.now();
   logPayInvokeStart("paystack-verify", { reference });
-  const { data, error } = await supabase.functions.invoke("paystack-verify", {
-    body: { reference },
-    headers: { Authorization: `Bearer ${session.accessToken}` },
-  });
+  let data: unknown;
+  let error: unknown;
+  try {
+    const result = await withOperationTimeout(
+      "pay",
+      "paystack-verify invoke",
+      supabase.functions.invoke("paystack-verify", {
+        body: { reference },
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      }),
+      PAYMENT_VERIFY_TIMEOUT_MS,
+    );
+    data = result.data;
+    error = result.error;
+  } catch {
+    const ms = Date.now() - started;
+    perfLog("paystack-verify timeout", ms);
+    logPayInvokeFailure("paystack-verify", { message: "Verification timed out" }, ms);
+    return { data: null, error: "Verification timed out. We'll keep checking in the background." };
+  }
   if (error) {
     const detail = await parseFunctionsInvokeError(error);
     logPayInvokeFailure("paystack-verify", detail, Date.now() - started);

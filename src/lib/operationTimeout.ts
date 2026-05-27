@@ -1,19 +1,25 @@
-/** Shared timeouts for payment, QR, payout, and venue flows. */
+/** Shared timeouts for payment, QR, payout, venue, RPC, and dashboard flows. */
+
+export type FlowScope = "qr" | "pay" | "payout" | "venue" | "rpc" | "dashboard";
 
 export const QR_RESOLVE_TIMEOUT_MS = 12_000;
 export const PAYMENT_SESSION_TIMEOUT_MS = 10_000;
 export const PAYMENT_INIT_TIMEOUT_MS = 15_000;
 export const PAYOUT_REQUEST_TIMEOUT_MS = 15_000;
 export const CHECKOUT_UI_TIMEOUT_MS = 18_000;
+export const VENUE_LOAD_TIMEOUT_MS = 12_000;
+export const RPC_DEFAULT_TIMEOUT_MS = 12_000;
+export const DASHBOARD_LOAD_TIMEOUT_MS = 15_000;
+export const PAYMENT_VERIFY_TIMEOUT_MS = 12_000;
 
-export function logFlow(scope: "qr" | "pay" | "payout" | "venue", message: string, extra?: Record<string, unknown>): void {
+export function logFlow(scope: FlowScope, message: string, extra?: Record<string, unknown>): void {
   if (typeof console === "undefined") return;
   const payload = extra && Object.keys(extra).length > 0 ? extra : undefined;
   console.info(`[TipGuard:${scope}] ${message}`, payload ?? "");
 }
 
 export async function withOperationTimeout<T>(
-  scope: "qr" | "pay" | "payout" | "venue",
+  scope: FlowScope,
   label: string,
   promise: PromiseLike<T>,
   ms: number,

@@ -47,6 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshSourceRef = useRef<string | null>(null);
   const sessionReadyRef = useRef(false);
   const reconnectBusyRef = useRef(false);
+  const lastReconnectAtRef = useRef(0);
+  const RECONNECT_COOLDOWN_MS = 2_000;
   /** Last known good session — guards against transient null during TOKEN_REFRESHED. */
   const sessionSnapshotRef = useRef<AuthContextValue["session"]>(null);
 
@@ -410,6 +412,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const reconnect = () => {
       if (document.visibilityState !== "visible" || reconnectBusyRef.current) return;
+      const now = Date.now();
+      if (now - lastReconnectAtRef.current < RECONNECT_COOLDOWN_MS) return;
+      lastReconnectAtRef.current = now;
       reconnectBusyRef.current = true;
       void supabase.auth
         .getSession()

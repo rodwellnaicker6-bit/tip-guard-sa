@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/useAuth";
+import { VENUE_LOAD_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
+import { perfLog } from "../lib/perfLog";
 import { supabase } from "../lib/supabase";
 import { fetchEntityPayoutPrefs, type PayoutSchedule } from "../lib/payoutSchedule";
 import { isMissingColumnError, logVenue } from "../lib/venueDebug";
@@ -26,26 +28,42 @@ const FULL_COLS = `${CORE_COLS}, risk_score`;
 
 async function queryMerchantRow(userId: string): Promise<{ row: MerchantVenueRow | null; error: Error | null }> {
   const t0 = performance.now();
-  let { data, error } = await supabase.from("merchants").select(FULL_COLS).eq("user_id", userId).maybeSingle();
+  try {
+    let { data, error } = await withOperationTimeout(
+      "venue",
+      "merchants select",
+      supabase.from("merchants").select(FULL_COLS).eq("user_id", userId).maybeSingle(),
+      VENUE_LOAD_TIMEOUT_MS,
+    );
 
-  if (error && isMissingColumnError(error)) {
-    logVenue("risk_score column missing — retrying core select", { code: error.code });
-    const retry = await supabase.from("merchants").select(CORE_COLS).eq("user_id", userId).maybeSingle();
-    data = retry.data as typeof data;
-    error = retry.error;
+    if (error && isMissingColumnError(error)) {
+      logVenue("risk_score column missing — retrying core select", { code: error.code });
+      const retry = await withOperationTimeout(
+        "venue",
+        "merchants core select",
+        supabase.from("merchants").select(CORE_COLS).eq("user_id", userId).maybeSingle(),
+        VENUE_LOAD_TIMEOUT_MS,
+      );
+      data = retry.data as typeof data;
+      error = retry.error;
+    }
+
+    logVenue("merchants select end", {
+      ms: Math.round(performance.now() - t0),
+      ok: !error,
+      hasRow: !!data?.id,
+      code: error?.code,
+    });
+    perfLog("venue merchants select", Math.round(performance.now() - t0), { ok: !error });
+
+    if (error) {
+      return { row: null, error: new Error(error.message) };
+    }
+    return { row: (data as MerchantVenueRow | null) ?? null, error: null };
+  } catch (e) {
+    perfLog("venue merchants select timeout", Math.round(performance.now() - t0));
+    return { row: null, error: e instanceof Error ? e : new Error(String(e)) };
   }
-
-  logVenue("merchants select end", {
-    ms: Math.round(performance.now() - t0),
-    ok: !error,
-    hasRow: !!data?.id,
-    code: error?.code,
-  });
-
-  if (error) {
-    return { row: null, error: new Error(error.message) };
-  }
-  return { row: (data as MerchantVenueRow | null) ?? null, error: null };
 }
 
 export async function fetchMerchantVenueForUser(userId: string): Promise<{
@@ -132,6 +150,12 @@ export function useMerchantVenue(): MerchantVenueLoadState {
 
     logVenue("load start", { uid, sessionReady, reloadToken });
 
+    const watchdog = window.setTimeout(() => {
+      if (cancelled || gen !== loadGenRef.current) return;
+      setLoading(false);
+      setError((prev) => prev ?? "Venue load timed out. Please try again.");
+    }, VENUE_LOAD_TIMEOUT_MS + 1_000);
+
     void (async () => {
       setLoading(true);
       setError(null);
@@ -178,6 +202,7 @@ export function useMerchantVenue(): MerchantVenueLoadState {
 
     return () => {
       cancelled = true;
+      window.clearTimeout(watchdog);
     };
   }, [user?.id, sessionReady, reloadToken]);
 

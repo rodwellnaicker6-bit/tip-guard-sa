@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
+import { perfLog } from "../lib/perfLog";
 import { supabase } from "../lib/supabase";
 import { unwrapRpcSingle } from "../lib/rpcData";
 import { centsFromRandInput, zarFromCents } from "../lib/money";
@@ -35,22 +37,44 @@ export default function TipCheckout() {
   useEffect(() => {
     if (!guardId) return;
     let cancelled = false;
+    const watchdog = window.setTimeout(() => {
+      if (cancelled) return;
+      setLoading(false);
+      setError((prev) => prev ?? "Loading guard timed out. Please try again.");
+    }, RPC_DEFAULT_TIMEOUT_MS + 1_000);
+
     (async () => {
       setLoading(true);
-      const { data, error: err } = await supabase.rpc("get_public_guard", { p_id: guardId });
-      if (cancelled) return;
-      const row = unwrapRpcSingle<PublicGuardRow>(data);
-      if (err || !row) {
-        setError(err?.message ?? "Guard not found");
-        setGuard(null);
-      } else {
-        setGuard(row as PublicGuardRow);
-        setError(null);
+      const t0 = performance.now();
+      try {
+        const { data, error: err } = await withOperationTimeout(
+          "rpc",
+          "get_public_guard",
+          supabase.rpc("get_public_guard", { p_id: guardId }),
+          RPC_DEFAULT_TIMEOUT_MS,
+        );
+        if (cancelled) return;
+        const row = unwrapRpcSingle<PublicGuardRow>(data);
+        if (err || !row) {
+          setError(err?.message ?? "Guard not found");
+          setGuard(null);
+        } else {
+          setGuard(row as PublicGuardRow);
+          setError(null);
+        }
+        perfLog("get_public_guard", Math.round(performance.now() - t0), { ok: !err && !!row });
+      } catch {
+        if (!cancelled) {
+          setError("Loading guard timed out. Please try again.");
+          setGuard(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(watchdog);
     };
   }, [guardId, reload]);
 

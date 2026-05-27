@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
+import { perfLog } from "../lib/perfLog";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import { Skeleton } from "../components/Skeleton";
@@ -32,17 +34,36 @@ export default function CustomerHome() {
 
   useEffect(() => {
     let cancelled = false;
+    const watchdog = window.setTimeout(() => {
+      if (cancelled) return;
+      setLoading(false);
+      setError((prev) => prev ?? "Loading guards timed out. Please try again.");
+    }, RPC_DEFAULT_TIMEOUT_MS + 1_000);
+
     (async () => {
       setLoading(true);
       setError(null);
-      const { data, error: err } = await supabase.rpc("list_public_guards");
-      if (cancelled) return;
-      if (err) setError(err.message);
-      else setGuards((data as PublicGuardRow[]) ?? []);
-      setLoading(false);
+      const t0 = performance.now();
+      try {
+        const { data, error: err } = await withOperationTimeout(
+          "rpc",
+          "list_public_guards",
+          supabase.rpc("list_public_guards"),
+          RPC_DEFAULT_TIMEOUT_MS,
+        );
+        if (cancelled) return;
+        if (err) setError(err.message);
+        else setGuards((data as PublicGuardRow[]) ?? []);
+        perfLog("list_public_guards", Math.round(performance.now() - t0), { ok: !err });
+      } catch {
+        if (!cancelled) setError("Loading guards timed out. Please try again.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(watchdog);
     };
   }, [reload]);
 
