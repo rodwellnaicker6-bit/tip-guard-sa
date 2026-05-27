@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useGracePeriod } from "../hooks/useGracePeriod";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import type { AuthAccountSnapshot, AuthRole, AuthProfileFields } from "../context/authTypes";
@@ -20,17 +21,18 @@ type Step = (typeof STEPS)[number];
 
 const CONTINUE_DEBOUNCE_MS = 800;
 const PROFILE_REFRESH_TIMEOUT_MS = 4_000;
+const SESSION_RESTORE_GRACE_MS = 3_500;
 
 function profileSaveErrorMessage(message: string, code?: string): string {
   let msg: string;
   if (/profile role cannot be changed/i.test(message)) {
     msg = "We could not save your role. Ask an admin to apply the latest database migration, then try again.";
   } else if (/permission denied|row-level security|42501/i.test(message)) {
-    msg = "We could not save your profile (access denied). Sign out, sign in again, or contact support.";
+    msg = "We could not save your profile (access denied). Try again or contact support.";
   } else if (/network|fetch|failed to fetch|timeout/i.test(message)) {
     msg = "Network error while saving. Check your connection and try again.";
   } else if (/profile row missing|not authenticated/i.test(message)) {
-    msg = "Your account profile is missing. Sign out, sign in again, then retry.";
+    msg = "Your account profile is still syncing. Wait a moment and tap Retry.";
   } else {
     msg = message;
   }
@@ -45,7 +47,7 @@ function merchantHubDest(hasMerchantRow: boolean): string {
 }
 
 export default function Onboarding() {
-  const { user, role, profileFields, hasGuardRow, hasMerchantRow, sessionReady, refreshProfile } =
+  const { user, session, authReady, sessionReady, role, effectiveRole, pendingRole, setPendingRole, profileFields, hasGuardRow, hasMerchantRow, refreshProfile } =
     useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -64,13 +66,18 @@ export default function Onboarding() {
   const [localProfileFields, setLocalProfileFields] = useState<AuthProfileFields | null>(null);
   const [localRole, setLocalRole] = useState<AuthRole | null>(null);
 
+  const sessionUserId = user?.id ?? session?.user?.id;
+  const displayUser = user ?? session?.user ?? null;
+  const sessionMissing = sessionReady && authReady && !sessionUserId;
+  const sessionGraceElapsed = useGracePeriod(sessionMissing, SESSION_RESTORE_GRACE_MS);
+
   const savingRef = useRef(false);
   const lastContinueAtRef = useRef(0);
   const failSafeTimerRef = useRef<number | null>(null);
   const rolePersistedRef = useRef(false);
 
   const activeProfileFields = localProfileFields ?? profileFields;
-  const activeRole = localRole ?? role;
+  const activeRole = localRole ?? effectiveRole ?? role;
 
   const setSavingSafe = useCallback((next: boolean) => {
     savingRef.current = next;
@@ -129,21 +136,15 @@ export default function Onboarding() {
   useEffect(() => {
     logOnboarding("session snapshot", {
       sessionReady,
-      uid: user?.id ?? null,
+      authReady,
+      uid: sessionUserId ?? null,
       step,
       intent,
       activeRole,
+      pendingRole,
       profileReadyFields: isProfileComplete(activeProfileFields),
     });
-  }, [sessionReady, user?.id, step, intent, activeRole, activeProfileFields]);
-
-  useEffect(() => {
-    if (!sessionReady) return;
-    if (!user) {
-      logOnboarding("redirect login (no user)");
-      navigate("/login", { replace: true, state: { from: "/onboarding" } });
-    }
-  }, [sessionReady, user, navigate]);
+  }, [sessionReady, authReady, sessionUserId, step, intent, activeRole, pendingRole, activeProfileFields]);
 
   useEffect(() => () => clearFailSafe(), [clearFailSafe]);
 
@@ -196,13 +197,14 @@ export default function Onboarding() {
 
   async function continueFromRole() {
     const now = Date.now();
-    if (!user?.id || savingRef.current) return;
+    const uid = sessionUserId;
+    if (!uid || savingRef.current) return;
     if (now - lastContinueAtRef.current < CONTINUE_DEBOUNCE_MS) {
       logOnboarding("continueFromRole debounced");
       return;
     }
     lastContinueAtRef.current = now;
-    if (!sessionReady) {
+    if (!sessionReady || !authReady) {
       setSaveError("Still connecting your session. Wait a moment and try again.");
       return;
     }
@@ -210,10 +212,12 @@ export default function Onboarding() {
     rolePersistedRef.current = false;
     setSavingSafe(true);
     setSaveError(null);
+    setPendingRole(intent);
+    setLocalRole(intent);
     armFailSafe(intent);
 
     try {
-      logOnboarding("continueFromRole", { intent, uid: user.id });
+      logOnboarding("continueFromRole", { intent, uid });
 
       const { data: savedRoleRaw, error: rpcErr } = await withOnboardingTimeout(
         "rpc save_onboarding_role",
@@ -226,7 +230,7 @@ export default function Onboarding() {
         console.error("[Onboarding] save_onboarding_role", rpcErr.message, rpcErr.code);
         const { data: row, error: updErr } = await withOnboardingTimeout(
           "profiles update role",
-          supabase.from("profiles").update({ role: intent }).eq("id", user.id).select("role").maybeSingle(),
+          supabase.from("profiles").update({ role: intent }).eq("id", uid).select("role").maybeSingle(),
         );
         if (updErr) {
           setSaveError(profileSaveErrorMessage(updErr.message, updErr.code));
@@ -238,11 +242,13 @@ export default function Onboarding() {
           const { error: insErr } = await withOnboardingTimeout(
             "profiles insert",
             supabase.from("profiles").insert({
-              id: user.id,
+              id: uid,
               role: "customer",
               full_name:
                 activeProfileFields.full_name ??
-                (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null) ??
+                (typeof displayUser?.user_metadata?.full_name === "string"
+                  ? displayUser.user_metadata.full_name
+                  : null) ??
                 "Member",
             }),
           );
@@ -252,7 +258,7 @@ export default function Onboarding() {
           }
           const retry = await withOnboardingTimeout(
             "profiles update role retry",
-            supabase.from("profiles").update({ role: intent }).eq("id", user.id).select("role").maybeSingle(),
+            supabase.from("profiles").update({ role: intent }).eq("id", uid).select("role").maybeSingle(),
           );
           if (retry.error) {
             setSaveError(profileSaveErrorMessage(retry.error.message, retry.error.code));
@@ -294,7 +300,7 @@ export default function Onboarding() {
 
   async function saveProfile(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!user?.id || savingRef.current) return;
+    if (!sessionUserId || savingRef.current) return;
 
     const fd = new FormData(e.currentTarget);
     const name = String(fd.get("full_name") ?? "").trim();
@@ -320,7 +326,7 @@ export default function Onboarding() {
     try {
       const { error } = await withOnboardingTimeout(
         "profiles update",
-        supabase.from("profiles").update({ full_name: name, phone: phoneVal }).eq("id", user.id),
+        supabase.from("profiles").update({ full_name: name, phone: phoneVal }).eq("id", sessionUserId),
       );
       if (error) {
         setSaveError(profileSaveErrorMessage(error.message, error.code));
@@ -367,7 +373,18 @@ export default function Onboarding() {
     scheduleBackgroundProfileSync();
   }
 
-  if (!sessionReady || !user) {
+  if (!sessionReady || !authReady || !sessionUserId) {
+    if (sessionReady && authReady && sessionGraceElapsed) {
+      return (
+        <div className="shell mx-auto max-w-lg space-y-4 px-5 py-10 pb-20 text-center">
+          <h2 className="text-xl font-bold text-white">Session expired</h2>
+          <p className="text-sm text-slate-400">Sign in again to continue onboarding.</p>
+          <Link className="btn-gold tap-target inline-block rounded-2xl px-6 py-3 font-black no-underline" to="/login" state={{ from: "/onboarding" }}>
+            Sign in
+          </Link>
+        </div>
+      );
+    }
     return (
       <div className="shell mx-auto max-w-lg space-y-4 px-5 py-10 pb-20" role="status" aria-live="polite">
         <Skeleton style={{ height: 12, width: "35%", margin: "0 auto" }} />
@@ -379,7 +396,9 @@ export default function Onboarding() {
           <Skeleton style={{ height: 6, width: 40, borderRadius: 999 }} />
         </div>
         <Skeleton style={{ height: 220, width: "100%", borderRadius: 20, marginTop: 16 }} />
-        <p className="text-center text-sm text-slate-500">Loading your account…</p>
+        <p className="text-center text-sm text-slate-500">
+          {!sessionReady || !authReady ? "Loading your account…" : "Restoring your session…"}
+        </p>
       </div>
     );
   }
@@ -395,9 +414,9 @@ export default function Onboarding() {
         </p>
         <h2 className="fx-gradient-text text-2xl font-black">Welcome to TipGuard</h2>
         <p className="mt-2 text-sm text-slate-400">
-          {user.email ? (
+          {displayUser?.email ? (
             <>
-              Signed in as <span className="font-semibold text-slate-200">{user.email}</span>
+              Signed in as <span className="font-semibold text-slate-200">{displayUser.email}</span>
             </>
           ) : (
             "Complete setup to start tipping or receiving."
@@ -415,8 +434,16 @@ export default function Onboarding() {
       </div>
 
       {saveError && effectiveStep === "role" && (
-        <div className="error fx-fade-up text-sm" role="alert">
-          {saveError}
+        <div className="error fx-fade-up space-y-3 text-sm" role="alert">
+          <p>{saveError}</p>
+          <button
+            type="button"
+            className="btn-ghost tap-target w-full rounded-xl border border-white/15 py-2 font-semibold"
+            disabled={saving}
+            onClick={() => void continueFromRole()}
+          >
+            Retry saving role
+          </button>
         </div>
       )}
 
@@ -467,7 +494,7 @@ export default function Onboarding() {
         <GlassPanel className="fx-fade-up space-y-4" glow="slate">
           <p className="text-xs font-bold uppercase text-slate-400">Profile basics · {profilePct}%</p>
           <form
-            key={`${user.id}-${activeProfileFields.full_name ?? ""}-${activeProfileFields.phone ?? ""}`}
+            key={`${sessionUserId}-${activeProfileFields.full_name ?? ""}-${activeProfileFields.phone ?? ""}`}
             className="space-y-3"
             onSubmit={(e) => void saveProfile(e)}
           >

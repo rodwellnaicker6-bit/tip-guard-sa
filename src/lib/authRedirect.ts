@@ -1,6 +1,6 @@
 import type { NavigateFunction } from "react-router-dom";
 import type { AuthProfileFields, AuthRole } from "../context/authTypes";
-import { logAuthKickout } from "./authDebug";
+import { logAuth, logAuthKickout } from "./authDebug";
 import { isSupabaseBrowserConfigured, supabase } from "./supabase";
 import { pathAfterSignIn } from "./postAuthRedirect";
 
@@ -69,18 +69,17 @@ export async function navigateAfterAuth(
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       const { data: { session }, error: sessErr } = await supabase.auth.getSession();
       if (sessErr || !session?.user?.id) {
-        if (!userId) {
-          console.error("[AuthCrash] navigateAfterAuth: no session before redirect", sessErr?.message);
-          logAuthKickout("navigateAfterAuth no session", "authRedirect", { message: sessErr?.message });
-          authNavigate(navigate, "/login");
+        if (userId) {
+          logAuth("navigateAfterAuth session miss — onboarding recovery", { message: sessErr?.message });
+          authNavigate(navigate, "/onboarding");
           return;
         }
-        logAuthKickout("navigateAfterAuth using userId param despite getSession miss", "authRedirect", {
-          message: sessErr?.message,
-        });
-      } else {
-        userId = session.user.id;
+        console.error("[AuthCrash] navigateAfterAuth: no session before redirect", sessErr?.message);
+        logAuthKickout("navigateAfterAuth no session", "authRedirect", { message: sessErr?.message });
+        authNavigate(navigate, "/login");
+        return;
       }
+      userId = session.user.id;
     }
 
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -117,10 +116,10 @@ export async function navigateAfterAuth(
       authNavigate(navigate, pathAfterSignIn(undefined, false, false, null));
       return;
     }
-    logAuthKickout("navigateAfterAuth exception", "authRedirect", {
+    logAuth("navigateAfterAuth exception — onboarding recovery", {
       message: e instanceof Error ? e.message : String(e),
     });
-    authNavigate(navigate, "/login");
+    authNavigate(navigate, "/onboarding");
   }
 }
 

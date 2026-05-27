@@ -13,7 +13,7 @@ type Step = 1 | 2 | 3;
 
 /** Multi-step merchant onboarding: business → locations → QR. */
 export default function MerchantSetup() {
-  const { user, hasMerchantRow, loading, refreshProfile } = useAuth();
+  const { user, session, hasMerchantRow, authReady, sessionReady, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>(1);
   const [merchantId, setMerchantId] = useState<string | null>(null);
@@ -25,12 +25,13 @@ export default function MerchantSetup() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (loading) return;
-    if (!user) navigate("/login", { replace: true, state: { from: "/merchant/setup" } });
-    else if (hasMerchantRow) navigate("/merchant", { replace: true });
-  }, [loading, user, hasMerchantRow, navigate]);
+    if (!sessionReady || !authReady) return;
+    const sessionUserId = user?.id ?? session?.user?.id;
+    if (!sessionUserId) return;
+    if (hasMerchantRow) navigate("/merchant", { replace: true });
+  }, [sessionReady, authReady, user?.id, session?.user?.id, hasMerchantRow, navigate]);
 
-  if (loading || !user || hasMerchantRow) {
+  if (!sessionReady || !authReady || !(user?.id ?? session?.user?.id) || hasMerchantRow) {
     return <PageLoader />;
   }
 

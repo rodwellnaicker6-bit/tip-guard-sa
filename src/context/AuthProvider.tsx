@@ -17,6 +17,7 @@ import { bootLog } from "../lib/bootDebug";
 import { logOnboarding } from "../lib/onboardingDebug";
 import { stabilLog } from "../lib/stabilLog";
 import { subscriptionManager } from "../lib/subscriptionManager";
+import { clearPendingRole, readPendingRole, writePendingRole } from "../lib/pendingRoleStorage";
 import { isSupabaseBrowserConfigured, supabase } from "../lib/supabase";
 import { AuthContext } from "./authReactContext";
 import type {
@@ -34,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthContextValue["session"]>(null);
   const [user, setUser] = useState<AuthContextValue["user"]>(null);
   const [role, setRole] = useState<AuthRole>(null);
+  const [pendingRole, setPendingRoleState] = useState<AuthRole>(null);
   const [profileFields, setProfileFields] = useState<AuthProfileFields>({ full_name: null, phone: null });
   const [hasGuardRow, setHasGuardRow] = useState(false);
   const [hasMerchantRow, setHasMerchantRow] = useState(false);
@@ -52,10 +54,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const RECONNECT_COOLDOWN_MS = 2_000;
   /** Last known good session — guards against transient null during TOKEN_REFRESHED. */
   const sessionSnapshotRef = useRef<AuthContextValue["session"]>(null);
+  const accountStateRef = useRef({
+    role: null as AuthRole,
+    pendingRole: null as AuthRole,
+    profileFields: { full_name: null, phone: null } as AuthProfileFields,
+    hasGuardRow: false,
+    hasMerchantRow: false,
+  });
 
-  /** Emergency: session hydration only — profile loads in background (no route black screen). */
-  const authReady = sessionReady;
+  useEffect(() => {
+    accountStateRef.current = { role, pendingRole, profileFields, hasGuardRow, hasMerchantRow };
+  }, [role, pendingRole, profileFields, hasGuardRow, hasMerchantRow]);
+
+  /** Session + profile hydration complete before route guards redirect. */
+  const authReady = sessionReady && profileReady;
   const loading = !authReady;
+
+  const setPendingRole = useCallback(
+    (next: AuthRole) => {
+      setPendingRoleState(next);
+      writePendingRole(user?.id, next);
+    },
+    [user?.id],
+  );
+
+  const effectiveRole = pendingRole ?? role;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -67,12 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadAccount = useCallback(
     async (uid: string, signal?: AbortSignal, loadGen?: number): Promise<AuthAccountSnapshot | null> => {
       if (!isSupabaseBrowserConfigured) return null;
-      let snapshot: AuthAccountSnapshot = {
-        role: null,
-        profileFields: { full_name: null, phone: null },
-        hasGuardRow: false,
-        hasMerchantRow: false,
-      };
+      let snapshot: AuthAccountSnapshot;
       try {
         const [profRes, guardRes, merchRes] = await Promise.all([
           supabase.from("profiles").select("role, full_name, phone").eq("id", uid).maybeSingle(),
@@ -87,9 +105,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const hasGuardRow = !!guardRes.data && !guardRes.error;
         const hasMerchantRow = !!merchRes.data && !merchRes.error;
         if (profRes.error) {
-          if (import.meta.env.DEV) console.warn("[AuthProvider] profiles:", profRes.error.message);
-          setRole(null);
-          setProfileFields({ full_name: null, phone: null });
+          logAuth("loadAccount profile error — preserving role state", { message: profRes.error.message });
+          const cur = accountStateRef.current;
+          snapshot = {
+            role: cur.pendingRole ?? cur.role,
+            profileFields: cur.profileFields,
+            hasGuardRow,
+            hasMerchantRow,
+          };
         } else if (profRes.data) {
           const nextRole = (profRes.data.role as AuthRole) ?? null;
           const nextFields: AuthProfileFields = {
@@ -98,6 +121,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           };
           setRole(nextRole);
           setProfileFields(nextFields);
+          if (nextRole && nextRole === accountStateRef.current.pendingRole) {
+            setPendingRoleState(null);
+            writePendingRole(uid, null);
+          }
           snapshot = { role: nextRole, profileFields: nextFields, hasGuardRow, hasMerchantRow };
         } else {
           setRole(null);
@@ -111,26 +138,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         setHasGuardRow(hasGuardRow);
         setHasMerchantRow(hasMerchantRow);
-        if (profRes.error) {
-          snapshot = {
-            role: null,
-            profileFields: { full_name: null, phone: null },
-            hasGuardRow,
-            hasMerchantRow,
-          };
-        }
       } catch (e) {
         if (signal?.aborted || !mountedRef.current) return null;
         console.error("[AuthCrash] AuthProvider.loadAccount", e);
-        setRole(null);
-        setProfileFields({ full_name: null, phone: null });
-        setHasGuardRow(false);
-        setHasMerchantRow(false);
+        logAuth("loadAccount exception — preserving role state", {
+          message: e instanceof Error ? e.message : String(e),
+        });
+        const cur = accountStateRef.current;
         snapshot = {
-          role: null,
-          profileFields: { full_name: null, phone: null },
-          hasGuardRow: false,
-          hasMerchantRow: false,
+          role: cur.pendingRole ?? cur.role,
+          profileFields: cur.profileFields,
+          hasGuardRow: cur.hasGuardRow,
+          hasMerchantRow: cur.hasMerchantRow,
         };
       } finally {
         if (mountedRef.current && loadGen === accountLoadGenRef.current) {
@@ -145,7 +164,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshProfile = useCallback(
     async (options?: { silent?: boolean; source?: string }) => {
       const source = options?.source ?? "unknown";
-      if (!user?.id) {
+      const uid = user?.id ?? sessionSnapshotRef.current?.user?.id;
+      if (!uid) {
         logOnboarding("refreshProfile skip (no user)", { source });
         if (!mountedRef.current) return null;
         setRole(null);
@@ -160,7 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return refreshInFlightRef.current;
       }
       const t0 = performance.now();
-      logOnboarding("refreshProfile start", { source, uid: user.id, silent: !!options?.silent });
+      logOnboarding("refreshProfile start", { source, uid, silent: !!options?.silent });
       refreshSourceRef.current = source;
       const run = async () => {
         const ac = new AbortController();
@@ -168,7 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accountAbortRef.current = ac;
         if (!options?.silent) setProfileReady(false);
         const gen = ++accountLoadGenRef.current;
-        return loadAccount(user.id, ac.signal, gen);
+        return loadAccount(uid, ac.signal, gen);
       };
       const p = run()
         .then((snap) => {
@@ -194,7 +214,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshInFlightRef.current = p;
       return p;
     },
-    [loadAccount, user],
+    [loadAccount, user?.id],
   );
 
   /** Never call Supabase data APIs inside onAuthStateChange — defer to avoid auth deadlocks. */
@@ -258,6 +278,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sessionSnapshotRef.current = next;
         setSession(next);
         setUser(next.user);
+        const storedPending = readPendingRole(next.user.id);
+        if (storedPending) setPendingRoleState(storedPending);
         return;
       }
 
@@ -596,6 +618,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     clearAuthRedirectStorage();
+    clearPendingRole(user?.id);
     resetPostAuthRedirectState();
     accountAbortRef.current?.abort();
     try {
@@ -610,15 +633,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
     setUser(null);
     setRole(null);
+    setPendingRoleState(null);
     setProfileFields({ full_name: null, phone: null });
     setHasGuardRow(false);
     setHasMerchantRow(false);
     setProfileReady(true);
     markSessionReady();
-  }, [markSessionReady]);
+  }, [markSessionReady, user?.id]);
 
-  const isGuardUser = role === "guard" || hasGuardRow;
-  const isMerchantUser = role === "merchant" || hasMerchantRow;
+  const isGuardUser = effectiveRole === "guard" || hasGuardRow;
+  const isMerchantUser = effectiveRole === "merchant" || hasMerchantRow;
 
   const value = useMemo(
     () =>
@@ -626,6 +650,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         session,
         role,
+        pendingRole,
+        effectiveRole,
+        setPendingRole,
         profileFields,
         hasGuardRow,
         hasMerchantRow,
@@ -651,6 +678,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       session,
       role,
+      pendingRole,
+      effectiveRole,
+      setPendingRole,
       profileFields,
       hasGuardRow,
       hasMerchantRow,

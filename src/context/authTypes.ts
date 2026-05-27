@@ -25,6 +25,11 @@ export type AuthContextValue = {
   user: User | null;
   session: Session | null;
   role: AuthRole;
+  /** Optimistic role during onboarding until server confirms (survives refresh). */
+  pendingRole: AuthRole;
+  /** `pendingRole ?? role` — use for route guards during onboarding. */
+  effectiveRole: AuthRole;
+  setPendingRole: (role: AuthRole) => void;
   /** From `profiles` — used for onboarding completion UI. */
   profileFields: AuthProfileFields;
   /** True when the user has a `guards` row (signup may force profile role to customer). */
@@ -39,7 +44,7 @@ export type AuthContextValue = {
   sessionReady: boolean;
   /** True when no signed-in user or profile/guard/merchant rows have been loaded. */
   profileReady: boolean;
-  /** Session hydrated and profile fetch finished (when signed in). Use for route guards and redirects. */
+  /** True after session hydration AND profile row fetch settled (or no signed-in user). */
   authReady: boolean;
   /** @deprecated Prefer `authReady`; kept as `!authReady` for existing consumers. */
   loading: boolean;
