@@ -102,8 +102,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return null;
         }
         if (!mountedRef.current) return null;
-        const hasGuardRow = !!guardRes.data && !guardRes.error;
-        const hasMerchantRow = !!merchRes.data && !merchRes.error;
+        const cur = accountStateRef.current;
+        const hasGuardRow = guardRes.error ? cur.hasGuardRow : !!guardRes.data && !guardRes.error;
+        const hasMerchantRow = merchRes.error ? cur.hasMerchantRow : !!merchRes.data && !merchRes.error;
         if (profRes.error) {
           logAuth("loadAccount profile error — preserving role state", { message: profRes.error.message });
           const cur = accountStateRef.current;
@@ -251,7 +252,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const bootGen = ++authBootRef.current;
     sessionReadyRef.current = false;
-    sessionSnapshotRef.current = null;
+    /** Do not clear `sessionSnapshotRef` here — a remount/re-run with live React session would allow a null auth event to wipe the user before getSession finishes. */
     let effectCancelled = false;
     bootLog("AuthProvider boot", { configured: isSupabaseBrowserConfigured });
 
@@ -295,6 +296,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      /** Supabase may emit INITIAL_SESSION with null before storage hydration; getSession() is authoritative. */
+      if (event === "INITIAL_SESSION" && !next?.user?.id) {
+        logAuth("INITIAL_SESSION null — deferring to getSession (no state clear)", {});
+        return;
+      }
+
       if (event === "TOKEN_REFRESHED" && sessionSnapshotRef.current?.user?.id) {
         logAuth("preserved session during TOKEN_REFRESHED (transient null)", {
           uid: sessionSnapshotRef.current.user.id,
@@ -302,14 +309,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (sessionSnapshotRef.current?.user?.id && event !== "INITIAL_SESSION") {
+      if (
+        sessionSnapshotRef.current?.user?.id &&
+        event !== "BOOT_GET_SESSION" &&
+        event !== "INITIAL_SESSION"
+      ) {
         logAuth("preserved session (transient null)", { event });
         return;
       }
 
       sessionSnapshotRef.current = null;
-      if (event === "INITIAL_SESSION") {
-        logAuth("no session on INITIAL_SESSION");
+      if (event === "BOOT_GET_SESSION") {
+        logAuth("no session on boot getSession");
       } else {
         logAuthKickout("session cleared", "AuthProvider.applySession", { event });
       }
@@ -348,11 +359,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           force: event === "SIGNED_IN" || event === "USER_UPDATED",
         });
       }
+      const deferSessionReady = event === "INITIAL_SESSION" && !next?.user?.id;
       if (
-        event === "INITIAL_SESSION" ||
-        event === "SIGNED_IN" ||
-        event === "TOKEN_REFRESHED" ||
-        event === "SIGNED_OUT"
+        (event === "INITIAL_SESSION" ||
+          event === "SIGNED_IN" ||
+          event === "TOKEN_REFRESHED" ||
+          event === "SIGNED_OUT") &&
+        !deferSessionReady
       ) {
         markSessionReady();
       }

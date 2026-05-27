@@ -52,7 +52,7 @@ export async function navigateAfterAuth(
     }
 
     if (!isSupabaseBrowserConfigured) {
-      authNavigate(navigate, "/");
+      authNavigate(navigate, "/login");
       return;
     }
 

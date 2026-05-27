@@ -1,6 +1,7 @@
 import { type ReactElement } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { logAuthKickout } from "../lib/authDebug";
+import { pathAfterSignIn } from "../lib/postAuthRedirect";
 import { useAuth } from "../context/useAuth";
 import { useGracePeriod } from "../hooks/useGracePeriod";
 import { TimedPageLoader } from "./TimedPageLoader";
@@ -15,15 +16,14 @@ function hasAuthenticatedSession(userId: string | undefined, sessionUserId: stri
   return Boolean(userId || sessionUserId);
 }
 
-/** Block protected routes until session is hydrated and profile rows are loaded when signed in. */
+/** Block until session is hydrated. Profile/role loads do not block (pages show skeletons). */
 export function RequireAuth({ children }: { children: ReactElement }) {
-  const { user, session, authReady, sessionReady } = useAuth();
+  const { user, session, sessionReady } = useAuth();
   const location = useLocation();
-  const sessionMissing =
-    sessionReady && authReady && !hasAuthenticatedSession(user?.id, session?.user?.id);
+  const sessionMissing = sessionReady && !hasAuthenticatedSession(user?.id, session?.user?.id);
   const graceElapsed = useGracePeriod(sessionMissing, LOGIN_REDIRECT_GRACE_MS);
 
-  if (!sessionReady || !authReady) {
+  if (!sessionReady) {
     return <TimedPageLoader label="Checking your session…" />;
   }
 
@@ -31,7 +31,7 @@ export function RequireAuth({ children }: { children: ReactElement }) {
     if (!graceElapsed) {
       return <TimedPageLoader label="Restoring your session…" />;
     }
-    logAuthKickout("no user after authReady", "RequireAuth", { path: location.pathname });
+    logAuthKickout("no session after grace", "RequireAuth", { path: location.pathname });
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
     );
@@ -40,9 +40,10 @@ export function RequireAuth({ children }: { children: ReactElement }) {
 }
 
 export function RequireAdmin({ children }: { children: ReactElement }) {
-  const { user, session, role, effectiveRole, authReady, sessionReady } = useAuth();
+  const { user, session, role, effectiveRole, profileFields, hasGuardRow, hasMerchantRow, authReady, sessionReady } =
+    useAuth();
   const location = useLocation();
-  if (!sessionReady || !authReady) return <TimedPageLoader label="Checking admin session…" />;
+  if (!sessionReady) return <TimedPageLoader label="Checking admin session…" />;
   if (!hasAuthenticatedSession(user?.id, session?.user?.id)) {
     if (session?.user?.id && !user?.id) return <TimedPageLoader label="Restoring your session…" />;
     logAuthKickout("no user", "RequireAdmin", { path: location.pathname });
@@ -50,9 +51,11 @@ export function RequireAdmin({ children }: { children: ReactElement }) {
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
     );
   }
+  if (!authReady) return <TimedPageLoader label="Loading your account…" />;
   const adminRole = effectiveRole ?? role;
   if (adminRole !== "admin") {
-    return <Navigate to="/" replace />;
+    const dest = pathAfterSignIn(adminRole, hasGuardRow, hasMerchantRow, profileFields);
+    return <Navigate to={dest} replace />;
   }
   return children;
 }
@@ -61,7 +64,7 @@ export function RequireAdmin({ children }: { children: ReactElement }) {
 export function RequireGuard({ children }: { children: ReactElement }) {
   const { user, session, authReady, sessionReady, isGuardUser } = useAuth();
   const location = useLocation();
-  if (!sessionReady || !authReady) return <TimedPageLoader label="Loading guard hub…" />;
+  if (!sessionReady) return <TimedPageLoader label="Loading guard hub…" />;
   if (!hasAuthenticatedSession(user?.id, session?.user?.id)) {
     if (session?.user?.id && !user?.id) return <TimedPageLoader label="Restoring your session…" />;
     logAuthKickout("no user", "RequireGuard", { path: location.pathname });
@@ -69,6 +72,7 @@ export function RequireGuard({ children }: { children: ReactElement }) {
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
     );
   }
+  if (!authReady) return <TimedPageLoader label="Loading your account…" />;
   if (!isGuardUser) {
     return <Navigate to="/onboarding" replace state={loginRedirectState(location.pathname, location.search)} />;
   }
@@ -79,7 +83,7 @@ export function RequireGuard({ children }: { children: ReactElement }) {
 export function RequireMerchant({ children }: { children: ReactElement }) {
   const { user, session, authReady, sessionReady, isMerchantUser } = useAuth();
   const location = useLocation();
-  if (!sessionReady || !authReady) return <TimedPageLoader label="Loading venue hub…" />;
+  if (!sessionReady) return <TimedPageLoader label="Loading venue hub…" />;
   if (!hasAuthenticatedSession(user?.id, session?.user?.id)) {
     if (session?.user?.id && !user?.id) return <TimedPageLoader label="Restoring your session…" />;
     logAuthKickout("no user", "RequireMerchant", { path: location.pathname });
@@ -87,6 +91,7 @@ export function RequireMerchant({ children }: { children: ReactElement }) {
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
     );
   }
+  if (!authReady) return <TimedPageLoader label="Loading your account…" />;
   if (!isMerchantUser) {
     return <Navigate to="/merchant/setup" replace state={loginRedirectState(location.pathname, location.search)} />;
   }
