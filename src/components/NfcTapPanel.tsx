@@ -22,9 +22,12 @@ export function NfcTapPanel({ fallbackTipToken }: { fallbackTipToken?: string | 
   async function startScan() {
     setMessage(null);
     setScanning(true);
-    const result = await prepareNfcTap(onPayload);
-    setScanning(false);
-    setMessage(result.message);
+    try {
+      const result = await prepareNfcTap(onPayload);
+      setMessage(result.message);
+    } finally {
+      setScanning(false);
+    }
   }
 
   if (support === "unsupported") {

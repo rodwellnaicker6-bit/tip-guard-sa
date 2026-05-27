@@ -50,21 +50,23 @@ export default function Register() {
     }
 
     setSubmitting(true);
-    const { error: err, needsEmailVerification } = await signUp(
-      sanitizeEmail(email),
-      password,
-      sanitizeDisplayName(fullName),
-      role,
-    );
-    if (!mountedRef.current) return;
-    setSubmitting(false);
-    if (err) {
-      setError(err);
-      return;
-    }
-    if (needsEmailVerification) {
-      setStep("verify-email");
-      return;
+    try {
+      const { error: err, needsEmailVerification } = await signUp(
+        sanitizeEmail(email),
+        password,
+        sanitizeDisplayName(fullName),
+        role,
+      );
+      if (!mountedRef.current) return;
+      if (err) {
+        setError(err);
+        return;
+      }
+      if (needsEmailVerification) {
+        setStep("verify-email");
+      }
+    } finally {
+      if (mountedRef.current) setSubmitting(false);
     }
   }
 
@@ -72,11 +74,14 @@ export default function Register() {
     setResendMsg(null);
     setError(null);
     setResendBusy(true);
-    const { error: err } = await resendSignupEmail(email.trim());
-    if (!mountedRef.current) return;
-    setResendBusy(false);
-    if (err) setError(err);
-    else setResendMsg("Verification email sent again. Check your inbox and spam folder.");
+    try {
+      const { error: err } = await resendSignupEmail(email.trim());
+      if (!mountedRef.current) return;
+      if (err) setError(err);
+      else setResendMsg("Verification email sent again. Check your inbox and spam folder.");
+    } finally {
+      if (mountedRef.current) setResendBusy(false);
+    }
   }
 
   if (user?.id && showLoader) {

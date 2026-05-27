@@ -62,7 +62,7 @@ async function resolveTipTargetInner(trimmed: string): Promise<{
     const { data, error: rpcErr } = await withOperationTimeout(
       "qr",
       "resolve_tip_target",
-      supabase.rpc("resolve_tip_target", { p_token: trimmed }),
+      (signal) => supabase.rpc("resolve_tip_target", { p_token: trimmed }).abortSignal(signal),
       QR_RESOLVE_TIMEOUT_MS,
     );
     if (!rpcErr && data) {
@@ -91,7 +91,7 @@ async function resolveTipTargetInner(trimmed: string): Promise<{
     const { data: linkData, error: linkErr } = await withOperationTimeout(
       "qr",
       "resolve_tip_link",
-      supabase.rpc("resolve_tip_link", { p_token: trimmed }),
+      (signal) => supabase.rpc("resolve_tip_link", { p_token: trimmed }).abortSignal(signal),
       QR_RESOLVE_TIMEOUT_MS,
     );
     if (linkErr) {
@@ -111,11 +111,13 @@ async function resolveTipTargetInner(trimmed: string): Promise<{
     const { data: guard, error: gErr } = await withOperationTimeout(
       "qr",
       "guard lookup",
-      supabase
-        .from("guards")
-        .select("id, display_name, verified, merchant_id, location_id")
-        .eq("id", guardId)
-        .maybeSingle(),
+      (signal) =>
+        supabase
+          .from("guards")
+          .select("id, display_name, verified, merchant_id, location_id")
+          .eq("id", guardId)
+          .abortSignal(signal)
+          .maybeSingle(),
       QR_RESOLVE_TIMEOUT_MS,
     );
 

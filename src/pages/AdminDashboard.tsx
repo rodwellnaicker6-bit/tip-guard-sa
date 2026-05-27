@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { DASHBOARD_LOAD_TIMEOUT_MS, RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
 import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
 import PageLoader from "../components/PageLoader";
@@ -55,13 +56,22 @@ export default function AdminDashboard() {
   const [freezeSaving, setFreezeSaving] = useState(false);
 
   const loadMetrics = useCallback(async () => {
-    const { data, error: rpcErr } = await supabase.rpc("admin_dashboard_metrics");
-    if (!rpcErr && data && typeof data === "object" && !Array.isArray(data)) {
-      setMetrics(data as unknown as Metrics);
-      setError(null);
-      return;
+    try {
+      const { data, error: rpcErr } = await withOperationTimeout(
+        "rpc",
+        "admin_dashboard_metrics",
+        (signal) => supabase.rpc("admin_dashboard_metrics").abortSignal(signal),
+        RPC_DEFAULT_TIMEOUT_MS,
+      );
+      if (!rpcErr && data && typeof data === "object" && !Array.isArray(data)) {
+        setMetrics(data as unknown as Metrics);
+        setError(null);
+        return;
+      }
+      setError(rpcErr?.message ?? "Could not load metrics.");
+    } catch {
+      setError("Metrics load timed out.");
     }
-    setError(rpcErr?.message ?? "Could not load metrics.");
     const [{ count: gt }, { count: gv }] = await Promise.all([
       supabase.from("guards").select("id", { count: "exact", head: true }),
       supabase.from("guards").select("id", { count: "exact", head: true }).eq("verified", true),
@@ -99,12 +109,27 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      await Promise.all([loadMetrics(), loadPlatform(), loadLists()]);
+    const watchdog = window.setTimeout(() => {
       if (!cancelled) setReady(true);
+    }, DASHBOARD_LOAD_TIMEOUT_MS + 1_000);
+
+    (async () => {
+      try {
+        await withOperationTimeout(
+          "dashboard",
+          "admin dashboard load",
+          Promise.all([loadMetrics(), loadPlatform(), loadLists()]),
+          DASHBOARD_LOAD_TIMEOUT_MS,
+        );
+      } catch {
+        if (!cancelled) setError((prev) => prev ?? "Admin dashboard load timed out.");
+      } finally {
+        if (!cancelled) setReady(true);
+      }
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(watchdog);
     };
   }, [loadMetrics, loadPlatform, loadLists]);
 

@@ -8,6 +8,7 @@ import { hasPaystackPublicKey } from "../services/paymentService";
 import { resolveAuthUserId } from "../lib/resolveAuthUser";
 import { resolveTipTarget } from "../lib/resolveTipTarget";
 import { logAuth } from "../lib/authDebug";
+import { stabilLog } from "../lib/stabilLog";
 import { paystackEnvIssue } from "../lib/paystackEnv";
 import { CheckoutLoadingOverlay } from "../components/CheckoutLoadingOverlay";
 import type { CheckoutPhase } from "../payments/types";
@@ -86,12 +87,7 @@ function QrTipLandingContent() {
   }
 
   async function pay() {
-    console.info("[TipGuard:pay] Pay clicked (QR landing)", {
-      token,
-      guardId: target?.guard_id,
-      amountCents: cents,
-      signedIn: Boolean(user?.id),
-    });
+    stabilLog("pay", "Pay clicked (QR landing)", { hasTarget: !!target?.guard_id, hasAmount: cents != null });
     if (!target?.guard_id || cents == null) {
       setError("Choose a valid amount.");
       return;

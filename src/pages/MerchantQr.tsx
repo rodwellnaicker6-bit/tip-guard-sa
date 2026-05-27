@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import QRCode from "qrcode";
+import { DASHBOARD_LOAD_TIMEOUT_MS, RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import { useToast } from "../context/useToast";
@@ -53,44 +54,76 @@ export default function MerchantQr() {
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
+    const watchdog = window.setTimeout(() => {
+      if (!cancelled) {
+        setLoading(false);
+        setError((prev) => prev ?? "QR hub load timed out. Please try again.");
+      }
+    }, DASHBOARD_LOAD_TIMEOUT_MS + 1_000);
+
     void (async () => {
       setLoading(true);
       setError(null);
-      const { data: m, error: mErr } = await supabase
-        .from("merchants")
-        .select("id, business_name")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (cancelled) return;
-      if (mErr || !m?.id) {
-        setError(mErr?.message ?? "No venue profile found.");
-        setLoading(false);
-        return;
+      try {
+        await withOperationTimeout(
+          "dashboard",
+          "merchant qr load",
+          async (signal) => {
+            const { data: m, error: mErr } = await supabase
+              .from("merchants")
+              .select("id, business_name")
+              .eq("user_id", user.id)
+              .abortSignal(signal)
+              .maybeSingle();
+            if (cancelled) return;
+            if (mErr || !m?.id) {
+              setError(mErr?.message ?? "No venue profile found.");
+              return;
+            }
+            setMerchantId(m.id);
+            setBusinessName(m.business_name ?? "Venue");
+
+            const [qrRes, locRes, guardRes] = await Promise.all([
+              supabase
+                .from("qr_codes")
+                .select(
+                  "id, code_token, label, qr_type, location_id, guard_id, default_amount_cents, scan_count, revoked_at, expires_at",
+                )
+                .eq("merchant_id", m.id)
+                .order("created_at", { ascending: false })
+                .abortSignal(signal),
+              supabase
+                .from("merchant_locations")
+                .select("id, name")
+                .eq("merchant_id", m.id)
+                .eq("active", true)
+                .order("name")
+                .abortSignal(signal),
+              supabase
+                .from("guards")
+                .select("id, display_name")
+                .eq("merchant_id", m.id)
+                .order("display_name")
+                .abortSignal(signal),
+            ]);
+
+            if (cancelled) return;
+            if (qrRes.error) setError(qrRes.error.message);
+            else setRows((qrRes.data as QrRow[]) ?? []);
+            setLocations((locRes.data as LocationOpt[]) ?? []);
+            setGuards((guardRes.data as GuardOpt[]) ?? []);
+          },
+          DASHBOARD_LOAD_TIMEOUT_MS,
+        );
+      } catch {
+        if (!cancelled) setError("QR hub load timed out. Please try again.");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setMerchantId(m.id);
-      setBusinessName(m.business_name ?? "Venue");
-
-      const [qrRes, locRes, guardRes] = await Promise.all([
-        supabase
-          .from("qr_codes")
-          .select(
-            "id, code_token, label, qr_type, location_id, guard_id, default_amount_cents, scan_count, revoked_at, expires_at",
-          )
-          .eq("merchant_id", m.id)
-          .order("created_at", { ascending: false }),
-        supabase.from("merchant_locations").select("id, name").eq("merchant_id", m.id).eq("active", true).order("name"),
-        supabase.from("guards").select("id, display_name").eq("merchant_id", m.id).order("display_name"),
-      ]);
-
-      if (cancelled) return;
-      if (qrRes.error) setError(qrRes.error.message);
-      else setRows((qrRes.data as QrRow[]) ?? []);
-      setLocations((locRes.data as LocationOpt[]) ?? []);
-      setGuards((guardRes.data as GuardOpt[]) ?? []);
-      setLoading(false);
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(watchdog);
     };
   }, [user, reload]);
 
@@ -98,77 +131,105 @@ export default function MerchantQr() {
     if (!merchantId) return;
     setBusy(true);
     setError(null);
-    const token = `tg_${crypto.randomUUID().replace(/-/g, "")}`;
-    const label = newLabel.trim() ? sanitizeDisplayName(newLabel) : "Venue QR";
-    const amountCents =
-      newType === "dynamic_amount" && newAmountRands.trim()
-        ? Math.round(parseFloat(newAmountRands) * 100)
-        : null;
+    try {
+      const token = `tg_${crypto.randomUUID().replace(/-/g, "")}`;
+      const label = newLabel.trim() ? sanitizeDisplayName(newLabel) : "Venue QR";
+      const amountCents =
+        newType === "dynamic_amount" && newAmountRands.trim()
+          ? Math.round(parseFloat(newAmountRands) * 100)
+          : null;
 
-    const insert: Record<string, unknown> = {
-      code_token: token,
-      label,
-      qr_type: newType,
-      created_by: user?.id ?? null,
-    };
+      const insert: Record<string, unknown> = {
+        code_token: token,
+        label,
+        qr_type: newType,
+        created_by: user?.id ?? null,
+      };
 
-    if (newType === "merchant_permanent") {
-      insert.merchant_id = merchantId;
-      insert.guard_id = null;
-    } else if (newType === "guard_staff" || newType === "dynamic_amount") {
-      if (!newGuardId) {
-        setBusy(false);
-        setError("Select a guard for staff or amount QR codes.");
+      if (newType === "merchant_permanent") {
+        insert.merchant_id = merchantId;
+        insert.guard_id = null;
+      } else if (newType === "guard_staff" || newType === "dynamic_amount") {
+        if (!newGuardId) {
+          setError("Select a guard for staff or amount QR codes.");
+          return;
+        }
+        insert.merchant_id = merchantId;
+        insert.guard_id = newGuardId;
+      } else if (newType === "location_table") {
+        insert.merchant_id = merchantId;
+        insert.guard_id = newGuardId || guards[0]?.id || null;
+        if (newLocationId) insert.location_id = newLocationId;
+        if (!insert.guard_id && !newLocationId) {
+          setError("Add a location or guard first.");
+          return;
+        }
+      }
+
+      if (amountCents != null && amountCents > 0) insert.default_amount_cents = amountCents;
+
+      const { error: insErr } = await withOperationTimeout(
+        "rpc",
+        "create qr code",
+        supabase.from("qr_codes").insert(insert),
+        RPC_DEFAULT_TIMEOUT_MS,
+      );
+      if (insErr) {
+        setError(insErr.message);
         return;
       }
-      insert.merchant_id = merchantId;
-      insert.guard_id = newGuardId;
-    } else if (newType === "location_table") {
-      insert.merchant_id = merchantId;
-      insert.guard_id = newGuardId || guards[0]?.id || null;
-      if (newLocationId) insert.location_id = newLocationId;
-      if (!insert.guard_id && !newLocationId) {
-        setBusy(false);
-        setError("Add a location or guard first.");
-        return;
-      }
+      toast.success("QR code created.");
+      setNewLabel("");
+      setReload((n) => n + 1);
+    } catch {
+      setError("QR creation timed out. Please try again.");
+    } finally {
+      setBusy(false);
     }
-
-    if (amountCents != null && amountCents > 0) insert.default_amount_cents = amountCents;
-
-    const { error: insErr } = await supabase.from("qr_codes").insert(insert);
-    setBusy(false);
-    if (insErr) {
-      setError(insErr.message);
-      return;
-    }
-    toast.success("QR code created.");
-    setNewLabel("");
-    setReload((n) => n + 1);
   }
 
   async function revokeQr(id: string) {
     setBusy(true);
-    const { error: upErr } = await supabase.from("qr_codes").update({ revoked_at: new Date().toISOString() }).eq("id", id);
-    setBusy(false);
-    if (upErr) toast.error(upErr.message);
-    else {
-      toast.success("QR revoked.");
-      setReload((n) => n + 1);
+    try {
+      const { error: upErr } = await withOperationTimeout(
+        "rpc",
+        "revoke qr code",
+        supabase.from("qr_codes").update({ revoked_at: new Date().toISOString() }).eq("id", id),
+        RPC_DEFAULT_TIMEOUT_MS,
+      );
+      if (upErr) toast.error(upErr.message);
+      else {
+        toast.success("QR revoked.");
+        setReload((n) => n + 1);
+      }
+    } catch {
+      toast.error("Revoke timed out. Please try again.");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function regenerateQr(id: string) {
     setBusy(true);
-    const { data, error: rpcErr } = await supabase.rpc("regenerate_qr_code_token", { p_qr_id: id });
-    setBusy(false);
-    if (rpcErr) {
-      toast.error(rpcErr.message);
-      return;
+    try {
+      const { data, error: rpcErr } = await withOperationTimeout(
+        "rpc",
+        "regenerate_qr_code_token",
+        (signal) => supabase.rpc("regenerate_qr_code_token", { p_qr_id: id }).abortSignal(signal),
+        RPC_DEFAULT_TIMEOUT_MS,
+      );
+      if (rpcErr) {
+        toast.error(rpcErr.message);
+        return;
+      }
+      const row = Array.isArray(data) ? data[0] : data;
+      toast.success(`New token: ${(row as { code_token?: string })?.code_token ?? "created"}`);
+      setReload((n) => n + 1);
+    } catch {
+      toast.error("Regenerate timed out. Please try again.");
+    } finally {
+      setBusy(false);
     }
-    const row = Array.isArray(data) ? data[0] : data;
-    toast.success(`New token: ${(row as { code_token?: string })?.code_token ?? "created"}`);
-    setReload((n) => n + 1);
   }
 
   async function printQr(row: QrRow) {
