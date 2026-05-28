@@ -130,4 +130,7 @@ Logged in production console (no user IDs): `venue merchants select`, `guard hom
 
 ## Deploy record
 
-*(Updated after commit/deploy)*
+- **Commit:** `3bc02ac` — `fix(runtime): eliminate async hangs and poll re-loop`
+- **Vercel project:** `tip-guard-sa`
+- **Production URL:** https://tipguardsa.co.za
+- **Deploy command:** `npx vercel deploy --project tip-guard-sa --prod --force`

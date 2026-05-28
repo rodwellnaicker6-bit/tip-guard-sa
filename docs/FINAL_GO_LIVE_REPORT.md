@@ -1,13 +1,25 @@
 # TipGuard SA — Final Go-Live Report
 
-**Last verified:** 2026-05-25  
+**Last verified:** 2026-05-26  
 **Production URL:** https://tipguardsa.co.za  
 **Vercel alias:** https://tipguard-sa.vercel.app  
-**Git commit (prod):** `d6dd073`  
+**Git commit (prod):** `c7dbe369`  
 **Supabase project:** `fyjmujhlqpvfryelnfum`  
 **Paystack mode (prod):** `test` (`/api/debug-env`)
 
 ---
+
+## Objective PASS / FAIL
+
+| Objective | Result | Notes |
+|---|---|---|
+| 1) No null/undefined crashes + fallback UI | **PASS** | Lint/build + production smoke passed; hardening added to auth/payment/QR boundaries |
+| 2) Signed-in prod E2E (signup → onboarding → merchant → QR → pay → success → history) | **FAIL (manual)** | Payment + history E2E not executed here; Playwright QR spec did not finish cleanly |
+| 3) NFC production prep (unsupported fallback; QR fallback always works) | **PASS** | Unsupported-browser fallback now opens the current generated QR tip token; manual Android validation pending |
+| 4) Paystack LIVE cutover prep (keep test until confirmation) | **PARTIAL** | Paystack test mode verified + webhook HMAC verified; payout routing not end-to-end exercised |
+| 5) Security/RLS cleanup (SECURITY DEFINER + anon protections) | **PARTIAL** | Key anon/RPC protections verified via `verify:supabase`; remaining advisor items still open |
+| 6) Final launch checks (responsive, auth refresh, deep links, retry/offline fail states) | **PARTIAL** | Code paths + smoke passed; device/browser verification and full payment-retry scenario remain manual |
+
 
 ## 1. Production URL
 
@@ -75,7 +87,7 @@ npm run smoke:production
 |---------|--------|
 | **Paystack still in test mode** | Apply [LIVE_KEY_CUTOVER.md](./LIVE_KEY_CUTOVER.md) when compliance approves (`pk_live_` / `sk_live_` only in Supabase + Vercel) |
 | **Manual signed-in E2E** | No substitute for human run of checklist §2 |
-| **Playwright not installed in CI/agent** | `npx playwright install && npm run test:e2e` locally |
+| **Playwright E2E incomplete** | QR spec did not complete cleanly in this environment; manual E2E required |
 
 ### Security advisors (Supabase)
 
@@ -103,7 +115,7 @@ If test keys were pasted in chat, **rotate in Paystack Dashboard** and update Su
 
 ### Vercel (fastest — frontend only)
 
-1. Vercel Dashboard → **tipguard-sa** → **Deployments**
+1. Vercel Dashboard → **tip-guard-sa** → **Deployments**
 2. Select last known-good deployment (note `gitSha` from `/api/debug-env`)
 3. **⋯** → **Promote to Production**
 
@@ -158,7 +170,7 @@ Migration `20260626170000_security_hardening_rls.sql` enables RLS and revokes an
 | V6 | `npm run smoke:production` | **PASS** | |
 | V7 | `/api/debug-env` | **PASS** | `mode: test`, `hasPaystackPublicKey: true`, no secrets in body |
 | V8 | Route HTTP 200 | **PASS** | `/`, `/tip/demo-staging-qr-01`, `/merchant`, `/onboarding` |
-| V9 | Prod gitSha match | **PASS** | `d6dd073` on tipguardsa.co.za |
+| V9 | Prod gitSha match | **PASS** | `c7dbe369` on tipguardsa.co.za |
 | V10 | Merchant onboarding (code) | **PASS** | `Onboarding.tsx` → `save_onboarding_role` RPC + profile steps → `pathAfterSignIn` |
 | V11 | Merchant onboarding (E2E) | **MANUAL** | Operator checklist §2 |
 | V12 | QR resolve (code) | **PASS** | `resolveTipTarget.ts` RPC + fallback |
@@ -170,7 +182,7 @@ Migration `20260626170000_security_hardening_rls.sql` enables RLS and revokes an
 | V18 | Payout (E2E) | **MANUAL** | Guard request + admin approve |
 | V19 | Mobile homepage (browser MCP) | **PASS** | 390×844 viewport — Sign in, hero visible |
 | V20 | Mobile QR page (browser MCP) | **MANUAL** | MCP showed empty/black before hydration; HTTP 200 — verify on real device |
-| V21 | Playwright E2E | **SKIP** | Browsers not installed (`npx playwright install`) |
+| V21 | Playwright E2E | **FAIL (incomplete)** | QR route spec did not finish cleanly (environment/hydration) |
 | V22 | Paystack test secrets configured | **PASS** | Supabase `PAYSTACK_SECRET_KEY` + Vercel vars (masked `pk_test_***` / `sk_test_***`) |
 | V23 | Paystack LIVE cutover | **NOT DONE** | By design until `pk_live_` / `sk_live_` supplied |
 | V24 | Security RLS migration | **PASS** | `20260626170000` applied; anon revoked on sensitive RPCs |

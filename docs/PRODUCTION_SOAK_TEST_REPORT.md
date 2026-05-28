@@ -73,4 +73,5 @@ Production gates and RPC soak complete with zero errors and sub-second p95 laten
 
 ## Deploy
 
-*(Updated after commit/push)*
+- **Commit:** `346edd8` — `perf(production): queue RPCs, split admin, gate logs`
+- **Production:** https://tipguardsa.co.za

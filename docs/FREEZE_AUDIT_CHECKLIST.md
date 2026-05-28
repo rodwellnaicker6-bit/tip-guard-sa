@@ -149,5 +149,6 @@ Legend: **PASS** = timeout + loading recovery verified | **FIX** = gap found and
 
 ## Deploy
 
-- **Commit:** *(see git after push)*
+- **Commit:** [`797ce16`](https://github.com/rodwellnaicker6-bit/tip-guard-sa/commit/797ce16) — `fix(freeze): harden auth, admin, QR, and history loads`
+- **Deployment:** `dpl_6p9wpCzLRizucTd3RRTLXNBHM6hE`
 - **URL:** https://tipguardsa.co.za
