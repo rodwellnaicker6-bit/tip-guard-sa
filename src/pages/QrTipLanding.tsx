@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { centsFromRandInput, zarFromCents } from "../lib/money";
 import { useAuth } from "../context/useAuth";
@@ -20,7 +20,7 @@ import { TrustRibbon } from "../components/fintech/TrustRibbon";
 import { Skeleton } from "../components/Skeleton";
 import { FetchError } from "../components/FetchError";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
-import { EmergencyErrorBoundary } from "../lib/emergencySafeMode";
+import { recordError } from "../lib/errorTelemetry";
 
 const PRESETS = [10, 20, 50] as const;
 const QR_LOAD_TIMEOUT_MS = 10_000;
@@ -49,6 +49,7 @@ function QrTipLandingContent() {
   const [checkoutPhase, setCheckoutPhase] = useState<CheckoutPhase>("idle");
   const [reload, setReload] = useState(0);
   const online = useOnlineStatus();
+  const payInFlightRef = useRef(false);
   const optimisticName = useMemo(() => readCachedTipDisplayName(token), [token]);
   const slowLoad = useUiWatchdog(loading);
 
@@ -109,6 +110,7 @@ function QrTipLandingContent() {
   }
 
   async function pay() {
+    if (payInFlightRef.current) return;
     stabilLog("pay", "Pay clicked (QR landing)", { hasTarget: !!target?.guard_id, hasAmount: cents != null });
     if (!target?.guard_id || cents == null) {
       setError("Choose a valid amount.");
@@ -133,6 +135,7 @@ function QrTipLandingContent() {
       setError(payIssue ?? "Payments are not configured on this deployment.");
       return;
     }
+    payInFlightRef.current = true;
     setPaying(true);
     setError(null);
     try {
@@ -142,6 +145,11 @@ function QrTipLandingContent() {
         sourceLinkToken: token,
         amountCents: cents,
         navigate,
+        onRequiresAuth: () => {
+          releaseTipCheckoutLock();
+          sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
+          navigate("/login", { replace: true });
+        },
         onError: (msg) => {
           releaseTipCheckoutLock();
           setError(msg);
@@ -152,7 +160,13 @@ function QrTipLandingContent() {
         },
         onCheckoutPhase: setCheckoutPhase,
       });
+    } catch (e) {
+      releaseTipCheckoutLock();
+      const msg = e instanceof Error ? e.message : "Payment could not start.";
+      recordError("qr_tip_checkout", msg, { code: "exception" });
+      setError("Something went wrong starting checkout. Please try again.");
     } finally {
+      payInFlightRef.current = false;
       setPaying(false);
     }
   }
@@ -233,7 +247,7 @@ function QrTipLandingContent() {
       <header className="fx-fade-up mb-4 text-center">
         <p className="text-xs font-bold uppercase tracking-wider text-amber-400/90">TipGuard SA</p>
         <h1 className="mt-1 text-2xl font-black text-white">Tip {target.guard_display_name ?? "Guard"}</h1>
-        <p className="mt-1 text-xs text-slate-500">{target.scan_count ?? 0} scans · ZAR only</p>
+        <p className="mt-1 text-xs text-slate-500">{(target?.scan_count ?? 0) || 0} scans · ZAR only</p>
       </header>
 
       <TrustRibbon />
@@ -314,10 +328,6 @@ function PageWrap({ children }: { children: ReactNode }) {
 
 export default function QrTipLanding() {
   const { token } = useParams<{ token: string }>();
-  return (
-    <EmergencyErrorBoundary>
-      <QrTipLandingContent key={token ?? "missing"} />
-    </EmergencyErrorBoundary>
-  );
+  return <QrTipLandingContent key={token ?? "missing"} />;
 }
 

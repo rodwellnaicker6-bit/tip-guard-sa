@@ -1,8 +1,8 @@
 import { devInfo } from "./prodLog";
 
-/** Production-safe one-line diagnostics (auth, payment, QR, dashboards). */
+/** Production-safe one-line diagnostics (auth, payment, QR, NFC, dashboards). */
 export function stabilLog(
-  area: "auth" | "pay" | "qr" | "hub" | "boot",
+  area: "auth" | "pay" | "qr" | "nfc" | "hub" | "boot",
   message: string,
   extra?: Record<string, unknown>,
 ): void {

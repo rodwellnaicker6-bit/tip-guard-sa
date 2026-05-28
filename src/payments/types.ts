@@ -26,6 +26,8 @@ export type TipCheckoutContext = {
   onError: (message: string) => void;
   onCheckoutDismissed?: () => void;
   onCheckoutPhase?: (phase: CheckoutPhase) => void;
+  /** Paystack / edge rejected JWT — redirect to login when wired */
+  onRequiresAuth?: () => void;
 };
 
 export type PaymentAdapter = {

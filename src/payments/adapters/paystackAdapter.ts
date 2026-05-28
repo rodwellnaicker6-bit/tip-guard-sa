@@ -18,6 +18,7 @@ export const paystackAdapter: PaymentAdapter = {
       onError: ctx.onError,
       onCheckoutDismissed: ctx.onCheckoutDismissed,
       onCheckoutPhase: ctx.onCheckoutPhase,
+      onRequiresAuth: ctx.onRequiresAuth,
     });
   },
   async startWalletTopUp(ctx) {
@@ -27,6 +28,7 @@ export const paystackAdapter: PaymentAdapter = {
       onError: ctx.onError,
       onCheckoutDismissed: ctx.onCheckoutDismissed,
       onCheckoutPhase: ctx.onCheckoutPhase,
+      onRequiresAuth: ctx.onRequiresAuth,
     });
   },
 };

@@ -6,5 +6,6 @@ export {
   payTipWithPaystack,
   payWalletTopUpWithPaystack,
   type PaystackInitResponse,
+  type PaystackInitResult,
 } from "./paystackCore";
 export { startTipCheckout, startWalletTopUpCheckout, listPaymentAdapters, getDefaultTipGateway } from "../payments";

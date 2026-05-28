@@ -3,6 +3,9 @@
  * Limited to Chromium + HTTPS + user gesture. No RFID terminology.
  */
 
+import { recordError } from "./errorTelemetry";
+import { stabilLog } from "./stabilLog";
+
 export type NfcTagKind = "tap_to_tip" | "merchant_card" | "staff_badge" | "payment_confirm";
 
 export type NfcPayload = {
@@ -64,12 +67,14 @@ export async function prepareNfcTap(
   onRead?: (payload: NfcPayload) => void,
 ): Promise<{ ok: boolean; message: string }> {
   if (!hasNdefReader()) {
+    stabilLog("nfc", "prepareNfcTap unsupported (no NDEFReader)");
     return {
       ok: false,
       message: "NFC is not supported here — use your QR code (works on iPhone and Android).",
     };
   }
   try {
+    stabilLog("nfc", "prepareNfcTap scan start");
     const Reader = (
       window as unknown as {
         NDEFReader: new () => {
@@ -88,8 +93,12 @@ export async function prepareNfcTap(
       }
     });
     await reader.scan();
+    stabilLog("nfc", "prepareNfcTap scan listening");
     return { ok: true, message: "Hold your phone near the NFC tag…" };
   } catch (e) {
-    return { ok: false, message: (e as Error).message ?? "NFC unavailable" };
+    const message = (e as Error).message ?? "NFC unavailable";
+    stabilLog("nfc", "prepareNfcTap scan failed", { message });
+    recordError("nfc_scan", message, { code: "nfc_prepare" });
+    return { ok: false, message };
   }
 }

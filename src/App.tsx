@@ -136,50 +136,75 @@ function AppRoutes() {
           </Lazy>
         }
       />
-      <Route path="/t/:token" element={<TipResolve />} />
+      <Route
+        path="/t/:token"
+        element={
+          <ErrorBoundary>
+            <EmergencyErrorBoundary>
+              <TipResolve />
+            </EmergencyErrorBoundary>
+          </ErrorBoundary>
+        }
+      />
       <Route
         path="/tip/:token"
         element={
-          <Lazy>
-            <QrTipLanding />
-          </Lazy>
+          <ErrorBoundary>
+            <EmergencyErrorBoundary>
+              <Lazy>
+                <QrTipLanding />
+              </Lazy>
+            </EmergencyErrorBoundary>
+          </ErrorBoundary>
         }
       />
       <Route
         path="/qr/:token"
         element={
-          <Lazy>
-            <QrTipLanding />
-          </Lazy>
+          <ErrorBoundary>
+            <EmergencyErrorBoundary>
+              <Lazy>
+                <QrTipLanding />
+              </Lazy>
+            </EmergencyErrorBoundary>
+          </ErrorBoundary>
         }
       />
       <Route
         path="/payment/success"
         element={
-          <EmergencyErrorBoundary>
-            <Lazy>
-              <PaymentSuccess />
-            </Lazy>
-          </EmergencyErrorBoundary>
+          <ErrorBoundary>
+            <EmergencyErrorBoundary>
+              <Lazy>
+                <PaymentSuccess />
+              </Lazy>
+            </EmergencyErrorBoundary>
+          </ErrorBoundary>
         }
       />
       <Route
         path="/payment/failure"
         element={
-          <EmergencyErrorBoundary>
-            <Lazy>
-              <PaymentFailure />
-            </Lazy>
-          </EmergencyErrorBoundary>
+          <ErrorBoundary>
+            <EmergencyErrorBoundary>
+              <Lazy>
+                <PaymentFailure />
+              </Lazy>
+            </EmergencyErrorBoundary>
+          </ErrorBoundary>
         }
       />
       <Route
         path="/customer/tip/:guardId"
         element={
           <RequireAuth>
-            <Lazy>
-              <TipCheckout />
-            </Lazy>
+            <ErrorBoundary>
+              <EmergencyErrorBoundary>
+                <Lazy>
+                  <TipCheckout />
+                </Lazy>
+              </EmergencyErrorBoundary>
+            </ErrorBoundary>
           </RequireAuth>
         }
       />

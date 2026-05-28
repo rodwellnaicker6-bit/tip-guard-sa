@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { recordError } from "./errorTelemetry";
 
 /** Minimal visible fallback when a route shell crashes (emergency stability). */
 export function EmergencySafeFallback({ onRetry }: { onRetry?: () => void }) {
@@ -45,6 +46,7 @@ export class EmergencyErrorBoundary extends Component<BoundaryProps, BoundarySta
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    recordError("emergency_boundary", error.message, { code: "react" });
     console.error("[TipGuard] EmergencyErrorBoundary", error.message, info.componentStack);
   }
 

@@ -8,7 +8,9 @@ import {
   logPayInvokeStart,
   logPayInvokeSuccess,
   parseFunctionsInvokeError,
+  type InvokeErrorDetail,
 } from "../lib/edgeFunctionInvoke";
+import { recordError } from "../lib/errorTelemetry";
 
 /** Bundle marker for prod grep (edgeFunctionInvoke error parser). */
 const __paymentParserBundle = PAYMENT_PARSER_MARKER;
@@ -93,6 +95,22 @@ export type PaystackInitResponse = {
   email: string;
 };
 
+export type PaystackInitResult = {
+  data: PaystackInitResponse | null;
+  errorMessage: string | null;
+  /** Session or edge rejected the JWT — redirect to login when handler is wired */
+  requiresSignIn?: boolean;
+};
+
+function invokeSuggestsSignIn(detail: InvokeErrorDetail): boolean {
+  const st = detail.status;
+  if (st === 401 || st === 403) return true;
+  const m = (detail.message ?? "").toLowerCase();
+  if (m.includes("jwt") && (m.includes("expired") || m.includes("invalid"))) return true;
+  if (m.includes("not authorized") || m.includes("unauthorized")) return true;
+  return false;
+}
+
 export function hasPaystackPublicKey(): boolean {
   return isPaystackConfigured();
 }
@@ -103,7 +121,7 @@ export async function initializePaystackTransaction(body: {
   amount_cents: number;
   qr_code_id?: string;
   source_link_token?: string;
-}): Promise<{ data: PaystackInitResponse | null; errorMessage: string | null }> {
+}): Promise<PaystackInitResult> {
   if (!isSupabaseBrowserConfigured) {
     console.error("[TipGuard:pay] Supabase not configured — cannot invoke paystack-initialize", {
       url: edgeFunctionUrl("paystack-initialize"),
@@ -116,7 +134,8 @@ export async function initializePaystackTransaction(body: {
 
   const session = await ensurePaymentAccessToken();
   if (!session.ok) {
-    return { data: null, errorMessage: session.message };
+    const requiresSignIn = session.code === "not_signed_in" || session.code === "session_expired";
+    return { data: null, errorMessage: session.message, requiresSignIn };
   }
 
   const device_fingerprint = await getDeviceFingerprintHash();
@@ -142,19 +161,21 @@ export async function initializePaystackTransaction(body: {
   if (error) {
     const detail = await parseFunctionsInvokeError(error);
     logPayInvokeFailure("paystack-initialize", detail, Date.now() - started);
-    return { data: null, errorMessage: detail.message };
+    const requiresSignIn = invokeSuggestsSignIn(detail);
+    return { data: null, errorMessage: detail.message, requiresSignIn };
   }
 
   const responsePayload = data as PaystackInitResponse & { error?: string; code?: string };
   if (responsePayload?.error) {
-    const detail = {
+    const detail: InvokeErrorDetail = {
       message: responsePayload.error,
       code: responsePayload.code,
       status: 200,
       bodySnippet: JSON.stringify(responsePayload).slice(0, 500),
     };
     logPayInvokeFailure("paystack-initialize", detail, Date.now() - started);
-    return { data: null, errorMessage: responsePayload.error };
+    const requiresSignIn = invokeSuggestsSignIn(detail);
+    return { data: null, errorMessage: responsePayload.error, requiresSignIn };
   }
   if (!responsePayload?.access_code || !responsePayload?.reference) {
     logPayInvokeFailure(
@@ -185,6 +206,8 @@ export async function payTipWithPaystack(opts: {
   onError: (msg: string) => void;
   onCheckoutDismissed?: () => void;
   onCheckoutPhase?: (phase: import("../payments/types").CheckoutPhase) => void;
+  /** When session/JWT is rejected — e.g. redirect to login with return path */
+  onRequiresAuth?: () => void;
 }): Promise<void> {
   if (!opts.guardId?.trim()) {
     opts.onError("Tip target is missing. Reload the page and try again.");
@@ -218,13 +241,21 @@ export async function payTipWithPaystack(opts: {
     setPhase(opts, "initializing");
     logFlow("pay", "tip checkout initializing");
 
-    const { data, errorMessage } = await initializePaystackTransaction({
+    const { data, errorMessage, requiresSignIn } = await initializePaystackTransaction({
       kind: "tip",
       guard_id: opts.guardId,
       amount_cents: opts.amountCents,
       source_link_token: opts.sourceLinkToken,
     });
+    if (requiresSignIn) {
+      releaseTipCheckoutLock();
+      setPhase(opts, "idle");
+      if (opts.onRequiresAuth) opts.onRequiresAuth();
+      else opts.onError(errorMessage ?? "Please sign in to continue.");
+      return;
+    }
     if (errorMessage || !data) {
+      recordError("pay_tip_init", errorMessage ?? "unknown", { code: "paystack_init" });
       opts.onError(errorMessage ?? "Could not start checkout");
       return;
     }
@@ -252,6 +283,7 @@ export async function payTipWithPaystack(opts: {
       },
     });
     if (!opened.ok) {
+      recordError("pay_tip_inline", opened.message, { code: "paystack_pop" });
       opts.onError(opened.message);
       return;
     }
@@ -259,6 +291,7 @@ export async function payTipWithPaystack(opts: {
     scheduleCheckoutLockWatchdog(() => tipCheckoutInFlight, tipCheckoutLockIsStale, releaseTipCheckoutLock, opts);
   } catch (e) {
     console.error("[TipGuard:pay] tip checkout failed", e);
+    recordError("pay_tip_checkout", e instanceof Error ? e.message : String(e), { code: "exception" });
     opts.onError(e instanceof Error ? e.message : "Could not start checkout");
   } finally {
     if (!paystackModalOpen) {
@@ -274,6 +307,7 @@ export async function payWalletTopUpWithPaystack(opts: {
   onError: (msg: string) => void;
   onCheckoutDismissed?: () => void;
   onCheckoutPhase?: (phase: CheckoutPhase) => void;
+  onRequiresAuth?: () => void;
 }): Promise<void> {
   console.info("[TipGuard:pay] wallet top-up start", {
     amountCents: opts.amountCents,
@@ -294,17 +328,20 @@ export async function payWalletTopUpWithPaystack(opts: {
   let paystackModalOpen = false;
   try {
     setPhase(opts, "initializing");
-    const session = await ensurePaymentAccessToken();
-    if (!session.ok) {
-      opts.onError(session.message);
-      return;
-    }
 
-    const { data, errorMessage } = await initializePaystackTransaction({
+    const { data, errorMessage, requiresSignIn } = await initializePaystackTransaction({
       kind: "wallet_topup",
       amount_cents: opts.amountCents,
     });
+    if (requiresSignIn) {
+      releaseWalletTopUpLock();
+      setPhase(opts, "idle");
+      if (opts.onRequiresAuth) opts.onRequiresAuth();
+      else opts.onError(errorMessage ?? "Please sign in to continue.");
+      return;
+    }
     if (errorMessage || !data) {
+      recordError("pay_wallet_init", errorMessage ?? "unknown", { code: "paystack_init" });
       opts.onError(errorMessage ?? "Could not start deposit");
       return;
     }
@@ -330,6 +367,7 @@ export async function payWalletTopUpWithPaystack(opts: {
       },
     });
     if (!opened.ok) {
+      recordError("pay_wallet_inline", opened.message, { code: "paystack_pop" });
       opts.onError(opened.message);
       return;
     }
@@ -337,6 +375,7 @@ export async function payWalletTopUpWithPaystack(opts: {
     scheduleCheckoutLockWatchdog(() => walletTopUpInFlight, walletTopUpLockIsStale, releaseWalletTopUpLock, opts);
   } catch (e) {
     console.error("[TipGuard:pay] wallet top-up failed", e);
+    recordError("pay_wallet_checkout", e instanceof Error ? e.message : String(e), { code: "exception" });
     opts.onError(e instanceof Error ? e.message : "Could not start deposit");
   } finally {
     if (!paystackModalOpen) {

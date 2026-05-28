@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import QRCode from "qrcode";
 import { supabase } from "../lib/supabase";
+import { recordError } from "../lib/errorTelemetry";
 import { useAuth } from "../context/useAuth";
 import { useToast } from "../context/useToast";
 import { downloadDataUrl, renderQrPrintCard } from "../lib/qrBranding";
@@ -88,9 +89,17 @@ export default function GuardQR() {
         cancelled = true;
       };
     }
-    void QRCode.toDataURL(tipUrl, { margin: 2, width: 280, color: { dark: "#0f172a", light: "#fbbf24" } }).then((url) => {
-      if (!cancelled) setQrDataUrl(url);
-    });
+    void QRCode.toDataURL(tipUrl, { margin: 2, width: 280, color: { dark: "#0f172a", light: "#fbbf24" } })
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          const msg = e instanceof Error ? e.message : "QR render failed";
+          setError(msg);
+          recordError("guard_qr_render", msg, { code: "qrcode" });
+        }
+      });
     return () => {
       cancelled = true;
     };

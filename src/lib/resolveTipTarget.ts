@@ -3,6 +3,7 @@ import { perfMark } from "./perfTelemetry";
 import { supabase } from "./supabase";
 import { unwrapRpcSingle } from "./rpcData";
 import { stabilLog } from "./stabilLog";
+import { recordError } from "./errorTelemetry";
 
 export type ResolvedTipTarget = {
   guard_id: string;
@@ -238,6 +239,8 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       return stale;
     }
     const msg = e instanceof Error ? e.message : "Could not load this tip link.";
+    stabilLog("qr", "resolveTipTarget failed", { message: msg });
+    recordError("qr_resolve", msg, { code: "resolve_tip_target" });
     console.error("[TipGuard:qr] resolveTipTarget failed", e);
     return { target: null, error: msg };
   } finally {

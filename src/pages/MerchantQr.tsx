@@ -9,6 +9,7 @@ import PageLoader from "../components/PageLoader";
 import { FetchError } from "../components/FetchError";
 import { downloadDataUrl, renderQrPrintCard } from "../lib/qrBranding";
 import { sanitizeDisplayName } from "../lib/sanitize";
+import { recordError } from "../lib/errorTelemetry";
 
 type QrRow = {
   id: string;
@@ -381,8 +382,21 @@ function QrListItem({
   }`;
 
   useEffect(() => {
+    let cancelled = false;
     const url = `${window.location.origin}${tipPath}`;
-    void QRCode.toDataURL(url, { width: 120, margin: 1 }).then(setPreview);
+    void QRCode.toDataURL(url, { width: 120, margin: 1 })
+      .then((dataUrl) => {
+        if (!cancelled) setPreview(dataUrl);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          const msg = e instanceof Error ? e.message : "QR preview failed";
+          recordError("merchant_qr_preview", msg, { code: "qrcode" });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [tipPath]);
 
   return (

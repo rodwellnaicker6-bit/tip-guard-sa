@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
 import { perfLog } from "../lib/perfLog";
@@ -6,6 +6,7 @@ import { stabilLog } from "../lib/stabilLog";
 import { SlowLoadHint } from "../components/SlowLoadHint";
 import { useUiWatchdog } from "../lib/uiWatchdog";
 import { supabase } from "../lib/supabase";
+import { recordError } from "../lib/errorTelemetry";
 import { unwrapRpcSingle } from "../lib/rpcData";
 import { centsFromRandInput, zarFromCents } from "../lib/money";
 import { hasPaystackPublicKey } from "../services/paymentService";
@@ -34,6 +35,7 @@ function TipCheckoutPage() {
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
   const slowLoad = useUiWatchdog(loading);
+  const payInFlightRef = useRef(false);
 
   const cents = useMemo(() => centsFromRandInput(amount), [amount]);
   const amountLabel = cents != null ? zarFromCents(cents) : "R 0.00";
@@ -85,12 +87,14 @@ function TipCheckoutPage() {
   useEffect(() => () => releaseTipCheckoutLock(), []);
 
   const startPayment = useCallback(async () => {
+    if (payInFlightRef.current) return;
     stabilLog("pay", "Pay clicked (tip checkout)", { hasGuard: !!guardId, hasAmount: cents != null });
     setError(null);
     if (!guardId || cents == null) {
       setError("Enter a valid Rand amount.");
       return;
     }
+    payInFlightRef.current = true;
     setStarting(true);
     try {
       await startTipCheckout({
@@ -98,6 +102,11 @@ function TipCheckoutPage() {
         guardId,
         amountCents: cents,
         navigate,
+        onRequiresAuth: () => {
+          releaseTipCheckoutLock();
+          sessionStorage.setItem("tipguard_redirect", `/customer/tip/${encodeURIComponent(guardId)}`);
+          navigate("/login", { replace: true });
+        },
         onError: (msg) => {
           releaseTipCheckoutLock();
           setError(msg);
@@ -109,7 +118,14 @@ function TipCheckoutPage() {
         },
         onCheckoutPhase: setCheckoutPhase,
       });
+    } catch (e) {
+      releaseTipCheckoutLock();
+      const msg = e instanceof Error ? e.message : String(e);
+      recordError("customer_tip_checkout", msg, { code: "exception" });
+      setError("Something went wrong starting checkout. Please try again.");
+      toast.error("Checkout failed to start.");
     } finally {
+      payInFlightRef.current = false;
       setStarting(false);
       setCheckoutPhase("idle");
     }
