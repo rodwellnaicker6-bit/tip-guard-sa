@@ -2,6 +2,7 @@ import type { Session } from "@supabase/supabase-js";
 import { logAuth } from "./authDebug";
 import { logFlow } from "./operationTimeout";
 import { isTransientNetworkError } from "./networkUtils";
+import { QR_AUTH_GRACE_MS, qrAuthTimestamp, waitForStableSession } from "./qrAuthSession";
 import { supabase } from "./supabase";
 
 const REFRESH_BUFFER_SEC = 120;
@@ -93,6 +94,14 @@ async function refreshSessionIfNeeded(session: Session): Promise<Session | null>
 
 /** Ensures a user JWT for payment Edge invokes. Never calls signOut; timeouts ≠ logout. */
 export async function ensurePaymentAccessToken(): Promise<PaymentSessionResult> {
+  const stableWait = await waitForStableSession({ maxMs: QR_AUTH_GRACE_MS + 2_000 });
+  logFlow("pay", "ensurePaymentAccessToken stable wait", {
+    ok: stableWait.ok,
+    reason: stableWait.ok ? undefined : stableWait.reason,
+    waitedMs: stableWait.waitedMs,
+    t: qrAuthTimestamp(),
+  });
+
   try {
     let session = await readSessionForPayment();
 
@@ -115,7 +124,11 @@ export async function ensurePaymentAccessToken(): Promise<PaymentSessionResult> 
       };
     }
 
-    logFlow("pay", "ensurePaymentAccessToken ok", { userId: session!.user!.id });
+    logFlow("pay", "ensurePaymentAccessToken ok", {
+      userId: session!.user!.id,
+      t: qrAuthTimestamp(),
+      stableWaitMs: stableWait.waitedMs,
+    });
     return {
       ok: true,
       accessToken: session!.access_token,

@@ -21,7 +21,12 @@ import { isSupabaseBrowserConfigured } from "../lib/supabase";
 import { isTransientNetworkError } from "../lib/networkUtils";
 import { getDeviceFingerprintHash } from "../lib/deviceFingerprint";
 import { PAYMENT_INIT_TIMEOUT_MS, logFlow, withOperationTimeout } from "../lib/operationTimeout";
-import { confirmRequiresSignInForPayment, logQrAuth } from "../lib/qrAuthSession";
+import {
+  confirmRequiresSignInForPayment,
+  logQrAuth,
+  qrAuthTimestamp,
+  waitForStableSession,
+} from "../lib/qrAuthSession";
 import { ensurePaymentAccessToken } from "../lib/paymentSession";
 
 /** Prevents double-invoke (double-tap) opening two Paystack sessions. */
@@ -133,6 +138,20 @@ export async function initializePaystackTransaction(body: {
     };
   }
 
+  const stable = await waitForStableSession();
+  logQrAuth("initializePaystackTransaction after stable session", {
+    ok: stable.ok,
+    reason: stable.ok ? undefined : stable.reason,
+    waitedMs: stable.waitedMs,
+    t: qrAuthTimestamp(),
+  });
+  if (!stable.ok && stable.reason === "session_not_ready") {
+    return {
+      data: null,
+      errorMessage: "Restoring your session — wait a moment and try again.",
+    };
+  }
+
   const session = await ensurePaymentAccessToken();
   if (!session.ok) {
     const requiresSignIn = session.code === "not_signed_in" || session.code === "session_expired";
@@ -224,7 +243,27 @@ export async function payTipWithPaystack(opts: {
     amountCents: opts.amountCents,
     hasLinkToken: Boolean(opts.sourceLinkToken),
     functionsUrl: edgeFunctionUrl("paystack-initialize"),
+    t: qrAuthTimestamp(),
   });
+
+  const stable = await waitForStableSession();
+  logQrAuth("payTipWithPaystack after stable session", {
+    ok: stable.ok,
+    reason: stable.ok ? undefined : stable.reason,
+    waitedMs: stable.waitedMs,
+  });
+  if (!stable.ok) {
+    if (stable.reason === "not_signed_in" || stable.reason === "timeout") {
+      const signedOut = await confirmRequiresSignInForPayment();
+      if (signedOut) {
+        if (opts.onRequiresAuth) opts.onRequiresAuth();
+        else opts.onError("Please sign in to continue.");
+        return;
+      }
+    }
+    opts.onError("Restoring your session — wait a moment and tap Pay again.");
+    return;
+  }
 
   if (!acquireTipCheckoutLock()) {
     opts.onError("Checkout already starting. Please wait.");

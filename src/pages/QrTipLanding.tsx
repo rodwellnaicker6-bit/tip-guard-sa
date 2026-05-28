@@ -9,8 +9,11 @@ import { peekCachedResolve, readCachedTipDisplayName, resolveTipTarget } from ".
 import {
   QR_AUTH_GRACE_MS,
   confirmRequiresSignInForPayment,
+  isSessionRestoreInFlight,
   logQrAuth,
-  resolvePaymentUserId,
+  qrAuthTimestamp,
+  subscribeQrAuthSession,
+  waitForStableSession,
 } from "../lib/qrAuthSession";
 import { useGracePeriod } from "../hooks/useGracePeriod";
 import { perfMark } from "../lib/perfTelemetry";
@@ -48,6 +51,14 @@ function QrTipLandingContent() {
   const sessionUserId = user?.id ?? session?.user?.id ?? null;
   const sessionMissing = sessionReady && !sessionUserId;
   const sessionGraceElapsed = useGracePeriod(sessionMissing, QR_AUTH_GRACE_MS);
+  const [, setAuthSessionTick] = useState(0);
+  useEffect(() => subscribeQrAuthSession(() => setAuthSessionTick((n) => n + 1)), []);
+  const sessionRestoreInFlight = isSessionRestoreInFlight(
+    sessionReady,
+    sessionMissing,
+    sessionGraceElapsed,
+  );
+  const payBlockedByAuth = sessionRestoreInFlight;
   const [target, setTarget] = useState<Awaited<ReturnType<typeof resolveTipTarget>>["target"]>(() =>
     initialTipState(token).target,
   );
@@ -72,8 +83,18 @@ function QrTipLandingContent() {
       sessionUserId: session?.user?.id ?? null,
       sessionMissing,
       sessionGraceElapsed,
+      sessionRestoreInFlight,
     });
-  }, [token, sessionReady, authReady, user?.id, session?.user?.id, sessionMissing, sessionGraceElapsed]);
+  }, [
+    token,
+    sessionReady,
+    authReady,
+    user?.id,
+    session?.user?.id,
+    sessionMissing,
+    sessionGraceElapsed,
+    sessionRestoreInFlight,
+  ]);
 
   const cents = useMemo(() => centsFromRandInput(amount), [amount]);
   const amountLabel = cents != null ? zarFromCents(cents) : "R 0.00";
@@ -131,26 +152,42 @@ function QrTipLandingContent() {
 
   async function pay() {
     if (payInFlightRef.current) return;
-    stabilLog("pay", "Pay clicked (QR landing)", { hasTarget: !!target?.guard_id, hasAmount: cents != null });
+    stabilLog("pay", "Pay clicked (QR landing)", {
+      hasTarget: !!target?.guard_id,
+      hasAmount: cents != null,
+      t: qrAuthTimestamp(),
+    });
     if (!target?.guard_id || cents == null) {
       setError("Choose a valid amount.");
       return;
     }
-    if (!sessionReady) {
-      logQrAuth("pay blocked — session not ready", {});
-      setError("Checking your session — wait a moment and tap Pay again.");
+    if (payBlockedByAuth) {
+      logQrAuth("pay blocked — session restore in flight", {
+        sessionReady,
+        sessionRestoreInFlight,
+      });
+      setError("Restoring your session — wait a moment and tap Pay again.");
       return;
     }
-    const payerId = await resolvePaymentUserId(user?.id, session?.user?.id);
-    if (!payerId) {
+    const stable = await waitForStableSession({
+      sessionReady,
+      reactUserId: user?.id,
+      reactSessionUserId: session?.user?.id,
+    });
+    if (!stable.ok) {
+      if (stable.reason === "session_not_ready") {
+        logQrAuth("pay blocked — waitForStableSession session_not_ready", { waitedMs: stable.waitedMs });
+        setError("Checking your session — wait a moment and tap Pay again.");
+        return;
+      }
       if (!sessionGraceElapsed) {
-        logQrAuth("pay deferred — session grace in progress", {});
+        logQrAuth("pay deferred — stable wait during grace", { reason: stable.reason, waitedMs: stable.waitedMs });
         setError("Restoring your session — wait a moment and tap Pay again.");
         return;
       }
       const signedOut = await confirmRequiresSignInForPayment();
       if (!signedOut) {
-        logQrAuth("pay retry hint — session recovered after grace", {});
+        logQrAuth("pay retry hint — session recovered after stable wait", { waitedMs: stable.waitedMs });
         setError("Session restored. Tap Pay again.");
         return;
       }
@@ -160,9 +197,10 @@ function QrTipLandingContent() {
       navigate("/login", { replace: true });
       return;
     }
+    const payerId = stable.userId;
     if (!user?.id) {
       logAuth("QR pay using recovered session (React user was briefly null)", { payerId });
-      logQrAuth("pay using recovered session id", { payerId });
+      logQrAuth("pay using recovered session id", { payerId, waitedMs: stable.waitedMs });
     }
     const payIssue = paystackEnvIssue();
     if (!hasPaystackPublicKey()) {
@@ -338,31 +376,32 @@ function QrTipLandingContent() {
         </p>
       )}
 
-      {!sessionReady || (sessionMissing && !sessionGraceElapsed) ? (
+      {payBlockedByAuth ? (
         <div className="mb-3 space-y-2" role="status">
           <Skeleton style={{ height: 52, width: "100%", borderRadius: 16 }} />
-          <p className="text-center text-xs text-slate-500">Restoring your session…</p>
+          <p className="text-center text-xs text-slate-500">
+            {!sessionReady ? "Checking your session…" : "Restoring your session…"}
+          </p>
         </div>
       ) : null}
 
       <button
         type="button"
-        className={`tap-target min-h-[48px] w-full rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 text-lg font-black text-black shadow-lg ${!paying ? "fx-glow-pulse" : ""}`}
-        disabled={
-          paying ||
-          !hasPaystackPublicKey() ||
-          !sessionReady ||
-          (sessionMissing && !sessionGraceElapsed)
-        }
+        className={`tap-target min-h-[48px] w-full rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 text-lg font-black text-black shadow-lg ${!paying && !payBlockedByAuth ? "fx-glow-pulse" : ""}`}
+        disabled={paying || !hasPaystackPublicKey() || payBlockedByAuth}
         onClick={() => void pay()}
       >
         {paying
           ? "Opening checkout…"
-          : sessionUserId
-            ? `Pay ${amountLabel}`
-            : sessionGraceElapsed
-              ? "Sign in to pay"
-              : "Restoring session…"}
+          : payBlockedByAuth
+            ? !sessionReady
+              ? "Checking session…"
+              : "Restoring session…"
+            : sessionUserId
+              ? `Pay ${amountLabel}`
+              : sessionGraceElapsed
+                ? "Sign in to pay"
+                : "Restoring session…"}
       </button>
 
       <p className="mt-4 text-center text-xs text-slate-600">
