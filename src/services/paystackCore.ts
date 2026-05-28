@@ -21,6 +21,7 @@ import { isSupabaseBrowserConfigured } from "../lib/supabase";
 import { isTransientNetworkError } from "../lib/networkUtils";
 import { getDeviceFingerprintHash } from "../lib/deviceFingerprint";
 import { PAYMENT_INIT_TIMEOUT_MS, logFlow, withOperationTimeout } from "../lib/operationTimeout";
+import { confirmRequiresSignInForPayment, logQrAuth } from "../lib/qrAuthSession";
 import { ensurePaymentAccessToken } from "../lib/paymentSession";
 
 /** Prevents double-invoke (double-tap) opening two Paystack sessions. */
@@ -250,6 +251,15 @@ export async function payTipWithPaystack(opts: {
     if (requiresSignIn) {
       releaseTipCheckoutLock();
       setPhase(opts, "idle");
+      const signedOut = await confirmRequiresSignInForPayment();
+      if (!signedOut) {
+        logQrAuth("payTip requiresSignIn ignored — session recovered", {
+          hasLinkToken: Boolean(opts.sourceLinkToken),
+        });
+        opts.onError("Your session was restored. Tap Pay again.");
+        return;
+      }
+      logQrAuth("payTip requiresSignIn confirmed — invoking onRequiresAuth", {});
       if (opts.onRequiresAuth) opts.onRequiresAuth();
       else opts.onError(errorMessage ?? "Please sign in to continue.");
       return;
@@ -336,6 +346,12 @@ export async function payWalletTopUpWithPaystack(opts: {
     if (requiresSignIn) {
       releaseWalletTopUpLock();
       setPhase(opts, "idle");
+      const signedOut = await confirmRequiresSignInForPayment();
+      if (!signedOut) {
+        logQrAuth("walletTopUp requiresSignIn ignored — session recovered", {});
+        opts.onError("Your session was restored. Try again.");
+        return;
+      }
       if (opts.onRequiresAuth) opts.onRequiresAuth();
       else opts.onError(errorMessage ?? "Please sign in to continue.");
       return;

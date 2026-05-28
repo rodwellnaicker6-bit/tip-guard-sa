@@ -5,8 +5,14 @@ import { useAuth } from "../context/useAuth";
 import { startTipCheckout } from "../payments/checkoutFlow";
 import { releaseTipCheckoutLock } from "../services/paystackCore";
 import { hasPaystackPublicKey } from "../services/paymentService";
-import { resolveAuthUserId } from "../lib/resolveAuthUser";
 import { peekCachedResolve, readCachedTipDisplayName, resolveTipTarget } from "../lib/resolveTipTarget";
+import {
+  QR_AUTH_GRACE_MS,
+  confirmRequiresSignInForPayment,
+  logQrAuth,
+  resolvePaymentUserId,
+} from "../lib/qrAuthSession";
+import { useGracePeriod } from "../hooks/useGracePeriod";
 import { perfMark } from "../lib/perfTelemetry";
 import { SlowLoadHint } from "../components/SlowLoadHint";
 import { useUiWatchdog } from "../lib/uiWatchdog";
@@ -38,7 +44,10 @@ function QrTipLandingContent() {
   const { token } = useParams<{ token: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user, authReady, sessionReady } = useAuth();
+  const { user, session, authReady, sessionReady } = useAuth();
+  const sessionUserId = user?.id ?? session?.user?.id ?? null;
+  const sessionMissing = sessionReady && !sessionUserId;
+  const sessionGraceElapsed = useGracePeriod(sessionMissing, QR_AUTH_GRACE_MS);
   const [target, setTarget] = useState<Awaited<ReturnType<typeof resolveTipTarget>>["target"]>(() =>
     initialTipState(token).target,
   );
@@ -54,6 +63,17 @@ function QrTipLandingContent() {
   const slowLoad = useUiWatchdog(loading);
 
   useEffect(() => () => releaseTipCheckoutLock(), []);
+
+  useEffect(() => {
+    logQrAuth("mount / session snapshot", {
+      sessionReady,
+      authReady,
+      userId: user?.id ?? null,
+      sessionUserId: session?.user?.id ?? null,
+      sessionMissing,
+      sessionGraceElapsed,
+    });
+  }, [token, sessionReady, authReady, user?.id, session?.user?.id, sessionMissing, sessionGraceElapsed]);
 
   const cents = useMemo(() => centsFromRandInput(amount), [amount]);
   const amountLabel = cents != null ? zarFromCents(cents) : "R 0.00";
@@ -116,19 +136,33 @@ function QrTipLandingContent() {
       setError("Choose a valid amount.");
       return;
     }
-    if (!authReady || !sessionReady) {
-      setError("Still signing you in — wait a moment and tap Pay again.");
+    if (!sessionReady) {
+      logQrAuth("pay blocked — session not ready", {});
+      setError("Checking your session — wait a moment and tap Pay again.");
       return;
     }
-    const payerId = await resolveAuthUserId(user?.id);
+    const payerId = await resolvePaymentUserId(user?.id, session?.user?.id);
     if (!payerId) {
-      logAuth("QR pay redirect to login (no session after resolve)", { token });
+      if (!sessionGraceElapsed) {
+        logQrAuth("pay deferred — session grace in progress", {});
+        setError("Restoring your session — wait a moment and tap Pay again.");
+        return;
+      }
+      const signedOut = await confirmRequiresSignInForPayment();
+      if (!signedOut) {
+        logQrAuth("pay retry hint — session recovered after grace", {});
+        setError("Session restored. Tap Pay again.");
+        return;
+      }
+      logAuth("QR pay redirect to login (confirmed sign-out)", { token });
+      logQrAuth("redirect /login after confirmed sign-out", { token });
       sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
       navigate("/login", { replace: true });
       return;
     }
     if (!user?.id) {
       logAuth("QR pay using recovered session (React user was briefly null)", { payerId });
+      logQrAuth("pay using recovered session id", { payerId });
     }
     const payIssue = paystackEnvIssue();
     if (!hasPaystackPublicKey()) {
@@ -146,9 +180,17 @@ function QrTipLandingContent() {
         amountCents: cents,
         navigate,
         onRequiresAuth: () => {
-          releaseTipCheckoutLock();
-          sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
-          navigate("/login", { replace: true });
+          void (async () => {
+            releaseTipCheckoutLock();
+            if (!(await confirmRequiresSignInForPayment())) {
+              logQrAuth("onRequiresAuth ignored — session still present", {});
+              setError("Session restored. Tap Pay again.");
+              return;
+            }
+            logQrAuth("onRequiresAuth → /login", { token });
+            sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
+            navigate("/login", { replace: true });
+          })();
         },
         onError: (msg) => {
           releaseTipCheckoutLock();
@@ -296,13 +338,31 @@ function QrTipLandingContent() {
         </p>
       )}
 
+      {!sessionReady || (sessionMissing && !sessionGraceElapsed) ? (
+        <div className="mb-3 space-y-2" role="status">
+          <Skeleton style={{ height: 52, width: "100%", borderRadius: 16 }} />
+          <p className="text-center text-xs text-slate-500">Restoring your session…</p>
+        </div>
+      ) : null}
+
       <button
         type="button"
         className={`tap-target min-h-[48px] w-full rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 text-lg font-black text-black shadow-lg ${!paying ? "fx-glow-pulse" : ""}`}
-        disabled={paying || !hasPaystackPublicKey() || (!user?.id && authReady)}
+        disabled={
+          paying ||
+          !hasPaystackPublicKey() ||
+          !sessionReady ||
+          (sessionMissing && !sessionGraceElapsed)
+        }
         onClick={() => void pay()}
       >
-        {paying ? "Opening checkout…" : user ? `Pay ${amountLabel}` : "Sign in to pay"}
+        {paying
+          ? "Opening checkout…"
+          : sessionUserId
+            ? `Pay ${amountLabel}`
+            : sessionGraceElapsed
+              ? "Sign in to pay"
+              : "Restoring session…"}
       </button>
 
       <p className="mt-4 text-center text-xs text-slate-600">
