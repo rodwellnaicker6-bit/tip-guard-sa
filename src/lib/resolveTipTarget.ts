@@ -2,6 +2,7 @@ import { QR_RESOLVE_TIMEOUT_MS, logFlow, withOperationTimeout } from "./operatio
 import { perfMark } from "./perfTelemetry";
 import { supabase } from "./supabase";
 import { unwrapRpcSingle } from "./rpcData";
+import { isValidTipToken } from "./nfc";
 import { stabilLog } from "./stabilLog";
 import { recordError } from "./errorTelemetry";
 
@@ -111,7 +112,9 @@ export function readCachedTipDisplayName(token: string | undefined): string | nu
 /** Resolve QR/token to guard — uses `resolve_tip_target`, falls back to `resolve_tip_link` + guard row. */
 export async function resolveTipTarget(token: string): Promise<ResolveTipTargetResult> {
   const trimmed = token.trim();
-  if (trimmed.length < 4) {
+  if (!isValidTipToken(trimmed)) {
+    stabilLog("qr", "resolve rejected invalid token format", { tokenLen: trimmed.length });
+    recordError("qr_resolve", "invalid token format", { code: "token_format" });
     return { target: null, error: "This tip link is too short or invalid." };
   }
 

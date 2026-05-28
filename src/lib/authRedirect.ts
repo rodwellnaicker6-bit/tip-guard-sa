@@ -1,6 +1,8 @@
 import type { NavigateFunction } from "react-router-dom";
 import type { AuthProfileFields, AuthRole } from "../context/authTypes";
 import { logAuth, logAuthKickout } from "./authDebug";
+import { recordError } from "./errorTelemetry";
+import { stabilLog } from "./stabilLog";
 import { isSupabaseBrowserConfigured, supabase } from "./supabase";
 import { pathAfterSignIn } from "./postAuthRedirect";
 
@@ -35,8 +37,17 @@ export async function navigateAfterAuth(
       typeof sessionStorage !== "undefined" ? sessionStorage.getItem("tipguard_redirect") : null;
     if (stored?.startsWith("/") && !stored.startsWith("//")) {
       sessionStorage.removeItem("tipguard_redirect");
+      stabilLog("auth", "auth restore redirect", { path: stored.split("?")[0] });
+      if (stored.startsWith("/tip/")) {
+        stabilLog("nfc", "auth restore after tip flow", { path: stored.split("?")[0] });
+      }
       authNavigate(navigate, stored);
       return;
+    }
+    if (stored && (!stored.startsWith("/") || stored.startsWith("//"))) {
+      stabilLog("auth", "auth restore rejected unsafe redirect");
+      recordError("auth_restore", "unsafe tipguard_redirect", { code: "redirect_sanitize" });
+      sessionStorage.removeItem("tipguard_redirect");
     }
 
     const from = opts?.from;
