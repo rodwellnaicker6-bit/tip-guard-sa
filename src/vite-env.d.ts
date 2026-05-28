@@ -22,6 +22,14 @@ interface ImportMetaEnv {
   readonly VITE_DEBUG_BOOT?: string;
   /** Verbose payment invoke logs in browser console */
   readonly VITE_DEBUG_PAY?: string;
+  /** Support email on /contact (default support@tipguard.co.za) */
+  readonly VITE_SUPPORT_EMAIL?: string;
+  /** Registered operator legal name for compliance footer */
+  readonly VITE_BUSINESS_LEGAL_NAME?: string;
+  /** SA business phone shown on /contact and legal pages */
+  readonly VITE_BUSINESS_PHONE?: string;
+  /** Physical business address for Paystack / POPIA */
+  readonly VITE_BUSINESS_ADDRESS?: string;
 }
 
 declare const __BUILD_ID__: string;

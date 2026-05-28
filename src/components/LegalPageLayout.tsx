@@ -20,6 +20,7 @@ export function LegalPageLayout({ title, updated, children }: Props) {
         <Link to="/legal/popia">POPIA</Link>
         <Link to="/legal/cookies">Cookies</Link>
         <Link to="/legal/refunds">Refunds</Link>
+        <Link to="/contact">Contact</Link>
         <Link to="/legal/merchant">Merchants</Link>
       </nav>
     </div>

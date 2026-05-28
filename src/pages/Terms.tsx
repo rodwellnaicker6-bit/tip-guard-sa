@@ -1,8 +1,9 @@
 import { LegalPageLayout } from "../components/LegalPageLayout";
+import { BusinessContactBlock } from "../components/BusinessContactBlock";
 
 export default function Terms() {
   return (
-    <LegalPageLayout title="Terms of use" updated="20 May 2026">
+    <LegalPageLayout title="Terms of use" updated="27 May 2026">
       <p>
         These terms govern your use of TipGuard SA software and related services operated in South Africa. By creating an
         account or sending a tip you agree to these terms and to Paystack&apos;s payment terms where applicable.
@@ -33,6 +34,12 @@ export default function Terms() {
         The service is provided &quot;as is&quot; to the extent permitted by law. Operators deploying TipGuard should maintain
         appropriate insurance and employment arrangements with guards.
       </p>
+      <h2 className="text-base font-bold text-white">Delivery</h2>
+      <p>
+        Tips are credited to the selected guard or venue wallet after Paystack confirms payment. There is no physical
+        goods shipment. Failed checkouts do not debit your card.
+      </p>
+      <BusinessContactBlock compact />
       <p>
         Questions: <a href="/contact">contact us</a>. Governing law: Republic of South Africa.
       </p>

@@ -90,6 +90,12 @@ export default function Landing() {
               Paystack
             </a>
           </div>
+          <p className="mt-4 text-center text-xs text-slate-500">
+            TipGuard SA (Pty) Ltd · South Africa ·{" "}
+            <Link to="/contact" className="underline">
+              support &amp; business details
+            </Link>
+          </p>
         </footer>
       </div>
     </div>

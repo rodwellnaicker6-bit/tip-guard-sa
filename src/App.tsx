@@ -19,6 +19,7 @@ import AuthCallback from "./pages/AuthCallback";
 import PasswordReset from "./pages/PasswordReset";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
+import RefundRedirect from "./pages/RefundRedirect";
 import TipResolve from "./pages/TipResolve";
 import NotFound from "./pages/NotFound";
 
@@ -96,6 +97,8 @@ function AppRoutes() {
       <Route path="/auth/reset" element={<PasswordReset />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
+      <Route path="/refund" element={<RefundRedirect />} />
+      <Route path="/refunds" element={<RefundRedirect />} />
       <Route
         path="/legal/popia"
         element={
