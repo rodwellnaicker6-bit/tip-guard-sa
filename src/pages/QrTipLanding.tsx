@@ -30,6 +30,7 @@ import { Skeleton } from "../components/Skeleton";
 import { FetchError } from "../components/FetchError";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { recordError } from "../lib/errorTelemetry";
+import { qrResolveErrorMessage } from "../lib/userFacingErrors";
 
 const PRESETS = [10, 20, 50] as const;
 const QR_LOAD_TIMEOUT_MS = 10_000;
@@ -112,7 +113,7 @@ function QrTipLandingContent() {
       const { target: resolved, error: resolveErr } = await resolveTipTarget(token);
       if (cancelled) return;
       if (resolveErr || !resolved) {
-        setError(resolveErr ?? "This QR code is invalid or has expired.");
+        setError(qrResolveErrorMessage(resolveErr ?? "invalid or expired"));
         setTarget(null);
       } else {
         setTarget(resolved);
@@ -138,7 +139,7 @@ function QrTipLandingContent() {
     if (!loading) return;
     const t = window.setTimeout(() => {
       setLoading(false);
-      setError((prev) => prev ?? "This tip page took too long to load. Check your connection and try again.");
+      setError((prev) => prev ?? qrResolveErrorMessage("timed out"));
     }, QR_LOAD_TIMEOUT_MS);
     return () => window.clearTimeout(t);
   }, [loading]);

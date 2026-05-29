@@ -5,6 +5,7 @@ import { unwrapRpcSingle } from "./rpcData";
 import { isValidTipToken } from "./nfc";
 import { stabilLog } from "./stabilLog";
 import { recordError } from "./errorTelemetry";
+import { qrResolveErrorMessage, sanitizeUserFacingError } from "./userFacingErrors";
 
 export type ResolvedTipTarget = {
   guard_id: string;
@@ -152,16 +153,23 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       undefined,
       QR_TIMEOUT_OPTS,
     );
-    if (!rpcErr && data) {
+    const rpcSucceeded = !rpcErr;
+    if (rpcSucceeded) {
       const row = Array.isArray(data)
         ? (data[0] as Record<string, unknown> | undefined)
-        : (data as Record<string, unknown>);
+        : data && typeof data === "object"
+          ? (data as Record<string, unknown>)
+          : undefined;
       const mapped = row ? mapRow(row) : null;
       if (mapped) {
         stabilLog("qr", "resolve tip target ok", { guardId: mapped.guard_id });
         void fireTouchAnalytics(trimmed);
         return { target: mapped, error: null };
       }
+      return {
+        target: null,
+        error: qrResolveErrorMessage("invalid or expired"),
+      };
     }
 
     const isMissingRpc =
@@ -174,7 +182,7 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
         stabilLog("qr", "resolve stale cache fallback after rpc error", { message: rpcErr.message });
         return stale;
       }
-      return { target: null, error: rpcErr.message };
+      return { target: null, error: qrResolveErrorMessage(rpcErr.message) };
     }
 
     const { data: linkData, error: linkErr } = await withOperationTimeout(
@@ -188,15 +196,13 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
     if (linkErr) {
       return {
         target: null,
-        error: linkErr.message.includes("Could not find")
-          ? "Tip links are not configured on this database yet. Ask your operator to run migrations."
-          : linkErr.message,
+        error: qrResolveErrorMessage(linkErr.message),
       };
     }
 
     const guardId = unwrapRpcSingle<string>(linkData);
     if (!guardId) {
-      return { target: null, error: "This QR code is invalid, expired, or the guard is not verified for payments." };
+      return { target: null, error: qrResolveErrorMessage("invalid or expired") };
     }
 
     const { data: guard, error: gErr } = await withOperationTimeout(
@@ -214,10 +220,18 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       QR_TIMEOUT_OPTS,
     );
 
-    if (gErr) return { target: null, error: gErr.message };
-    if (!guard?.id) return { target: null, error: "Guard profile not found for this link." };
+    if (gErr) return { target: null, error: qrResolveErrorMessage(gErr.message) };
+    if (!guard?.id) {
+      return {
+        target: null,
+        error: sanitizeUserFacingError("", "Guard profile not found for this link."),
+      };
+    }
     if (!guard.verified) {
-      return { target: null, error: "This guard is not verified for receiving tips yet." };
+      return {
+        target: null,
+        error: qrResolveErrorMessage("not verified for payments"),
+      };
     }
 
     stabilLog("qr", "resolve tip target ok (fallback)", { guardId: guard.id });
@@ -244,8 +258,8 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
     const msg = e instanceof Error ? e.message : "Could not load this tip link.";
     stabilLog("qr", "resolveTipTarget failed", { message: msg });
     recordError("qr_resolve", msg, { code: "resolve_tip_target" });
-    console.error("[TipGuard:qr] resolveTipTarget failed", e);
-    return { target: null, error: msg };
+    if (import.meta.env.DEV) console.error("[TipGuard:qr] resolveTipTarget failed", e);
+    return { target: null, error: qrResolveErrorMessage(msg) };
   } finally {
     endPerf();
   }

@@ -18,6 +18,8 @@ interface ImportMetaEnv {
   readonly VITE_ENABLE_PUSH?: string;
   /** Idle logout after N minutes of inactivity; 0 or unset = disabled */
   readonly VITE_SESSION_IDLE_MINUTES?: string;
+  /** Hide Paystack test banner and build fingerprint for polished compliance demos */
+  readonly VITE_COMPLIANCE_DEMO_MODE?: string;
   /** Verbose boot logs (also enabled in dev) */
   readonly VITE_DEBUG_BOOT?: string;
   /** Verbose payment invoke logs in browser console */

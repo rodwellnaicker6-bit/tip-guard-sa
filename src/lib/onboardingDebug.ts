@@ -1,12 +1,14 @@
-/** Production-safe onboarding diagnostics (`[TipGuard:onboarding]` prefix). */
+import { devInfo } from "./prodLog";
+
+/** Onboarding diagnostics (`[TipGuard:onboarding]` prefix; gated like stabilLog). */
 
 export const ONBOARDING_OP_TIMEOUT_MS = 10_000;
 export const ONBOARDING_FAILSAFE_MS = 11_000;
 
 export function logOnboarding(message: string, extra?: Record<string, unknown>): void {
-  if (typeof console === "undefined") return;
-  const payload = extra && Object.keys(extra).length > 0 ? extra : undefined;
-  console.info(`[TipGuard:onboarding] ${message}`, payload ?? "");
+  const suffix =
+    extra && Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : "";
+  devInfo(`[TipGuard:onboarding] ${message}${suffix}`);
 }
 
 export async function withOnboardingTimeout<T>(

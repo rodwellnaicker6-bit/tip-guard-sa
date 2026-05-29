@@ -1,7 +1,9 @@
 import { BUILD_ID } from "../lib/buildInfo";
+import { isComplianceDemoMode } from "../lib/complianceDemo";
 
 /** Subtle deploy fingerprint — confirms which Vite bundle is active. */
 export function BuildDeployBadge() {
+  if (isComplianceDemoMode()) return null;
   return (
     <div
       data-build-id={BUILD_ID}

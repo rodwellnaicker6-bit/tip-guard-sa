@@ -15,6 +15,8 @@ import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { unwrapRpcSingle } from "../lib/rpcData";
 import { logOnboarding, ONBOARDING_FAILSAFE_MS, withOnboardingTimeout } from "../lib/onboardingDebug";
 import { recordError } from "../lib/errorTelemetry";
+import { isComplianceDemoMode } from "../lib/complianceDemo";
+import { onboardingErrorMessage } from "../lib/userFacingErrors";
 
 type LocationState = { registeredRole?: "customer" | "guard" | "merchant" };
 type IntentRole = "customer" | "guard" | "merchant";
@@ -25,25 +27,6 @@ type Step = (typeof STEPS)[number];
 const CONTINUE_DEBOUNCE_MS = 800;
 const PROFILE_REFRESH_TIMEOUT_MS = 4_000;
 const SESSION_RESTORE_GRACE_MS = 3_500;
-
-function profileSaveErrorMessage(message: string, code?: string): string {
-  let msg: string;
-  if (/profile role cannot be changed/i.test(message)) {
-    msg = "We could not save your role. Ask an admin to apply the latest database migration, then try again.";
-  } else if (/permission denied|row-level security|42501/i.test(message)) {
-    msg = "We could not save your profile (access denied). Try again or contact support.";
-  } else if (/network|fetch|failed to fetch|timeout/i.test(message)) {
-    msg = "Network error while saving. Check your connection and try again.";
-  } else if (/profile row missing|not authenticated/i.test(message)) {
-    msg = "Your account profile is still syncing. Wait a moment and tap Retry.";
-  } else {
-    msg = message;
-  }
-  if (import.meta.env.DEV && (code || message)) {
-    return `${msg} [${code ?? "error"}: ${message}]`;
-  }
-  return msg;
-}
 
 function merchantHubDest(hasMerchantRow: boolean): string {
   return hasMerchantRow ? "/merchant" : "/merchant/setup";
@@ -232,13 +215,13 @@ export default function Onboarding() {
       let roleSaved = unwrapRpcSingle<string>(savedRoleRaw);
 
       if (rpcErr) {
-        console.error("[Onboarding] save_onboarding_role", rpcErr.message, rpcErr.code);
+        if (import.meta.env.DEV) console.error("[Onboarding] save_onboarding_role", rpcErr.message, rpcErr.code);
         const { data: row, error: updErr } = await withOnboardingTimeout(
           "profiles update role",
           supabase.from("profiles").update({ role: intent }).eq("id", uid).select("role").maybeSingle(),
         );
         if (updErr) {
-          setSaveError(profileSaveErrorMessage(updErr.message, updErr.code));
+          setSaveError(onboardingErrorMessage(updErr.message, updErr.code));
           if (import.meta.env.DEV) console.warn("[Onboarding] role save", rpcErr, updErr);
           return;
         }
@@ -258,7 +241,7 @@ export default function Onboarding() {
             }),
           );
           if (insErr) {
-            setSaveError(profileSaveErrorMessage(insErr.message, insErr.code));
+            setSaveError(onboardingErrorMessage(insErr.message, insErr.code));
             return;
           }
           const retry = await withOnboardingTimeout(
@@ -266,7 +249,7 @@ export default function Onboarding() {
             supabase.from("profiles").update({ role: intent }).eq("id", uid).select("role").maybeSingle(),
           );
           if (retry.error) {
-            setSaveError(profileSaveErrorMessage(retry.error.message, retry.error.code));
+            setSaveError(onboardingErrorMessage(retry.error.message, retry.error.code));
             return;
           }
           roleSaved = retry.data?.role ?? null;
@@ -277,9 +260,7 @@ export default function Onboarding() {
 
       const persistedRole = (roleSaved as AuthRole) ?? intent;
       if (persistedRole !== intent) {
-        setSaveError(
-          profileSaveErrorMessage(`Role did not persist (expected ${intent}, got ${persistedRole ?? "none"}).`),
-        );
+        setSaveError(onboardingErrorMessage(`Role did not persist (expected ${intent}, got ${persistedRole ?? "none"}).`));
         return;
       }
 
@@ -296,7 +277,7 @@ export default function Onboarding() {
       const msg = e instanceof Error ? e.message : "Could not save your role.";
       console.error("[Onboarding] continueFromRole", e);
       recordError("onboarding_role", msg, { code: "save_failed" });
-      setSaveError(profileSaveErrorMessage(msg));
+      setSaveError(onboardingErrorMessage(msg));
     } finally {
       clearFailSafe();
       setSavingSafe(false);
@@ -335,7 +316,7 @@ export default function Onboarding() {
         supabase.from("profiles").update({ full_name: name, phone: phoneVal }).eq("id", sessionUserId),
       );
       if (error) {
-        setSaveError(profileSaveErrorMessage(error.message, error.code));
+        setSaveError(onboardingErrorMessage(error.message, error.code));
         if (import.meta.env.DEV) console.warn("[Onboarding] profile save", error);
         return;
       }
@@ -352,7 +333,7 @@ export default function Onboarding() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not save your profile.";
       console.error("[Onboarding] saveProfile", err);
-      setSaveError(profileSaveErrorMessage(msg));
+      setSaveError(onboardingErrorMessage(msg));
     } finally {
       setSavingSafe(false);
       logOnboarding("saveProfile finally", { saving: false });
@@ -414,7 +395,7 @@ export default function Onboarding() {
 
   return (
     <div className="shell mx-auto max-w-lg space-y-4 px-5 py-8 pb-20">
-      <PaystackTestBanner />
+      {!isComplianceDemoMode() ? <PaystackTestBanner /> : null}
       <header className="fx-fade-up text-center">
         <p className="muted-label">
           Step {stepIndex} of {STEPS.length}
