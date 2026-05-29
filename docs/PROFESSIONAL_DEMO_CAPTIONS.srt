@@ -1,0 +1,54 @@
+1
+00:00:00,000 --> 00:00:05,000
+TipGuard SA — digital tipping for South Africa
+tipguardsa.co.za
+
+2
+00:00:05,000 --> 00:00:12,000
+Scan QR → tip page on tipguardsa.co.za
+Guard name · amounts in ZAR
+
+3
+00:00:12,000 --> 00:00:18,000
+Sign in · select amount · Pay
+
+4
+00:00:18,000 --> 00:00:23,000
+Paystack Inline — secure card entry
+We never store card numbers
+
+5
+00:00:23,000 --> 00:00:28,000
+Payment success on tipguardsa.co.za
+
+6
+00:00:28,000 --> 00:00:35,000
+Android: NFC tap → verified tip link (HTTPS)
+
+7
+00:00:35,000 --> 00:00:42,000
+iPhone: QR tipping — same page, same checkout
+
+8
+00:00:42,000 --> 00:00:50,000
+Merchant dashboard — live tips & status
+
+9
+00:00:50,000 --> 00:00:58,000
+QR & NFC tips in one ledger
+
+10
+00:00:58,000 --> 00:01:04,000
+Contact · Terms · Privacy · Refunds
+All on tipguardsa.co.za
+
+11
+00:01:04,000 --> 00:01:10,000
+Paystack webhooks · verified settlement
+Test mode for this demo
+
+12
+00:01:10,000 --> 00:01:20,000
+TipGuard SA
+Transparent tipping · Secure payments
+tipguardsa.co.za
