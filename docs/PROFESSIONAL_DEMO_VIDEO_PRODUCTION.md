@@ -11,7 +11,8 @@
 | Doc | Purpose |
 |-----|---------|
 | [PROFESSIONAL_DEMO_VOICEOVER.md](./PROFESSIONAL_DEMO_VOICEOVER.md) | Full narration script |
-| [PROFESSIONAL_DEMO_CAPTIONS.srt](./PROFESSIONAL_DEMO_CAPTIONS.srt) | On-screen captions / SRT import |
+| [PROFESSIONAL_DEMO_CAPTIONS.md](./PROFESSIONAL_DEMO_CAPTIONS.md) | On-screen captions + trust badges |
+| [PROFESSIONAL_DEMO_CAPTIONS.srt](./PROFESSIONAL_DEMO_CAPTIONS.srt) | SRT import (same content) |
 | [PROFESSIONAL_DEMO_RECORDING_SEQUENCE.md](./PROFESSIONAL_DEMO_RECORDING_SEQUENCE.md) | Step-by-step capture order |
 
 **Long-form reference (optional B-roll source):** [REVIEW_VIDEO_MASTER_SCRIPT.md](./REVIEW_VIDEO_MASTER_SCRIPT.md)
@@ -28,7 +29,7 @@
 | **0:05–0:28** | [Customer QR](#2-customer-qr-005028) | 23s | Mobile portrait |
 | **0:28–0:42** | [NFC / tap](#3-nfc--tap-028042) | 14s | Mobile (Android + iPhone) |
 | **0:42–0:58** | [Merchant](#4-merchant-042058) | 16s | Desktop |
-| **0:58–1:10** | [Security & trust](#5-security--trust-058110) | 12s | Desktop |
+| **0:58–1:10** | [Security trust badges](#5-security-trust-badges-058110) | 12s | Desktop |
 | **1:10–1:20** | [End screen](#6-end-screen-110120) | 10s | Desktop + post title card |
 
 **90s variant:** Hold merchant dashboard +2s, security pages +3s, end card +5s (voiceover has alt lines in voiceover doc).
@@ -137,7 +138,9 @@
 
 ---
 
-## 5. Security & trust (0:58–1:10)
+## 5. Security trust badges (0:58–1:10)
+
+**Captions:** [PROFESSIONAL_DEMO_CAPTIONS.md](./PROFESSIONAL_DEMO_CAPTIONS.md) §5
 
 **On screen (rapid montage, ~3s each):**
 
@@ -149,6 +152,13 @@
 | Refunds | https://tipguardsa.co.za/legal/refunds |
 
 **Insert (2s):** Paystack Inline still on TipGuard tab (reuse freeze-frame from §2.5 if needed).
+
+**Editor trust badges (overlay, 1–2s each):**
+
+- `HTTPS only` · `tipguardsa.co.za`
+- `POPIA-ready legal pages`
+- `Paystack PCI · we never store card numbers`
+- `Webhook HMAC · idempotent settlement`
 
 **Voiceover covers (no secrets on camera):**
 

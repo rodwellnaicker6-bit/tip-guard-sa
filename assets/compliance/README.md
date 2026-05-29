@@ -11,7 +11,8 @@
 **Supporting docs:**
 
 - [docs/PROFESSIONAL_DEMO_VOICEOVER.md](../../docs/PROFESSIONAL_DEMO_VOICEOVER.md) — narration (~90s)
-- [docs/PROFESSIONAL_DEMO_CAPTIONS.srt](../../docs/PROFESSIONAL_DEMO_CAPTIONS.srt) — captions / SRT
+- [docs/PROFESSIONAL_DEMO_CAPTIONS.md](../../docs/PROFESSIONAL_DEMO_CAPTIONS.md) — on-screen captions + trust badges
+- [docs/PROFESSIONAL_DEMO_CAPTIONS.srt](../../docs/PROFESSIONAL_DEMO_CAPTIONS.srt) — SRT import
 - [docs/PROFESSIONAL_DEMO_RECORDING_SEQUENCE.md](../../docs/PROFESSIONAL_DEMO_RECORDING_SEQUENCE.md) — capture order
 
 **Demo URL:** https://tipguardsa.co.za/tip/demo-staging-qr-01 · **Deploy:** `VITE_COMPLIANCE_DEMO_MODE=true` — [COMPLIANCE_DEMO_STABILIZATION.md](../../docs/COMPLIANCE_DEMO_STABILIZATION.md)

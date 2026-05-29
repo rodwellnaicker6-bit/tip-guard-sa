@@ -106,7 +106,7 @@ Record as **one continuous OBS take** or four short clips.
 ### Step 10 — Post-production assembly
 
 1. Import clips → align to [PROFESSIONAL_DEMO_VIDEO_PRODUCTION.md](./PROFESSIONAL_DEMO_VIDEO_PRODUCTION.md) timestamps.  
-2. Lay [PROFESSIONAL_DEMO_VOICEOVER.md](./PROFESSIONAL_DEMO_VOICEOVER.md) or [PROFESSIONAL_DEMO_CAPTIONS.srt](./PROFESSIONAL_DEMO_CAPTIONS.srt).  
+2. Lay [PROFESSIONAL_DEMO_VOICEOVER.md](./PROFESSIONAL_DEMO_VOICEOVER.md) + [PROFESSIONAL_DEMO_CAPTIONS.md](./PROFESSIONAL_DEMO_CAPTIONS.md) (or [PROFESSIONAL_DEMO_CAPTIONS.srt](./PROFESSIONAL_DEMO_CAPTIONS.srt)).  
 3. Add 0.3s transitions; optional royalty-free music (duck under VO).  
 4. Title card 0:00; end card 1:10.  
 5. Export `TipGuard_SA_Compliance_Demo_90s.mp4` → `assets/compliance/`.  
