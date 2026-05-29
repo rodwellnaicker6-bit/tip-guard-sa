@@ -7,6 +7,19 @@ import { stabilLog } from "./stabilLog";
 import { recordError } from "./errorTelemetry";
 import { qrResolveErrorMessage, sanitizeUserFacingError } from "./userFacingErrors";
 
+/** Production-safe resolve diagnostics (always on; no tokens). */
+function resolveLog(
+  message: string,
+  extra?: Record<string, unknown>,
+  level: "info" | "warn" = "info",
+): void {
+  if (typeof console === "undefined") return;
+  const payload = extra && Object.keys(extra).length > 0 ? extra : undefined;
+  const line = `[TipGuard:resolve] ${message}`;
+  if (level === "warn") console.warn(line, payload ?? "");
+  else console.info(line, payload ?? "");
+}
+
 export type ResolvedTipTarget = {
   guard_id: string;
   location_id: string | null;
@@ -114,6 +127,7 @@ export function readCachedTipDisplayName(token: string | undefined): string | nu
 export async function resolveTipTarget(token: string): Promise<ResolveTipTargetResult> {
   const trimmed = token.trim();
   if (!isValidTipToken(trimmed)) {
+    resolveLog("rejected invalid token format", { tokenLen: trimmed.length }, "warn");
     stabilLog("qr", "resolve rejected invalid token format", { tokenLen: trimmed.length });
     recordError("qr_resolve", "invalid token format", { code: "token_format" });
     return { target: null, error: "This tip link is too short or invalid." };
@@ -121,6 +135,7 @@ export async function resolveTipTarget(token: string): Promise<ResolveTipTargetR
 
   const cached = readCachedResolve(trimmed);
   if (cached?.target) {
+    resolveLog("cache hit", { tokenLen: trimmed.length, guardId: cached.target.guard_id });
     stabilLog("qr", "resolve tip target cache hit", { tokenLen: trimmed.length });
     return cached;
   }
@@ -142,6 +157,7 @@ export async function resolveTipTarget(token: string): Promise<ResolveTipTargetR
 async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetResult> {
   const endPerf = perfMark("qr:resolve_tip_target");
   try {
+    resolveLog("start", { tokenLen: trimmed.length });
     stabilLog("qr", "resolve tip target start", { tokenLen: trimmed.length });
     logFlow("qr", "resolveTipTarget", { tokenLen: trimmed.length });
 
@@ -154,6 +170,7 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       QR_TIMEOUT_OPTS,
     );
     const rpcSucceeded = !rpcErr;
+    const rowCount = Array.isArray(data) ? data.length : data && typeof data === "object" ? 1 : 0;
     if (rpcSucceeded) {
       const row = Array.isArray(data)
         ? (data[0] as Record<string, unknown> | undefined)
@@ -162,10 +179,12 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
           : undefined;
       const mapped = row ? mapRow(row) : null;
       if (mapped) {
+        resolveLog("rpc ok", { guardId: mapped.guard_id, rowCount });
         stabilLog("qr", "resolve tip target ok", { guardId: mapped.guard_id });
         void fireTouchAnalytics(trimmed);
         return { target: mapped, error: null };
       }
+      resolveLog("rpc empty — invalid or expired", { rowCount }, "warn");
       return {
         target: null,
         error: qrResolveErrorMessage("invalid or expired"),
@@ -177,12 +196,18 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       rpcErr?.code === "PGRST202";
 
     if (!isMissingRpc && rpcErr) {
+      resolveLog("rpc error", { code: rpcErr.code, message: rpcErr.message }, "warn");
       const stale = readStaleCachedResolve(trimmed);
       if (stale?.target) {
+        resolveLog("stale cache fallback after rpc error", { guardId: stale.target.guard_id });
         stabilLog("qr", "resolve stale cache fallback after rpc error", { message: rpcErr.message });
         return stale;
       }
       return { target: null, error: qrResolveErrorMessage(rpcErr.message) };
+    }
+
+    if (isMissingRpc) {
+      resolveLog("resolve_tip_target missing — fallback chain", { code: rpcErr?.code }, "warn");
     }
 
     const { data: linkData, error: linkErr } = await withOperationTimeout(
@@ -194,6 +219,7 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       QR_TIMEOUT_OPTS,
     );
     if (linkErr) {
+      resolveLog("resolve_tip_link error", { message: linkErr.message }, "warn");
       return {
         target: null,
         error: qrResolveErrorMessage(linkErr.message),
@@ -202,6 +228,7 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
 
     const guardId = unwrapRpcSingle<string>(linkData);
     if (!guardId) {
+      resolveLog("fallback link empty", undefined, "warn");
       return { target: null, error: qrResolveErrorMessage("invalid or expired") };
     }
 
@@ -220,20 +247,26 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       QR_TIMEOUT_OPTS,
     );
 
-    if (gErr) return { target: null, error: qrResolveErrorMessage(gErr.message) };
+    if (gErr) {
+      resolveLog("guard lookup error", { message: gErr.message }, "warn");
+      return { target: null, error: qrResolveErrorMessage(gErr.message) };
+    }
     if (!guard?.id) {
+      resolveLog("guard row missing", { guardId }, "warn");
       return {
         target: null,
         error: sanitizeUserFacingError("", "Guard profile not found for this link."),
       };
     }
     if (!guard.verified) {
+      resolveLog("guard not verified", { guardId: guard.id }, "warn");
       return {
         target: null,
         error: qrResolveErrorMessage("not verified for payments"),
       };
     }
 
+    resolveLog("fallback ok", { guardId: guard.id });
     stabilLog("qr", "resolve tip target ok (fallback)", { guardId: guard.id });
     void fireTouchAnalytics(trimmed);
     return {
@@ -250,12 +283,17 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
   } catch (e) {
     const stale = readStaleCachedResolve(trimmed);
     if (stale?.target) {
+      resolveLog("stale cache fallback after exception", {
+        guardId: stale.target.guard_id,
+        message: e instanceof Error ? e.message : String(e),
+      });
       stabilLog("qr", "resolve stale cache fallback after error", {
         message: e instanceof Error ? e.message : String(e),
       });
       return stale;
     }
     const msg = e instanceof Error ? e.message : "Could not load this tip link.";
+    resolveLog("failed", { message: msg }, "warn");
     stabilLog("qr", "resolveTipTarget failed", { message: msg });
     recordError("qr_resolve", msg, { code: "resolve_tip_target" });
     if (import.meta.env.DEV) console.error("[TipGuard:qr] resolveTipTarget failed", e);
