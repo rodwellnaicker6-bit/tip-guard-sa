@@ -5,7 +5,14 @@ import { useAuth } from "../context/useAuth";
 import { startTipCheckout } from "../payments/checkoutFlow";
 import { releaseTipCheckoutLock } from "../services/paystackCore";
 import { hasPaystackPublicKey } from "../services/paymentService";
-import { peekCachedResolve, readCachedTipDisplayName, resolveTipTarget } from "../lib/resolveTipTarget";
+import {
+  clearResolveCacheForToken,
+  getLastResolveDebug,
+  peekCachedResolve,
+  readCachedTipDisplayName,
+  resolveTipTarget,
+  type ResolveTipTargetDebug,
+} from "../lib/resolveTipTarget";
 import {
   QR_AUTH_GRACE_MS,
   confirmRequiresSignInForPayment,
@@ -30,10 +37,9 @@ import { Skeleton } from "../components/Skeleton";
 import { FetchError } from "../components/FetchError";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { recordError } from "../lib/errorTelemetry";
-import { qrResolveErrorMessage } from "../lib/userFacingErrors";
+import { isQrResolveUserMessage, qrResolveErrorMessage } from "../lib/userFacingErrors";
 
 const PRESETS = [10, 20, 50] as const;
-const QR_LOAD_TIMEOUT_MS = 10_000;
 
 function initialTipState(token: string | undefined) {
   const cached = token ? peekCachedResolve(token) : null;
@@ -69,6 +75,8 @@ function QrTipLandingContent() {
   const [paying, setPaying] = useState(false);
   const [checkoutPhase, setCheckoutPhase] = useState<CheckoutPhase>("idle");
   const [reload, setReload] = useState(0);
+  const [resolveDebug, setResolveDebug] = useState<ResolveTipTargetDebug | null>(null);
+  const resolveDebugUi = searchParams.get("tg_resolve_debug") === "1";
   const online = useOnlineStatus();
   const payInFlightRef = useRef(false);
   const optimisticName = useMemo(() => readCachedTipDisplayName(token), [token]);
@@ -110,12 +118,15 @@ function QrTipLandingContent() {
         setLoading(true);
         setError(null);
       }
-      const { target: resolved, error: resolveErr } = await resolveTipTarget(token);
+      const { target: resolved, error: resolveErr, debug } = await resolveTipTarget(token);
       if (cancelled) return;
+      setResolveDebug(debug ?? getLastResolveDebug());
       if (resolveErr || !resolved) {
-        setError(qrResolveErrorMessage(resolveErr ?? "invalid or expired"));
+        const raw = resolveErr ?? "";
+        setError(isQrResolveUserMessage(raw) ? raw : qrResolveErrorMessage(raw, debug?.reason));
         setTarget(null);
       } else {
+        setError(null);
         setTarget(resolved);
         const preset = searchParams.get("amount");
         const presetNum = preset ? Number(preset) : NaN;
@@ -134,15 +145,6 @@ function QrTipLandingContent() {
     // Amount from URL is applied on resolve only — preset buttons update amount directly (no re-resolve).
     // eslint-disable-next-line react-hooks/exhaustive-deps -- searchParams must not retrigger resolve_tip_target
   }, [token, reload]);
-
-  useEffect(() => {
-    if (!loading) return;
-    const t = window.setTimeout(() => {
-      setLoading(false);
-      setError((prev) => prev ?? qrResolveErrorMessage("timed out"));
-    }, QR_LOAD_TIMEOUT_MS);
-    return () => window.clearTimeout(t);
-  }, [loading]);
 
   function pickPreset(rands: number) {
     setAmount(String(rands));
@@ -307,10 +309,35 @@ function QrTipLandingContent() {
         <h1 className="text-xl font-black text-white">Tip link unavailable</h1>
         <FetchError
           message={error ?? "This QR code could not be loaded."}
-          onRetry={() => setReload((n) => n + 1)}
+          onRetry={() => {
+            if (token) clearResolveCacheForToken(token);
+            setResolveDebug(null);
+            setError(null);
+            setLoading(true);
+            setReload((n) => n + 1);
+          }}
         />
+        {token ? (
+          <p className="mt-2 font-mono text-[10px] text-slate-500">
+            Link code: <span className="text-slate-400">{token}</span>
+            {resolveDebugUi && resolveDebug ? (
+              <span className="mt-1 block text-left text-slate-400">
+                debug · rows={resolveDebug.rowCount} · rpcOk={String(resolveDebug.rpcOk)}
+                {resolveDebug.reason ? ` · ${resolveDebug.reason}` : ""}
+                {resolveDebug.rpcErrorCode ? ` · ${resolveDebug.rpcErrorCode}` : ""}
+                {resolveDebug.guardId ? ` · guard=${resolveDebug.guardId.slice(0, 8)}…` : ""}
+              </span>
+            ) : null}
+          </p>
+        ) : null}
         <p className="mt-2 text-xs text-slate-500">
           Check the code is current, the guard is verified, and your venue has finished setup.
+          {resolveDebugUi ? null : (
+            <>
+              {" "}
+              Add <span className="font-mono">?tg_resolve_debug=1</span> for field diagnostics.
+            </>
+          )}
         </p>
         <Link to="/customer" className="mt-4 text-amber-400">
           Browse guards

@@ -7,6 +7,15 @@ import { requestQueue } from "./requestQueue";
 export type FlowScope = "qr" | "pay" | "payout" | "venue" | "rpc" | "dashboard";
 
 export const QR_RESOLVE_TIMEOUT_MS = 8_000;
+/** Safari / mobile cellular often needs longer than desktop Wi‑Fi for first RPC. */
+export const QR_RESOLVE_TIMEOUT_MOBILE_MS = 16_000;
+
+export function qrResolveTimeoutMs(): number {
+  if (typeof navigator === "undefined") return QR_RESOLVE_TIMEOUT_MS;
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    ? QR_RESOLVE_TIMEOUT_MOBILE_MS
+    : QR_RESOLVE_TIMEOUT_MS;
+}
 export const PAYMENT_SESSION_TIMEOUT_MS = 10_000;
 export const PAYMENT_INIT_TIMEOUT_MS = 15_000;
 export const PAYOUT_REQUEST_TIMEOUT_MS = 15_000;

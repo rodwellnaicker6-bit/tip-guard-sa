@@ -1,11 +1,11 @@
-import { QR_RESOLVE_TIMEOUT_MS, logFlow, withOperationTimeout } from "./operationTimeout";
+import { logFlow, qrResolveTimeoutMs, withOperationTimeout } from "./operationTimeout";
 import { perfMark } from "./perfTelemetry";
 import { supabase } from "./supabase";
 import { unwrapRpcSingle } from "./rpcData";
 import { isValidTipToken } from "./nfc";
 import { stabilLog } from "./stabilLog";
 import { recordError } from "./errorTelemetry";
-import { qrResolveErrorMessage, sanitizeUserFacingError } from "./userFacingErrors";
+import { type QrResolveFailureReason, qrResolveErrorMessage } from "./userFacingErrors";
 
 /** Production-safe resolve diagnostics (always on; no tokens). */
 function resolveLog(
@@ -30,10 +30,28 @@ export type ResolvedTipTarget = {
   qr_type?: string | null;
 };
 
+export type ResolveTipTargetDebug = {
+  token: string;
+  at: number;
+  rowCount: number;
+  rpcOk: boolean;
+  rpcErrorCode?: string;
+  guardId?: string;
+  reason?: QrResolveFailureReason;
+};
+
 export type ResolveTipTargetResult = {
   target: ResolvedTipTarget | null;
   error: string | null;
+  debug?: ResolveTipTargetDebug;
 };
+
+let lastResolveDebug: ResolveTipTargetDebug | null = null;
+
+/** Last resolve snapshot for `?tg_resolve_debug=1` field support (no PII beyond public guard id). */
+export function getLastResolveDebug(): ResolveTipTargetDebug | null {
+  return lastResolveDebug;
+}
 
 const RESOLVE_CACHE_TTL_MS = 120_000;
 const CACHE_KEY_PREFIX = "tipguard_resolve_";
@@ -96,6 +114,30 @@ export function peekCachedResolve(token: string | undefined): ResolveTipTargetRe
   return readCachedResolve(token.trim());
 }
 
+/** Drop cached resolve for a token (retry after error / stale sessionStorage). */
+export function clearResolveCacheForToken(token: string): void {
+  const trimmed = token.trim();
+  resolveMemCache.delete(trimmed);
+  resolveInflight.delete(trimmed);
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.removeItem(`${CACHE_KEY_PREFIX}${trimmed}`);
+    sessionStorage.removeItem(`${CACHE_KEY_PREFIX}${trimmed}:name`);
+  } catch {
+    /* ignore */
+  }
+}
+
+function shouldRetryResolve(result: ResolveTipTargetResult): boolean {
+  if (result.target) return false;
+  const reason = result.debug?.reason;
+  if (reason === "timeout" || reason === "network" || reason === "empty_rpc") return true;
+  const err = result.error?.toLowerCase() ?? "";
+  return /timed out|timeout|failed to fetch|network|load this tip page|not active on tipguard/i.test(
+    err,
+  );
+}
+
 /** Last-known resolve — used when network/RPC fails (up to 24h, public tip metadata only). */
 function readStaleCachedResolve(token: string): ResolveTipTargetResult | null {
   const mem = resolveMemCache.get(token);
@@ -130,7 +172,15 @@ export async function resolveTipTarget(token: string): Promise<ResolveTipTargetR
     resolveLog("rejected invalid token format", { tokenLen: trimmed.length }, "warn");
     stabilLog("qr", "resolve rejected invalid token format", { tokenLen: trimmed.length });
     recordError("qr_resolve", "invalid token format", { code: "token_format" });
-    return { target: null, error: "This tip link is too short or invalid." };
+    const err = qrResolveErrorMessage("", "invalid_token");
+    lastResolveDebug = {
+      token: trimmed,
+      at: Date.now(),
+      rowCount: 0,
+      rpcOk: false,
+      reason: "invalid_token",
+    };
+    return { target: null, error: err, debug: lastResolveDebug };
   }
 
   const cached = readCachedResolve(trimmed);
@@ -143,19 +193,63 @@ export async function resolveTipTarget(token: string): Promise<ResolveTipTargetR
   const inflight = resolveInflight.get(trimmed);
   if (inflight) return inflight;
 
-  const work = resolveTipTargetInner(trimmed);
+  const work = (async (): Promise<ResolveTipTargetResult> => {
+    let result = await resolveTipTargetInner(trimmed);
+    if (shouldRetryResolve(result)) {
+      resolveLog("retry after miss", { tokenLen: trimmed.length }, "warn");
+      clearResolveCacheForToken(trimmed);
+      result = await resolveTipTargetInner(trimmed);
+    }
+    return result;
+  })();
   resolveInflight.set(trimmed, work);
   try {
     const result = await work;
-    if (result.target) writeCachedResolve(trimmed, result);
+    if (result.target) {
+      writeCachedResolve(trimmed, result);
+      lastResolveDebug = result.debug ?? {
+        token: trimmed,
+        at: Date.now(),
+        rowCount: 1,
+        rpcOk: true,
+        guardId: result.target.guard_id,
+      };
+    } else if (result.debug) {
+      lastResolveDebug = result.debug;
+    }
     return result;
   } finally {
     resolveInflight.delete(trimmed);
   }
 }
 
+function finishResolve(
+  trimmed: string,
+  rowCount: number,
+  rpcOk: boolean,
+  reason: QrResolveFailureReason,
+  rpcErrorCode?: string,
+  guardId?: string,
+): ResolveTipTargetResult {
+  const debug: ResolveTipTargetDebug = {
+    token: trimmed,
+    at: Date.now(),
+    rowCount,
+    rpcOk,
+    rpcErrorCode,
+    guardId,
+    reason,
+  };
+  return {
+    target: null,
+    error: qrResolveErrorMessage("", reason),
+    debug,
+  };
+}
+
 async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetResult> {
   const endPerf = perfMark("qr:resolve_tip_target");
+  const resolveTimeoutMs = qrResolveTimeoutMs();
   try {
     resolveLog("start", { tokenLen: trimmed.length });
     stabilLog("qr", "resolve tip target start", { tokenLen: trimmed.length });
@@ -165,7 +259,7 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       "qr",
       "resolve_tip_target",
       (signal) => supabase.rpc("resolve_tip_target", { p_token: trimmed }).abortSignal(signal),
-      QR_RESOLVE_TIMEOUT_MS,
+      resolveTimeoutMs,
       undefined,
       QR_TIMEOUT_OPTS,
     );
@@ -182,13 +276,17 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
         resolveLog("rpc ok", { guardId: mapped.guard_id, rowCount });
         stabilLog("qr", "resolve tip target ok", { guardId: mapped.guard_id });
         void fireTouchAnalytics(trimmed);
-        return { target: mapped, error: null };
+        const debug: ResolveTipTargetDebug = {
+          token: trimmed,
+          at: Date.now(),
+          rowCount,
+          rpcOk: true,
+          guardId: mapped.guard_id,
+        };
+        return { target: mapped, error: null, debug };
       }
-      resolveLog("rpc empty — invalid or expired", { rowCount }, "warn");
-      return {
-        target: null,
-        error: qrResolveErrorMessage("invalid or expired"),
-      };
+      resolveLog("rpc empty — inactive or expired", { rowCount }, "warn");
+      return finishResolve(trimmed, rowCount, true, "empty_rpc");
     }
 
     const isMissingRpc =
@@ -203,7 +301,12 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
         stabilLog("qr", "resolve stale cache fallback after rpc error", { message: rpcErr.message });
         return stale;
       }
-      return { target: null, error: qrResolveErrorMessage(rpcErr.message) };
+      const reason: QrResolveFailureReason = /timed out|timeout/i.test(rpcErr.message ?? "")
+        ? "timeout"
+        : /failed to fetch|network/i.test(rpcErr.message ?? "")
+          ? "network"
+          : "unknown";
+      return finishResolve(trimmed, rowCount, false, reason, rpcErr.code);
     }
 
     if (isMissingRpc) {
@@ -214,22 +317,24 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       "qr",
       "resolve_tip_link",
       (signal) => supabase.rpc("resolve_tip_link", { p_token: trimmed }).abortSignal(signal),
-      QR_RESOLVE_TIMEOUT_MS,
+      resolveTimeoutMs,
       undefined,
       QR_TIMEOUT_OPTS,
     );
     if (linkErr) {
       resolveLog("resolve_tip_link error", { message: linkErr.message }, "warn");
-      return {
-        target: null,
-        error: qrResolveErrorMessage(linkErr.message),
-      };
+      const reason: QrResolveFailureReason = /timed out|timeout/i.test(linkErr.message ?? "")
+        ? "timeout"
+        : /failed to fetch|network/i.test(linkErr.message ?? "")
+          ? "network"
+          : "unknown";
+      return finishResolve(trimmed, 0, false, reason, linkErr.code);
     }
 
     const guardId = unwrapRpcSingle<string>(linkData);
     if (!guardId) {
       resolveLog("fallback link empty", undefined, "warn");
-      return { target: null, error: qrResolveErrorMessage("invalid or expired") };
+      return finishResolve(trimmed, 0, true, "empty_rpc");
     }
 
     const { data: guard, error: gErr } = await withOperationTimeout(
@@ -242,28 +347,27 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
           .eq("id", guardId)
           .abortSignal(signal)
           .maybeSingle(),
-      QR_RESOLVE_TIMEOUT_MS,
+      resolveTimeoutMs,
       undefined,
       QR_TIMEOUT_OPTS,
     );
 
     if (gErr) {
       resolveLog("guard lookup error", { message: gErr.message }, "warn");
-      return { target: null, error: qrResolveErrorMessage(gErr.message) };
+      const reason: QrResolveFailureReason = /timed out|timeout/i.test(gErr.message ?? "")
+        ? "timeout"
+        : /failed to fetch|network/i.test(gErr.message ?? "")
+          ? "network"
+          : "unknown";
+      return finishResolve(trimmed, 0, false, reason, gErr.code);
     }
     if (!guard?.id) {
       resolveLog("guard row missing", { guardId }, "warn");
-      return {
-        target: null,
-        error: sanitizeUserFacingError("", "Guard profile not found for this link."),
-      };
+      return finishResolve(trimmed, 0, true, "empty_rpc");
     }
     if (!guard.verified) {
       resolveLog("guard not verified", { guardId: guard.id }, "warn");
-      return {
-        target: null,
-        error: qrResolveErrorMessage("not verified for payments"),
-      };
+      return finishResolve(trimmed, 0, true, "guard_unverified", undefined, guard.id);
     }
 
     resolveLog("fallback ok", { guardId: guard.id });
@@ -297,7 +401,12 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
     stabilLog("qr", "resolveTipTarget failed", { message: msg });
     recordError("qr_resolve", msg, { code: "resolve_tip_target" });
     if (import.meta.env.DEV) console.error("[TipGuard:qr] resolveTipTarget failed", e);
-    return { target: null, error: qrResolveErrorMessage(msg) };
+    const reason: QrResolveFailureReason = /timed out|timeout/i.test(msg)
+      ? "timeout"
+      : /failed to fetch|network/i.test(msg)
+        ? "network"
+        : "unknown";
+    return finishResolve(trimmed, 0, false, reason);
   } finally {
     endPerf();
   }
