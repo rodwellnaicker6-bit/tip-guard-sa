@@ -25,6 +25,14 @@ import type {
 
 const AUTH_SESSION_TIMEOUT_MS = 10_000;
 const AUTH_REQUEST_TIMEOUT_MS = 15_000;
+const AUTH_PROFILE_TIMEOUT_MS = 10_000;
+
+function logAccountRequest(
+  label: string,
+  detail: Record<string, unknown>,
+): void {
+  console.info(`[TipGuard:account] ${label}`, detail);
+}
 
 /**
  * Auth state provider. This module exports only this component so React Fast Refresh stays valid.
@@ -59,26 +67,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadAccount = useCallback(
     async (uid: string, signal?: AbortSignal, loadGen?: number): Promise<AuthAccountSnapshot | null> => {
       if (!isSupabaseBrowserConfigured) return null;
+      const startedAt = performance.now();
       let snapshot: AuthAccountSnapshot = {
         role: null,
         profileFields: { full_name: null, phone: null },
         hasGuardRow: false,
         hasMerchantRow: false,
       };
+      logAccountRequest("profile fetch start", { uid, loadGen });
       try {
-        const [profRes, guardRes, merchRes] = await Promise.all([
-          supabase.from("profiles").select("role, full_name, phone").eq("id", uid).maybeSingle(),
-          supabase.from("guards").select("id").eq("user_id", uid).maybeSingle(),
-          supabase.from("merchants").select("id").eq("user_id", uid).maybeSingle(),
-        ]);
+        const [profRes, guardRes, merchRes] = await withTimeout(
+          Promise.all([
+            supabase.from("profiles").select("role, full_name, phone").eq("id", uid).maybeSingle(),
+            supabase.from("guards").select("id").eq("user_id", uid).maybeSingle(),
+            supabase.from("merchants").select("id").eq("user_id", uid).maybeSingle(),
+          ]),
+          AUTH_PROFILE_TIMEOUT_MS,
+          "Profile load timed out",
+        );
         if (signal?.aborted || !mountedRef.current) return null;
         const hasGuardRow = !!guardRes.data && !guardRes.error;
         const hasMerchantRow = !!merchRes.data && !merchRes.error;
+        logAccountRequest("profile fetch response", {
+          uid,
+          loadGen,
+          ms: Math.round(performance.now() - startedAt),
+          profile: {
+            ok: !profRes.error,
+            error: profRes.error?.message ?? null,
+            hasRow: Boolean(profRes.data),
+            role: (profRes.data?.role as string | null | undefined) ?? null,
+          },
+          guard: {
+            ok: !guardRes.error,
+            error: guardRes.error?.message ?? null,
+            hasRow: hasGuardRow,
+          },
+          merchant: {
+            ok: !merchRes.error,
+            error: merchRes.error?.message ?? null,
+            hasRow: hasMerchantRow,
+          },
+        });
         if (profRes.error) {
+          setAuthBootError(`Profile load failed: ${profRes.error.message}`);
           if (import.meta.env.DEV) console.warn("[AuthProvider] profiles:", profRes.error.message);
           setRole(null);
           setProfileFields({ full_name: null, phone: null });
         } else if (profRes.data) {
+          setAuthBootError(null);
           const nextRole = (profRes.data.role as AuthRole) ?? null;
           const nextFields: AuthProfileFields = {
             full_name: (profRes.data.full_name as string | null) ?? null,
@@ -109,7 +146,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch (e) {
         if (signal?.aborted || !mountedRef.current) return null;
+        const message = e instanceof Error ? e.message : String(e);
         console.error("[AuthCrash] AuthProvider.loadAccount", e);
+        logAccountRequest("profile fetch failed", {
+          uid,
+          loadGen,
+          ms: Math.round(performance.now() - startedAt),
+          error: message,
+        });
+        setAuthBootError(`Profile load failed: ${message}`);
         setRole(null);
         setProfileFields({ full_name: null, phone: null });
         setHasGuardRow(false);

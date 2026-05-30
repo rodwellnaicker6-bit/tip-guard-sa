@@ -8,9 +8,17 @@ import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { profileCompletionPercent, profileChecklist } from "../lib/profileCompletion";
 import { PayoutSchedulePanel } from "../components/PayoutSchedulePanel";
 import { fetchEntityPayoutPrefs, type PayoutSchedule } from "../lib/payoutSchedule";
+import { withTimeout } from "../lib/asyncTimeout";
 
 const THEME_KEY = "tipguard_theme";
 const DARK_KEY = "tipguard_dark";
+const PROFILE_SAVE_TIMEOUT_MS = 10_000;
+const PROFILE_REFRESH_TIMEOUT_MS = 10_000;
+const PAYOUT_PREFS_TIMEOUT_MS = 10_000;
+
+function logAccountRequest(label: string, detail: Record<string, unknown>) {
+  console.info(`[TipGuard:account] ${label}`, detail);
+}
 
 function applyDarkClass(on: boolean) {
   if (typeof document === "undefined") return;
@@ -45,50 +53,92 @@ export default function Settings() {
     if (!user?.id) return;
     let cancelled = false;
     (async () => {
-      if (isGuardUser) {
-        const { prefs } = await fetchEntityPayoutPrefs("guards", user.id);
-        if (cancelled || !prefs) return;
-        let avail: number | undefined;
-        let pending: number | undefined;
-        const { data: w } = await supabase
-          .from("wallet_accounts")
-          .select("available_cents, pending_cents")
-          .eq("guard_id", prefs.id)
-          .maybeSingle();
-        if (w) {
-          avail = w.available_cents as number;
-          pending = w.pending_cents as number;
+      try {
+        if (isGuardUser) {
+          logAccountRequest("payout prefs request", { table: "guards", userId: user.id });
+          const { prefs } = await withTimeout(
+            fetchEntityPayoutPrefs("guards", user.id),
+            PAYOUT_PREFS_TIMEOUT_MS,
+            "Payout preferences timed out",
+          );
+          logAccountRequest("payout prefs response", {
+            table: "guards",
+            hasPrefs: Boolean(prefs),
+            schemaComplete: prefs?.schemaComplete ?? null,
+          });
+          if (cancelled || !prefs) return;
+          let avail: number | undefined;
+          let pending: number | undefined;
+          const walletStartedAt = performance.now();
+          logAccountRequest("wallet payout request", { guardId: prefs.id });
+          const { data: w, error: walletErr } = await withTimeout(
+            supabase
+              .from("wallet_accounts")
+              .select("available_cents, pending_cents")
+              .eq("guard_id", prefs.id)
+              .maybeSingle(),
+            PAYOUT_PREFS_TIMEOUT_MS,
+            "Wallet payout balance timed out",
+          );
+          logAccountRequest("wallet payout response", {
+            guardId: prefs.id,
+            ms: Math.round(performance.now() - walletStartedAt),
+            ok: !walletErr,
+            error: walletErr?.message ?? null,
+            hasRow: Boolean(w),
+          });
+          if (w) {
+            avail = w.available_cents as number;
+            pending = w.pending_cents as number;
+          }
+          setPayoutSchemaComplete(prefs.schemaComplete);
+          setPayoutEntity({
+            table: "guards",
+            id: prefs.id,
+            schedule: prefs.schedule,
+            nextPayoutAt: prefs.nextPayoutAt,
+            minCents: prefs.minCents,
+            availableCents: avail,
+            pendingCents: pending,
+            schemaComplete: prefs.schemaComplete,
+          });
+          return;
         }
-        setPayoutSchemaComplete(prefs.schemaComplete);
-        setPayoutEntity({
-          table: "guards",
-          id: prefs.id,
-          schedule: prefs.schedule,
-          nextPayoutAt: prefs.nextPayoutAt,
-          minCents: prefs.minCents,
-          availableCents: avail,
-          pendingCents: pending,
-          schemaComplete: prefs.schemaComplete,
-        });
-        return;
-      }
-      if (isMerchantUser) {
-        const { prefs } = await fetchEntityPayoutPrefs("merchants", user.id);
-        if (cancelled || !prefs) return;
-        setPayoutSchemaComplete(prefs.schemaComplete);
-        setPayoutEntity({
-          table: "merchants",
-          id: prefs.id,
-          schedule: prefs.schedule,
-          nextPayoutAt: prefs.nextPayoutAt,
-          minCents: prefs.minCents,
-          schemaComplete: prefs.schemaComplete,
-        });
-        return;
-      }
-      if (!cancelled) {
-        setPayoutEntity(null);
-        setPayoutSchemaComplete(true);
+        if (isMerchantUser) {
+          logAccountRequest("payout prefs request", { table: "merchants", userId: user.id });
+          const { prefs } = await withTimeout(
+            fetchEntityPayoutPrefs("merchants", user.id),
+            PAYOUT_PREFS_TIMEOUT_MS,
+            "Payout preferences timed out",
+          );
+          logAccountRequest("payout prefs response", {
+            table: "merchants",
+            hasPrefs: Boolean(prefs),
+            schemaComplete: prefs?.schemaComplete ?? null,
+          });
+          if (cancelled || !prefs) return;
+          setPayoutSchemaComplete(prefs.schemaComplete);
+          setPayoutEntity({
+            table: "merchants",
+            id: prefs.id,
+            schedule: prefs.schedule,
+            nextPayoutAt: prefs.nextPayoutAt,
+            minCents: prefs.minCents,
+            schemaComplete: prefs.schemaComplete,
+          });
+          return;
+        }
+        if (!cancelled) {
+          setPayoutEntity(null);
+          setPayoutSchemaComplete(true);
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        logAccountRequest("payout prefs failed", { userId: user.id, error: message });
+        if (!cancelled) {
+          setPayoutEntity(null);
+          setPayoutSchemaComplete(false);
+        }
       }
     })();
     return () => {
@@ -136,30 +186,65 @@ export default function Settings() {
       setProfileError("Display name must be at least 2 characters.");
       return;
     }
-    setProfileBusy(true);
-    setProfileError(null);
-    setProfileSaved(false);
     let phoneVal: string | null = null;
     if (phoneRaw) {
       try {
         phoneVal = normalizeZaPhone(phoneRaw);
       } catch {
         setProfileError("Enter a valid South African mobile number or leave blank.");
-        setProfileBusy(false);
         return;
       }
     }
-    const { error } = await supabase
-      .from("profiles")
-      .update({ full_name: name, phone: phoneVal })
-      .eq("id", user.id);
-    setProfileBusy(false);
-    if (error) {
-      setProfileError(error.message);
-      return;
+    setProfileBusy(true);
+    setProfileError(null);
+    setProfileSaved(false);
+    const payload = { full_name: name, phone: phoneVal };
+    const saveStartedAt = performance.now();
+    logAccountRequest("profile save request", { userId: user.id, payload });
+    try {
+      const { error } = await withTimeout(
+        supabase
+          .from("profiles")
+          .update(payload)
+          .eq("id", user.id),
+        PROFILE_SAVE_TIMEOUT_MS,
+        "Profile save timed out",
+      );
+      logAccountRequest("profile save response", {
+        userId: user.id,
+        ms: Math.round(performance.now() - saveStartedAt),
+        ok: !error,
+        error: error?.message ?? null,
+      });
+      if (error) {
+        setProfileError(error.message);
+        return;
+      }
+      const refreshStartedAt = performance.now();
+      logAccountRequest("profile refresh request", { userId: user.id });
+      await withTimeout(
+        refreshProfile(),
+        PROFILE_REFRESH_TIMEOUT_MS,
+        "Profile refresh timed out",
+      );
+      logAccountRequest("profile refresh response", {
+        userId: user.id,
+        ms: Math.round(performance.now() - refreshStartedAt),
+        ok: true,
+      });
+      setProfileSaved(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[TipGuard:account] profile save failed", err);
+      logAccountRequest("profile save failed", {
+        userId: user.id,
+        ms: Math.round(performance.now() - saveStartedAt),
+        error: message,
+      });
+      setProfileError(message);
+    } finally {
+      setProfileBusy(false);
     }
-    await refreshProfile();
-    setProfileSaved(true);
   }
 
   const pct = profileCompletionPercent(profileFields);
