@@ -418,8 +418,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setAuthBootError(null);
           if (next) {
             applySession(next, "BOOT_GET_SESSION");
+            scheduleLoadAccount(next.user.id, { force: true });
           } else if (!sessionSnapshotRef.current?.user?.id) {
             applySession(null, "BOOT_GET_SESSION");
+          } else if (sessionSnapshotRef.current?.user?.id) {
+            scheduleLoadAccount(sessionSnapshotRef.current.user.id, { force: true });
           }
           markSessionReady();
         })
