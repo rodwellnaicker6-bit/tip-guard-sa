@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { memo } from "react";
 import { Link } from "react-router-dom";
-import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import { PAYMENT_PROVIDERS } from "../lib/paymentProviders";
 import { Skeleton } from "../components/Skeleton";
@@ -9,61 +8,23 @@ import { ProfileCompletionCard } from "../components/ProfileCompletionCard";
 import { FetchError } from "../components/FetchError";
 import { MerchantAnalyticsPanel } from "../components/MerchantAnalyticsPanel";
 import { PayoutSchedulePanel } from "../components/PayoutSchedulePanel";
-import { fetchEntityPayoutPrefs, type PayoutSchedule } from "../lib/payoutSchedule";
+import { useMerchantVenue } from "../hooks/useMerchantVenue";
+import { SlowLoadHint } from "../components/SlowLoadHint";
+import { useUiWatchdog } from "../lib/uiWatchdog";
 
-type MerchRow = {
-  id: string;
-  business_name: string;
-  location: string | null;
-  verified: boolean;
-  risk_score?: number;
-};
-
-export default function MerchantDashboard() {
-  const { user, role, profileFields, signOut } = useAuth();
-  const [merchant, setMerchant] = useState<MerchRow | null>(null);
-  const [loading, setLoading] = useState(() => Boolean(user?.id));
-  const [error, setError] = useState<string | null>(null);
-  const [reload, setReload] = useState(0);
-  const [payoutSchedule, setPayoutSchedule] = useState<PayoutSchedule>("weekly");
-  const [nextPayoutAt, setNextPayoutAt] = useState<string | null>(null);
-  const [minPayoutCents, setMinPayoutCents] = useState(10000);
-  const [payoutSchemaComplete, setPayoutSchemaComplete] = useState(true);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      const [{ data, error: err }, payoutLoad] = await Promise.all([
-        supabase
-          .from("merchants")
-          .select("id, business_name, location, verified, risk_score")
-          .eq("user_id", user.id)
-          .maybeSingle(),
-        fetchEntityPayoutPrefs("merchants", user.id),
-      ]);
-      if (cancelled) return;
-      if (err) {
-        setError("We could not load your venue. Please try again.");
-        setMerchant(null);
-      } else {
-        const row = data as MerchRow | null;
-        setMerchant(row ?? null);
-        if (payoutLoad.prefs) {
-          setPayoutSchedule(payoutLoad.prefs.schedule);
-          setNextPayoutAt(payoutLoad.prefs.nextPayoutAt);
-          setMinPayoutCents(payoutLoad.prefs.minCents);
-          setPayoutSchemaComplete(payoutLoad.prefs.schemaComplete);
-        }
-      }
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id, reload]);
+function MerchantDashboardPage() {
+  const { role, profileFields, signOut } = useAuth();
+  const {
+    merchant,
+    loading,
+    error,
+    payoutSchedule,
+    nextPayoutAt,
+    minPayoutCents,
+    payoutSchemaComplete,
+    reload,
+  } = useMerchantVenue();
+  const slowLoad = useUiWatchdog(loading);
 
   if (loading) {
     return (
@@ -73,6 +34,10 @@ export default function MerchantDashboard() {
           <Skeleton style={{ height: 28, width: "70%", marginTop: 8 }} />
         </header>
         <StatCardsSkeleton />
+        <SlowLoadHint show={slowLoad} />
+        <p className="text-center text-sm text-slate-500" role="status">
+          Loading your venue…
+        </p>
       </div>
     );
   }
@@ -80,9 +45,12 @@ export default function MerchantDashboard() {
   if (error) {
     return (
       <div className="shell dashboard-hub mx-auto max-w-lg space-y-4 px-4 py-10 sm:px-5">
-        <FetchError message={error} onRetry={() => setReload((n) => n + 1)} />
-        <Link className="tap-target text-amber-400" to="/">
-          Home
+        <FetchError message={error} onRetry={reload} retryLabel="Retry loading venue" />
+        <Link className="tap-target block text-center text-sm font-semibold text-amber-400" to="/merchant/setup">
+          Register or complete venue
+        </Link>
+        <Link className="tap-target block text-center text-sm text-slate-500" to="/">
+          Return home
         </Link>
       </div>
     );
@@ -103,8 +71,8 @@ export default function MerchantDashboard() {
         <Link className="btn-gold tap-target min-h-[48px] items-center justify-center rounded-2xl px-4 font-bold" to="/merchant/setup">
           {role === "merchant" ? "Complete venue registration" : "Register venue"}
         </Link>
-        <Link className="tap-target block text-sm text-slate-500" to="/">
-          Home
+        <Link className="tap-target block text-center text-sm text-slate-500" to="/">
+          Return home
         </Link>
       </div>
     );
@@ -114,7 +82,7 @@ export default function MerchantDashboard() {
     <div className="shell dashboard-hub mx-auto max-w-lg space-y-5 px-4 py-8 pb-16 sm:px-5">
       <header className="page-header fx-fade-up min-w-0">
         <p className="muted-label">Venue hub</p>
-        <h2 className="font-black text-white break-words">{merchant.business_name}</h2>
+        <h2 className="font-black text-white break-words">{merchant.business_name ?? "Your venue"}</h2>
         <p className="text-slate-400">{merchant.location ?? "South Africa"}</p>
         {(merchant.risk_score ?? 0) > 0 && (
           <span
@@ -156,7 +124,7 @@ export default function MerchantDashboard() {
           minimumPayoutThresholdCents={minPayoutCents}
           prominent
           schemaUnavailable={!payoutSchemaComplete}
-          onSaved={() => setReload((n) => n + 1)}
+          onSaved={reload}
         />
       </div>
 
@@ -238,3 +206,5 @@ export default function MerchantDashboard() {
     </div>
   );
 }
+
+export default memo(MerchantDashboardPage);

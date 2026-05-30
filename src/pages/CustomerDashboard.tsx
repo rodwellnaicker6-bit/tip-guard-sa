@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { DASHBOARD_LOAD_TIMEOUT_MS, RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
-import { GlassPanel } from "../components/fintech/GlassPanel";
 import { TrustRibbon } from "../components/fintech/TrustRibbon";
 import { getLoyaltySnapshot } from "../lib/loyalty";
 import { zarFromCents } from "../lib/money";
@@ -10,9 +10,25 @@ import { StatCardsSkeleton } from "../components/StatCardsSkeleton";
 import { ProfileCompletionCard } from "../components/ProfileCompletionCard";
 import { FetchError } from "../components/FetchError";
 import EmptyState from "../components/EmptyState";
+import { DashboardStatTile } from "../components/dashboard/DashboardStatTile";
+import { GlassPanel } from "../components/fintech/GlassPanel";
+import { SlowLoadHint } from "../components/SlowLoadHint";
+import { useUiWatchdog } from "../lib/uiWatchdog";
 
-export default function CustomerDashboard() {
-  const { user, profileFields, signOut } = useAuth();
+type CustomerTipStats = { tip_count?: number; volume_cents?: number };
+
+function isMissingRpcError(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false;
+  if (err.code === "PGRST202") return true;
+  const msg = (err.message ?? "").toLowerCase();
+  return (
+    msg.includes("could not find the function") ||
+    (msg.includes("function") && msg.includes("not found"))
+  );
+}
+
+function CustomerDashboardPage() {
+  const { user, profileFields, signOut, sessionReady } = useAuth();
   const email = user?.email ?? "your account";
   const [tipCount, setTipCount] = useState<number | null>(null);
   const [volume, setVolume] = useState<number | null>(null);
@@ -20,34 +36,78 @@ export default function CustomerDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const loyalty = getLoyaltySnapshot();
+  const slowLoad = useUiWatchdog(loading);
+  const onRetry = useCallback(() => setReload((n) => n + 1), []);
+  const volumeLabel = useMemo(
+    () => (volume != null ? zarFromCents(volume) : "R 0.00"),
+    [volume],
+  );
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!sessionReady || !user?.id) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError(null);
-      const { data, error: qErr } = await supabase
-        .from("tips")
-        .select("amount_cents")
-        .eq("payer_id", user.id)
-        .eq("status", "succeeded");
-      if (cancelled) return;
-      if (qErr) {
-        setError("We could not load your tip stats. Check your connection and try again.");
-        setTipCount(null);
-        setVolume(null);
-      } else {
-        const rows = data ?? [];
-        setTipCount(rows.length);
-        setVolume(rows.reduce((s, r) => s + (r.amount_cents as number), 0));
+      try {
+        let stats: CustomerTipStats | null = null;
+        let qErr: { code?: string; message?: string } | null = null;
+
+        const rpcRes = await withOperationTimeout(
+          "dashboard",
+          "get_customer_tip_stats",
+          (signal) => supabase.rpc("get_customer_tip_stats").abortSignal(signal),
+          RPC_DEFAULT_TIMEOUT_MS,
+          undefined,
+          { queued: false },
+        );
+        qErr = rpcRes.error;
+        if (!qErr && rpcRes.data && typeof rpcRes.data === "object" && !Array.isArray(rpcRes.data)) {
+          stats = rpcRes.data as CustomerTipStats;
+        } else if (isMissingRpcError(qErr)) {
+          const fallback = await withOperationTimeout(
+            "dashboard",
+            "customer tip stats fallback",
+            (signal) =>
+              supabase
+                .from("tips")
+                .select("amount_cents")
+                .eq("payer_id", user.id)
+                .eq("status", "succeeded")
+                .abortSignal(signal),
+            DASHBOARD_LOAD_TIMEOUT_MS,
+            undefined,
+            { queued: false },
+          );
+          qErr = fallback.error;
+          if (!qErr) {
+            const rows = fallback.data ?? [];
+            stats = {
+              tip_count: rows.length,
+              volume_cents: rows.reduce((s, r) => s + (r.amount_cents as number), 0),
+            };
+          }
+        }
+
+        if (cancelled) return;
+        if (qErr || !stats) {
+          setError("We could not load your tip stats. Check your connection and try again.");
+          setTipCount(null);
+          setVolume(null);
+        } else {
+          setTipCount(stats.tip_count ?? 0);
+          setVolume(Number(stats.volume_cents ?? 0));
+        }
+      } catch {
+        if (!cancelled) setError("Loading timed out. Please try again.");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.id, reload]);
+  }, [user?.id, sessionReady, reload]);
 
   const statsReady = !loading && !error;
 
@@ -65,20 +125,22 @@ export default function CustomerDashboard() {
 
       <ProfileCompletionCard fields={profileFields} />
 
-      {error ? <FetchError message={error} onRetry={() => setReload((n) => n + 1)} /> : null}
+      {error ? <FetchError message={error} onRetry={onRetry} /> : null}
 
       {loading ? (
-        <StatCardsSkeleton />
+        <>
+          <StatCardsSkeleton />
+          <SlowLoadHint show={slowLoad} />
+        </>
       ) : !error ? (
         <div className="grid grid-cols-2 gap-3">
-          <GlassPanel glow="amber" className="fx-fade-up min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Tips sent</p>
-            <p className="mt-1 text-2xl font-black text-white">{tipCount ?? 0}</p>
-          </GlassPanel>
-          <GlassPanel glow="emerald" className="fx-fade-up min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Lifetime volume</p>
-            <p className="mt-1 text-xl font-black text-amber-400">{volume != null ? zarFromCents(volume) : "R 0.00"}</p>
-          </GlassPanel>
+          <DashboardStatTile label="Tips sent" value={String(tipCount ?? 0)} glow="amber" />
+          <DashboardStatTile
+            label="Lifetime volume"
+            value={volumeLabel}
+            glow="emerald"
+            valueClassName="text-xl font-black text-amber-400"
+          />
         </div>
       ) : null}
 
@@ -143,3 +205,5 @@ export default function CustomerDashboard() {
     </div>
   );
 }
+
+export default memo(CustomerDashboardPage);

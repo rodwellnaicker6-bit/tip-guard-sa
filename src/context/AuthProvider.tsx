@@ -12,7 +12,12 @@ import { isTransientNetworkError } from "../lib/networkUtils";
 import { resetPostAuthRedirectState } from "../hooks/usePostAuthRedirect";
 import { clearAuthRedirectStorage } from "../lib/authRedirect";
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
+import { logAuth, logAuthKickout } from "../lib/authDebug";
 import { bootLog } from "../lib/bootDebug";
+import { logOnboarding } from "../lib/onboardingDebug";
+import { stabilLog } from "../lib/stabilLog";
+import { subscriptionManager } from "../lib/subscriptionManager";
+import { clearPendingRole, readPendingRole, writePendingRole } from "../lib/pendingRoleStorage";
 import { isSupabaseBrowserConfigured, supabase } from "../lib/supabase";
 import { withTimeout } from "../lib/asyncTimeout";
 import { AuthContext } from "./authReactContext";
@@ -42,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthContextValue["session"]>(null);
   const [user, setUser] = useState<AuthContextValue["user"]>(null);
   const [role, setRole] = useState<AuthRole>(null);
+  const [pendingRole, setPendingRoleState] = useState<AuthRole>(null);
   const [profileFields, setProfileFields] = useState<AuthProfileFields>({ full_name: null, phone: null });
   const [hasGuardRow, setHasGuardRow] = useState(false);
   const [hasMerchantRow, setHasMerchantRow] = useState(false);
@@ -51,11 +57,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const mountedRef = useRef(true);
   const accountAbortRef = useRef<AbortController | null>(null);
   const accountLoadGenRef = useRef(0);
+  const profileLoadInflightUidRef = useRef<string | null>(null);
+  const refreshInFlightRef = useRef<Promise<AuthAccountSnapshot | null> | null>(null);
+  const refreshSourceRef = useRef<string | null>(null);
   const sessionReadyRef = useRef(false);
   const reconnectBusyRef = useRef(false);
+  const lastReconnectAtRef = useRef(0);
+  const RECONNECT_COOLDOWN_MS = 2_000;
+  /** Last known good session — guards against transient null during TOKEN_REFRESHED. */
+  const sessionSnapshotRef = useRef<AuthContextValue["session"]>(null);
+  const accountStateRef = useRef({
+    role: null as AuthRole,
+    pendingRole: null as AuthRole,
+    profileFields: { full_name: null, phone: null } as AuthProfileFields,
+    hasGuardRow: false,
+    hasMerchantRow: false,
+  });
 
+  useEffect(() => {
+    accountStateRef.current = { role, pendingRole, profileFields, hasGuardRow, hasMerchantRow };
+  }, [role, pendingRole, profileFields, hasGuardRow, hasMerchantRow]);
+
+  /** Session + profile hydration complete before route guards redirect. */
   const authReady = sessionReady && profileReady;
   const loading = !authReady;
+
+  const setPendingRole = useCallback(
+    (next: AuthRole) => {
+      setPendingRoleState(next);
+      writePendingRole(user?.id, next);
+    },
+    [user?.id],
+  );
+
+  const effectiveRole = pendingRole ?? role;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -68,15 +103,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (uid: string, signal?: AbortSignal, loadGen?: number): Promise<AuthAccountSnapshot | null> => {
       if (!isSupabaseBrowserConfigured) return null;
       const startedAt = performance.now();
-      let snapshot: AuthAccountSnapshot = {
-        role: null,
-        profileFields: { full_name: null, phone: null },
-        hasGuardRow: false,
-        hasMerchantRow: false,
-      };
       logAccountRequest("profile fetch start", { uid, loadGen });
+      let snapshot: AuthAccountSnapshot;
       try {
-        const [profRes, guardRes, merchRes] = await withTimeout(
+        const [profRes, initialGuardRes, initialMerchRes] = await withTimeout(
           Promise.all([
             supabase.from("profiles").select("role, full_name, phone").eq("id", uid).maybeSingle(),
             supabase.from("guards").select("id").eq("user_id", uid).maybeSingle(),
@@ -85,7 +115,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           AUTH_PROFILE_TIMEOUT_MS,
           "Profile load timed out",
         );
+        if (signal?.aborted) {
+          logOnboarding("loadAccount aborted", { uid, loadGen });
+          return null;
+        }
+        if (!mountedRef.current) return null;
+
+        let guardRes = initialGuardRes;
+        let merchRes = initialMerchRes;
+        if (guardRes.error && !guardRes.data) {
+          guardRes = await withTimeout(
+            supabase.from("guards").select("id").eq("user_id", uid).maybeSingle(),
+            AUTH_PROFILE_TIMEOUT_MS,
+            "Guard profile retry timed out",
+          );
+        }
+        if (merchRes.error && !merchRes.data) {
+          merchRes = await withTimeout(
+            supabase.from("merchants").select("id").eq("user_id", uid).maybeSingle(),
+            AUTH_PROFILE_TIMEOUT_MS,
+            "Merchant profile retry timed out",
+          );
+        }
         if (signal?.aborted || !mountedRef.current) return null;
+
         const hasGuardRow = !!guardRes.data && !guardRes.error;
         const hasMerchantRow = !!merchRes.data && !merchRes.error;
         logAccountRequest("profile fetch response", {
@@ -109,11 +162,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             hasRow: hasMerchantRow,
           },
         });
+
         if (profRes.error) {
           setAuthBootError(`Profile load failed: ${profRes.error.message}`);
-          if (import.meta.env.DEV) console.warn("[AuthProvider] profiles:", profRes.error.message);
-          setRole(null);
-          setProfileFields({ full_name: null, phone: null });
+          logAuth("loadAccount profile error — preserving role state", { message: profRes.error.message });
+          const cur = accountStateRef.current;
+          snapshot = {
+            role: cur.pendingRole ?? cur.role,
+            profileFields: cur.profileFields,
+            hasGuardRow,
+            hasMerchantRow,
+          };
         } else if (profRes.data) {
           setAuthBootError(null);
           const nextRole = (profRes.data.role as AuthRole) ?? null;
@@ -123,6 +182,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           };
           setRole(nextRole);
           setProfileFields(nextFields);
+          if (
+            nextRole &&
+            (nextRole === accountStateRef.current.pendingRole ||
+              nextRole === "guard" ||
+              nextRole === "merchant" ||
+              nextRole === "admin")
+          ) {
+            setPendingRoleState(null);
+            writePendingRole(uid, null);
+          }
           snapshot = { role: nextRole, profileFields: nextFields, hasGuardRow, hasMerchantRow };
         } else {
           setRole(null);
@@ -136,14 +205,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         setHasGuardRow(hasGuardRow);
         setHasMerchantRow(hasMerchantRow);
-        if (profRes.error) {
-          snapshot = {
-            role: null,
-            profileFields: { full_name: null, phone: null },
-            hasGuardRow,
-            hasMerchantRow,
-          };
-        }
       } catch (e) {
         if (signal?.aborted || !mountedRef.current) return null;
         const message = e instanceof Error ? e.message : String(e);
@@ -155,15 +216,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           error: message,
         });
         setAuthBootError(`Profile load failed: ${message}`);
-        setRole(null);
-        setProfileFields({ full_name: null, phone: null });
-        setHasGuardRow(false);
-        setHasMerchantRow(false);
+        logAuth("loadAccount exception — preserving role state", { message });
+        const cur = accountStateRef.current;
         snapshot = {
-          role: null,
-          profileFields: { full_name: null, phone: null },
-          hasGuardRow: false,
-          hasMerchantRow: false,
+          role: cur.pendingRole ?? cur.role,
+          profileFields: cur.profileFields,
+          hasGuardRow: cur.hasGuardRow,
+          hasMerchantRow: cur.hasMerchantRow,
         };
       } finally {
         if (mountedRef.current && loadGen === accountLoadGenRef.current) {
@@ -176,8 +235,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const refreshProfile = useCallback(
-    async (options?: { silent?: boolean }) => {
-      if (!user?.id) {
+    async (options?: { silent?: boolean; source?: string }) => {
+      const source = options?.source ?? "unknown";
+      const uid = user?.id ?? sessionSnapshotRef.current?.user?.id;
+      if (!uid) {
+        logOnboarding("refreshProfile skip (no user)", { source });
         if (!mountedRef.current) return null;
         setRole(null);
         setProfileFields({ full_name: null, phone: null });
@@ -186,27 +248,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfileReady(true);
         return null;
       }
-      const ac = new AbortController();
-      accountAbortRef.current?.abort();
-      accountAbortRef.current = ac;
-      if (!options?.silent) setProfileReady(false);
-      const gen = ++accountLoadGenRef.current;
-      return loadAccount(user.id, ac.signal, gen);
+      if (refreshInFlightRef.current) {
+        logOnboarding("refreshProfile coalesced", { source, prior: refreshSourceRef.current });
+        return refreshInFlightRef.current;
+      }
+      const t0 = performance.now();
+      logOnboarding("refreshProfile start", { source, uid, silent: !!options?.silent });
+      refreshSourceRef.current = source;
+      const run = async () => {
+        const ac = new AbortController();
+        accountAbortRef.current?.abort();
+        accountAbortRef.current = ac;
+        if (!options?.silent) setProfileReady(false);
+        const gen = ++accountLoadGenRef.current;
+        return loadAccount(uid, ac.signal, gen);
+      };
+      const p = run()
+        .then((snap) => {
+          logOnboarding("refreshProfile end", {
+            source,
+            ms: Math.round(performance.now() - t0),
+            role: snap?.role ?? null,
+          });
+          return snap;
+        })
+        .catch((e) => {
+          logOnboarding("refreshProfile error", {
+            source,
+            ms: Math.round(performance.now() - t0),
+            message: e instanceof Error ? e.message : String(e),
+          });
+          throw e;
+        })
+        .finally(() => {
+          refreshInFlightRef.current = null;
+          refreshSourceRef.current = null;
+        });
+      refreshInFlightRef.current = p;
+      return p;
     },
-    [loadAccount, user],
+    [loadAccount, user?.id],
   );
 
   /** Never call Supabase data APIs inside onAuthStateChange — defer to avoid auth deadlocks. */
   const scheduleLoadAccount = useCallback(
-    (uid: string) => {
+    (uid: string, options?: { force?: boolean }) => {
       if (!mountedRef.current) return;
+      if (!options?.force && profileLoadInflightUidRef.current === uid) return;
+      profileLoadInflightUidRef.current = uid;
       const gen = ++accountLoadGenRef.current;
       setProfileReady(false);
       accountAbortRef.current?.abort();
       const ac = new AbortController();
       accountAbortRef.current = ac;
       queueMicrotask(() => {
-        void loadAccount(uid, ac.signal, gen);
+        void loadAccount(uid, ac.signal, gen).finally(() => {
+          if (profileLoadInflightUidRef.current === uid) {
+            profileLoadInflightUidRef.current = null;
+          }
+        });
       });
     },
     [loadAccount],
@@ -216,6 +316,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (sessionReadyRef.current || !mountedRef.current) return;
     sessionReadyRef.current = true;
     setSessionReady(true);
+    stabilLog("auth", "session hydration complete");
   }, []);
 
   const authBootRef = useRef(0);
@@ -223,6 +324,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const bootGen = ++authBootRef.current;
     sessionReadyRef.current = false;
+    /** Do not clear `sessionSnapshotRef` here — a remount/re-run with live React session would allow a null auth event to wipe the user before getSession finishes. */
     let effectCancelled = false;
     bootLog("AuthProvider boot", { configured: isSupabaseBrowserConfigured });
 
@@ -242,39 +344,108 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const applySession = (next: AuthContextValue["session"]) => {
+    const applySession = (next: AuthContextValue["session"], event?: string) => {
       if (!mountedRef.current) return;
-      setSession(next);
-      setUser(next?.user ?? null);
-      if (!next?.user?.id) {
+
+      if (next?.user?.id) {
+        sessionSnapshotRef.current = next;
+        setSession(next);
+        setUser(next.user);
+        const storedPending = readPendingRole(next.user.id);
+        if (storedPending) setPendingRoleState(storedPending);
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        sessionSnapshotRef.current = null;
+        logAuthKickout("SIGNED_OUT", "AuthProvider.applySession", { event });
+        setSession(null);
+        setUser(null);
         setRole(null);
         setHasGuardRow(false);
         setHasMerchantRow(false);
         setProfileReady(true);
+        return;
       }
+
+      /** Supabase may emit INITIAL_SESSION with null before storage hydration; getSession() is authoritative. */
+      if (event === "INITIAL_SESSION" && !next?.user?.id) {
+        logAuth("INITIAL_SESSION null — deferring to getSession (no state clear)", {});
+        return;
+      }
+
+      if (event === "TOKEN_REFRESHED" && sessionSnapshotRef.current?.user?.id) {
+        logAuth("preserved session during TOKEN_REFRESHED (transient null)", {
+          uid: sessionSnapshotRef.current.user.id,
+        });
+        return;
+      }
+
+      if (
+        sessionSnapshotRef.current?.user?.id &&
+        event !== "BOOT_GET_SESSION" &&
+        event !== "INITIAL_SESSION"
+      ) {
+        logAuth("preserved session (transient null)", { event });
+        return;
+      }
+
+      sessionSnapshotRef.current = null;
+      if (event === "BOOT_GET_SESSION") {
+        logAuth("no session on boot getSession");
+      } else {
+        logAuthKickout("session cleared", "AuthProvider.applySession", { event });
+      }
+      setSession(null);
+      setUser(null);
+      setRole(null);
+      setHasGuardRow(false);
+      setHasMerchantRow(false);
+      setProfileReady(true);
     };
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, next) => {
       if (!mountedRef.current) return;
-      applySession(next);
+      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION" || event === "SIGNED_IN") {
+        logOnboarding("auth state", {
+          event,
+          sessionReady: sessionReadyRef.current,
+          uid: next?.user?.id ?? null,
+        });
+        logAuth("onAuthStateChange", {
+          event,
+          uid: next?.user?.id ?? null,
+          hadSnapshot: !!sessionSnapshotRef.current?.user?.id,
+        });
+      }
+      applySession(next, event);
       // TOKEN_REFRESHED can fire in a tight loop and abort in-flight profile loads,
       // leaving profileReady false and blocking post-login redirects.
       if (
         next?.user?.id &&
         (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "USER_UPDATED")
       ) {
-        scheduleLoadAccount(next.user.id);
+        scheduleLoadAccount(next.user.id, {
+          force: event === "SIGNED_IN" || event === "USER_UPDATED",
+        });
       }
+      const deferSessionReady = event === "INITIAL_SESSION" && !next?.user?.id;
       if (
-        event === "INITIAL_SESSION" ||
-        event === "SIGNED_IN" ||
-        event === "TOKEN_REFRESHED" ||
-        event === "SIGNED_OUT"
+        (event === "INITIAL_SESSION" ||
+          event === "SIGNED_IN" ||
+          event === "TOKEN_REFRESHED" ||
+          event === "SIGNED_OUT") &&
+        !deferSessionReady
       ) {
         markSessionReady();
       }
+    });
+
+    subscriptionManager.register("auth:session", () => {
+      subscription.unsubscribe();
+      accountAbortRef.current?.abort();
     });
 
     queueMicrotask(() => {
@@ -287,17 +458,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (bootGen !== authBootRef.current || effectCancelled || !mountedRef.current) return;
           if (error) {
             bootLog("getSession error", error.message);
-            setAuthBootError("We could not restore your session. Sign in again or reload the page.");
-            applySession(null);
+            const transient = isTransientNetworkError(error.message);
+            setAuthBootError(
+              transient
+                ? "We could not reach the auth server. You can keep using the app offline briefly — try again."
+                : "We could not restore your session. Sign in again or reload the page.",
+            );
+            if (!sessionSnapshotRef.current?.user?.id) {
+              logAuthKickout("boot getSession error", "AuthProvider.getSession", { message: error.message });
+              applySession(null);
+            } else {
+              logAuth("boot getSession error — keeping snapshot session", { message: error.message });
+            }
             markSessionReady();
             return;
           }
           setAuthBootError(null);
           if (next) {
-            applySession(next);
-            if (next.user?.id) scheduleLoadAccount(next.user.id);
-          } else {
-            applySession(null);
+            applySession(next, "BOOT_GET_SESSION");
+            scheduleLoadAccount(next.user.id, { force: true });
+          } else if (!sessionSnapshotRef.current?.user?.id) {
+            applySession(null, "BOOT_GET_SESSION");
+          } else if (sessionSnapshotRef.current?.user?.id) {
+            scheduleLoadAccount(sessionSnapshotRef.current.user.id, { force: true });
           }
           markSessionReady();
         })
@@ -306,7 +489,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const msg = e instanceof Error ? e.message : "Session check failed";
           console.error("[AuthCrash] AuthProvider.getSession", e);
           setAuthBootError(msg);
-          applySession(null);
+          if (!sessionSnapshotRef.current?.user?.id) {
+            logAuthKickout("boot getSession exception", "AuthProvider.getSession", { message: msg });
+            applySession(null);
+          } else {
+            logAuth("boot getSession exception — keeping snapshot session", { message: msg });
+          }
           markSessionReady();
         });
     });
@@ -314,25 +502,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const bootFallback = window.setTimeout(() => {
       if (mountedRef.current && !sessionReadyRef.current) {
         bootLog("session hydration timeout — marking ready");
+        stabilLog("auth", "session hydration timeout — unblocking UI");
         markSessionReady();
       }
-    }, 10_000);
+    }, 4_000);
 
     const profileFallback = window.setTimeout(() => {
-      if (mountedRef.current) {
-        setProfileReady((ready) => {
-          if (!ready) bootLog("profile load timeout — marking ready");
-          return true;
-        });
+      if (!mountedRef.current) return;
+      if (profileLoadInflightUidRef.current) {
+        bootLog("profile load timeout deferred — account load still in flight");
+        return;
       }
-    }, 8_000);
+      setProfileReady((ready) => {
+        if (!ready) bootLog("profile load timeout — marking ready");
+        return true;
+      });
+    }, 10_000);
 
     return () => {
       effectCancelled = true;
       window.clearTimeout(bootFallback);
       window.clearTimeout(profileFallback);
-      subscription.unsubscribe();
-      accountAbortRef.current?.abort();
+      subscriptionManager.cleanup("auth:session");
     };
   }, [markSessionReady, scheduleLoadAccount]);
 
@@ -342,6 +533,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const reconnect = () => {
       if (document.visibilityState !== "visible" || reconnectBusyRef.current) return;
+      const now = Date.now();
+      if (now - lastReconnectAtRef.current < RECONNECT_COOLDOWN_MS) return;
+      lastReconnectAtRef.current = now;
       reconnectBusyRef.current = true;
       void withTimeout(
         supabase.auth.getSession(),
@@ -368,11 +562,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
-    return () => {
+    subscriptionManager.register("auth:reconnect", () => {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
+    });
+    return () => {
+      subscriptionManager.cleanup("auth:reconnect");
     };
-  }, [scheduleLoadAccount]);
+  }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!isSupabaseBrowserConfigured) {
@@ -522,6 +719,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     clearAuthRedirectStorage();
+    clearPendingRole(user?.id);
     resetPostAuthRedirectState();
     accountAbortRef.current?.abort();
     try {
@@ -530,19 +728,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (import.meta.env.DEV) console.warn("[AuthProvider] signOut", e);
     }
     if (!mountedRef.current) return;
+    logAuth("signOut (user initiated)");
+    sessionSnapshotRef.current = null;
     setAuthBootError(null);
     setSession(null);
     setUser(null);
     setRole(null);
+    setPendingRoleState(null);
     setProfileFields({ full_name: null, phone: null });
     setHasGuardRow(false);
     setHasMerchantRow(false);
     setProfileReady(true);
     markSessionReady();
-  }, [markSessionReady]);
+  }, [markSessionReady, user?.id]);
 
-  const isGuardUser = role === "guard" || hasGuardRow;
-  const isMerchantUser = role === "merchant" || hasMerchantRow;
+  const isGuardUser = role === "guard" || hasGuardRow || pendingRole === "guard";
+  const isMerchantUser = role === "merchant" || hasMerchantRow || pendingRole === "merchant";
 
   const value = useMemo(
     () =>
@@ -550,6 +751,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         session,
         role,
+        pendingRole,
+        effectiveRole,
+        setPendingRole,
         profileFields,
         hasGuardRow,
         hasMerchantRow,
@@ -575,6 +779,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       session,
       role,
+      pendingRole,
+      effectiveRole,
+      setPendingRole,
       profileFields,
       hasGuardRow,
       hasMerchantRow,

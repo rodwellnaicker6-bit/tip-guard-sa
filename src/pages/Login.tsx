@@ -32,10 +32,13 @@ export default function Login() {
   async function attemptSignIn() {
     setError(null);
     setSubmitting(true);
-    const { error: err } = await signIn(email, password);
-    if (!mountedRef.current) return;
-    setSubmitting(false);
-    if (err) setError(err);
+    try {
+      const { error: err } = await signIn(email, password);
+      if (!mountedRef.current) return;
+      if (err) setError(err);
+    } finally {
+      if (mountedRef.current) setSubmitting(false);
+    }
   }
 
   async function onSubmit(e: FormEvent) {

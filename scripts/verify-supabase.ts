@@ -69,6 +69,12 @@ async function main() {
   await checkRpc("admin_payment_analytics");
   await checkRpc("admin_dashboard_metrics");
 
+  // Fraud RPC: service_role only (anon should not execute)
+  await checkRpc("run_fraud_checks", {
+    p_user_id: "00000000-0000-0000-0000-000000000001",
+    p_route: "verify",
+  });
+
   // Public data (RLS: guards browsable)
   const { data: guards, error: gErr } = await anonClient.from("guards").select("id").limit(1);
   if (gErr) fail("RLS guards (anon read)", gErr.message);
@@ -109,6 +115,21 @@ async function main() {
       fail("RPC regenerate_qr_code_token", "missing — apply 20260625170000_merchant_ops_launch.sql");
     } else {
       pass("RPC regenerate_qr_code_token (exists)");
+    }
+
+    const { data: fraudData, error: fraudErr } = await admin.rpc("run_fraud_checks", {
+      p_user_id: "00000000-0000-0000-0000-000000000001",
+      p_amount_cents: 100,
+      p_reference: "verify_probe",
+      p_route: "verify-supabase",
+    });
+    if (fraudErr?.code === "PGRST202" || fraudErr?.message.includes("Could not find the function")) {
+      fail("RPC run_fraud_checks (service_role)", "missing — apply 20260626230000_run_fraud_checks.sql");
+    } else if (fraudErr) {
+      fail("RPC run_fraud_checks (service_role)", fraudErr.message);
+    } else {
+      const blocked = (fraudData as { blocked?: boolean } | null)?.blocked;
+      pass(`RPC run_fraud_checks (service_role, blocked=${String(blocked)})`);
     }
     const { data: buckets, error: bErr } = await admin.storage.listBuckets();
     if (bErr) fail("Storage listBuckets", bErr.message);

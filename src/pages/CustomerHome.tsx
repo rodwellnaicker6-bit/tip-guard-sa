@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
+import { perfLog } from "../lib/perfLog";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import { Skeleton } from "../components/Skeleton";
@@ -32,17 +34,36 @@ export default function CustomerHome() {
 
   useEffect(() => {
     let cancelled = false;
+    const watchdog = window.setTimeout(() => {
+      if (cancelled) return;
+      setLoading(false);
+      setError((prev) => prev ?? "Loading guards timed out. Please try again.");
+    }, RPC_DEFAULT_TIMEOUT_MS + 1_000);
+
     (async () => {
       setLoading(true);
       setError(null);
-      const { data, error: err } = await supabase.rpc("list_public_guards");
-      if (cancelled) return;
-      if (err) setError(err.message);
-      else setGuards((data as PublicGuardRow[]) ?? []);
-      setLoading(false);
+      const t0 = performance.now();
+      try {
+        const { data, error: err } = await withOperationTimeout(
+          "rpc",
+          "list_public_guards",
+          (signal) => supabase.rpc("list_public_guards").abortSignal(signal),
+          RPC_DEFAULT_TIMEOUT_MS,
+        );
+        if (cancelled) return;
+        if (err) setError(err.message);
+        else setGuards((data as PublicGuardRow[]) ?? []);
+        perfLog("list_public_guards", Math.round(performance.now() - t0), { ok: !err });
+      } catch {
+        if (!cancelled) setError("Loading guards timed out. Please try again.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(watchdog);
     };
   }, [reload]);
 
@@ -101,13 +122,13 @@ export default function CustomerHome() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
-                  <strong className="truncate text-base text-white">{g.display_name}</strong>
+                  <strong className="truncate text-base text-white">{g.display_name ?? "Guard"}</strong>
                   <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-300">
                     Verified
                   </span>
                 </div>
                 <p className="mt-1 truncate text-xs text-slate-500">
-                  {g.location ?? "South Africa"} · {g.rating.toFixed(1)}★ · {g.tips_count} tips
+                  {g.location ?? "South Africa"} · {(g.rating ?? 0).toFixed(1)}★ · {g.tips_count ?? 0} tips
                 </p>
               </div>
             </button>

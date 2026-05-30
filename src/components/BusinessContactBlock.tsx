@@ -1,0 +1,59 @@
+import { Link } from "react-router-dom";
+import { getBusinessContact } from "../lib/businessContact";
+
+export function BusinessContactBlock({ compact = false }: { compact?: boolean }) {
+  const c = getBusinessContact();
+
+  return (
+    <aside
+      className={
+        compact
+          ? "rounded-lg border border-slate-700/60 bg-slate-900/40 p-4 text-sm text-slate-300"
+          : "rounded-xl border border-slate-700/60 bg-slate-900/50 p-5 text-sm text-slate-300"
+      }
+    >
+      <h2 className={compact ? "text-sm font-bold text-white" : "text-base font-bold text-white"}>
+        Business contact
+      </h2>
+      <dl className="mt-3 space-y-2">
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-slate-500">Operator</dt>
+          <dd>{c.legalName}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-slate-500">Email</dt>
+          <dd>
+            <a href={`mailto:${c.supportEmail}`} className="text-amber-300 underline">
+              {c.supportEmail}
+            </a>
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-slate-500">Phone</dt>
+          <dd>
+            <a href={`tel:${c.phone.replace(/\s/g, "")}`} className="text-amber-300 underline">
+              {c.phone}
+            </a>
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-slate-500">Address</dt>
+          <dd>{c.address}</dd>
+        </div>
+      </dl>
+      {c.needsOperatorUpdate && (
+        <p className="mt-3 text-xs text-amber-200/90">
+          <strong>OPERATOR MUST UPDATE:</strong> Set <code className="text-amber-100">VITE_BUSINESS_PHONE</code>,{" "}
+          <code className="text-amber-100">VITE_BUSINESS_ADDRESS</code>, and{" "}
+          <code className="text-amber-100">VITE_BUSINESS_LEGAL_NAME</code> in Vercel production env (and redeploy).
+        </p>
+      )}
+      {!compact && (
+        <p className="mt-3 text-xs text-slate-500">
+          Refunds &amp; delivery: <Link to="/legal/refunds">refund policy</Link> ·{" "}
+          <Link to="/contact">full contact page</Link>
+        </p>
+      )}
+    </aside>
+  );
+}

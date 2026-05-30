@@ -4,6 +4,10 @@ import "./index.css";
 import "./styles/fintech.css";
 import App from "./App.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { BUILD_ID } from "./lib/buildInfo";
+import { attachPerfTelemetryGlobal } from "./lib/perfTelemetry";
+import { attachErrorTelemetryGlobal, installUnhandledRejectionCapture } from "./lib/errorTelemetry";
+import { devInfo } from "./lib/prodLog";
 import { bootLog, logBootHealth, logRuntimeEnvPresence } from "./lib/bootDebug";
 import { validateClientEnv } from "./lib/env";
 import { initAnalytics } from "./lib/analytics";
@@ -46,23 +50,38 @@ function renderBootstrapFallback(rootEl: HTMLElement | null, err: unknown): void
 
 function bootstrap(): void {
   try {
-    bootLog("main.tsx bootstrap start");
+    if (import.meta.env.DEV) {
+      devInfo("DEV_BUILD_ACTIVE", BUILD_ID);
+    }
+    attachPerfTelemetryGlobal();
+    attachErrorTelemetryGlobal();
+    installUnhandledRejectionCapture();
+    bootLog("main.tsx bootstrap start", { buildId: BUILD_ID });
     logRuntimeEnvPresence();
     applyThemeFromStorage();
     const envCheck = validateClientEnv();
     if (!envCheck.ok) {
       bootLog("env check issues (rendering anyway)", envCheck.message, envCheck.missing);
     }
-    try {
-      initSentry();
-    } catch (e) {
-      console.error("[TipGuard] initSentry failed", e);
-    }
-    try {
-      initAnalytics();
-    } catch (e) {
-      console.error("[TipGuard] initAnalytics failed", e);
-    }
+    const deferNonCritical = (fn: () => void) => {
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(fn, { timeout: 2500 });
+      } else {
+        window.setTimeout(fn, 0);
+      }
+    };
+    deferNonCritical(() => {
+      try {
+        initSentry();
+      } catch (e) {
+        console.error("[TipGuard] initSentry failed", e);
+      }
+      try {
+        initAnalytics();
+      } catch (e) {
+        console.error("[TipGuard] initAnalytics failed", e);
+      }
+    });
 
     const rootEl = document.getElementById("root");
     if (!rootEl) {

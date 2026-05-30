@@ -1,10 +1,33 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { centsFromRandInput, zarFromCents } from "../lib/money";
 import { useAuth } from "../context/useAuth";
 import { startTipCheckout } from "../payments/checkoutFlow";
+import { releaseTipCheckoutLock } from "../services/paystackCore";
 import { hasPaystackPublicKey } from "../services/paymentService";
-import { resolveTipTarget } from "../lib/resolveTipTarget";
+import {
+  clearResolveCacheForToken,
+  getLastResolveDebug,
+  peekCachedResolve,
+  readCachedTipDisplayName,
+  resolveTipTarget,
+  type ResolveTipTargetDebug,
+} from "../lib/resolveTipTarget";
+import {
+  QR_AUTH_GRACE_MS,
+  confirmRequiresSignInForPayment,
+  isSessionRestoreInFlight,
+  logQrAuth,
+  qrAuthTimestamp,
+  subscribeQrAuthSession,
+  waitForStableSession,
+} from "../lib/qrAuthSession";
+import { useGracePeriod } from "../hooks/useGracePeriod";
+import { perfMark } from "../lib/perfTelemetry";
+import { SlowLoadHint } from "../components/SlowLoadHint";
+import { useUiWatchdog } from "../lib/uiWatchdog";
+import { logAuth } from "../lib/authDebug";
+import { stabilLog } from "../lib/stabilLog";
 import { paystackEnvIssue } from "../lib/paystackEnv";
 import { CheckoutLoadingOverlay } from "../components/CheckoutLoadingOverlay";
 import type { CheckoutPhase } from "../payments/types";
@@ -13,23 +36,74 @@ import { TrustRibbon } from "../components/fintech/TrustRibbon";
 import { Skeleton } from "../components/Skeleton";
 import { FetchError } from "../components/FetchError";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { recordError } from "../lib/errorTelemetry";
+import { isQrResolveUserMessage, qrResolveErrorMessage } from "../lib/userFacingErrors";
 
 const PRESETS = [10, 20, 50] as const;
 
+function initialTipState(token: string | undefined) {
+  const cached = token ? peekCachedResolve(token) : null;
+  return {
+    target: cached?.target ?? null,
+    loading: !cached?.target,
+  };
+}
+
 /** Mobile-first QR landing: presets → auth → Paystack checkout. */
-export default function QrTipLanding() {
+function QrTipLandingContent() {
   const { token } = useParams<{ token: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [target, setTarget] = useState<Awaited<ReturnType<typeof resolveTipTarget>>["target"]>(null);
+  const { user, session, authReady, sessionReady } = useAuth();
+  const sessionUserId = user?.id ?? session?.user?.id ?? null;
+  const sessionMissing = sessionReady && !sessionUserId;
+  const sessionGraceElapsed = useGracePeriod(sessionMissing, QR_AUTH_GRACE_MS);
+  const [, setAuthSessionTick] = useState(0);
+  useEffect(() => subscribeQrAuthSession(() => setAuthSessionTick((n) => n + 1)), []);
+  const sessionRestoreInFlight = isSessionRestoreInFlight(
+    sessionReady,
+    sessionMissing,
+    sessionGraceElapsed,
+  );
+  const payBlockedByAuth = sessionRestoreInFlight;
+  const [target, setTarget] = useState<Awaited<ReturnType<typeof resolveTipTarget>>["target"]>(() =>
+    initialTipState(token).target,
+  );
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => initialTipState(token).loading);
   const [amount, setAmount] = useState("20");
   const [paying, setPaying] = useState(false);
   const [checkoutPhase, setCheckoutPhase] = useState<CheckoutPhase>("idle");
   const [reload, setReload] = useState(0);
+  const [resolveDebug, setResolveDebug] = useState<ResolveTipTargetDebug | null>(null);
+  const resolveDebugUi = searchParams.get("tg_resolve_debug") === "1";
   const online = useOnlineStatus();
+  const payInFlightRef = useRef(false);
+  const optimisticName = useMemo(() => readCachedTipDisplayName(token), [token]);
+  const slowLoad = useUiWatchdog(loading);
+
+  useEffect(() => () => releaseTipCheckoutLock(), []);
+
+  useEffect(() => {
+    logQrAuth("mount / session snapshot", {
+      sessionReady,
+      authReady,
+      userId: user?.id ?? null,
+      sessionUserId: session?.user?.id ?? null,
+      sessionMissing,
+      sessionGraceElapsed,
+      sessionRestoreInFlight,
+    });
+  }, [
+    token,
+    sessionReady,
+    authReady,
+    user?.id,
+    session?.user?.id,
+    sessionMissing,
+    sessionGraceElapsed,
+    sessionRestoreInFlight,
+  ]);
 
   const cents = useMemo(() => centsFromRandInput(amount), [amount]);
   const amountLabel = cents != null ? zarFromCents(cents) : "R 0.00";
@@ -37,15 +111,22 @@ export default function QrTipLanding() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
+    const endHydration = perfMark("qr:tip_page_hydration");
+    const hadCache = Boolean(peekCachedResolve(token)?.target);
     void (async () => {
-      setLoading(true);
-      setError(null);
-      const { target: resolved, error: resolveErr } = await resolveTipTarget(token);
+      if (!hadCache) {
+        setLoading(true);
+        setError(null);
+      }
+      const { target: resolved, error: resolveErr, debug } = await resolveTipTarget(token);
       if (cancelled) return;
+      setResolveDebug(debug ?? getLastResolveDebug());
       if (resolveErr || !resolved) {
-        setError(resolveErr ?? "This QR code is invalid or has expired.");
+        const raw = resolveErr ?? "";
+        setError(isQrResolveUserMessage(raw) ? raw : qrResolveErrorMessage(raw, debug?.reason));
         setTarget(null);
       } else {
+        setError(null);
         setTarget(resolved);
         const preset = searchParams.get("amount");
         const presetNum = preset ? Number(preset) : NaN;
@@ -56,11 +137,14 @@ export default function QrTipLanding() {
         }
       }
       setLoading(false);
+      endHydration();
     })();
     return () => {
       cancelled = true;
     };
-  }, [token, searchParams, reload]);
+    // Amount from URL is applied on resolve only — preset buttons update amount directly (no re-resolve).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- searchParams must not retrigger resolve_tip_target
+  }, [token, reload]);
 
   function pickPreset(rands: number) {
     setAmount(String(rands));
@@ -70,20 +154,63 @@ export default function QrTipLanding() {
   }
 
   async function pay() {
+    if (payInFlightRef.current) return;
+    stabilLog("pay", "Pay clicked (QR landing)", {
+      hasTarget: !!target?.guard_id,
+      hasAmount: cents != null,
+      t: qrAuthTimestamp(),
+    });
     if (!target?.guard_id || cents == null) {
       setError("Choose a valid amount.");
       return;
     }
-    if (!user?.id) {
+    if (payBlockedByAuth) {
+      logQrAuth("pay blocked — session restore in flight", {
+        sessionReady,
+        sessionRestoreInFlight,
+      });
+      setError("Restoring your session — wait a moment and tap Pay again.");
+      return;
+    }
+    const stable = await waitForStableSession({
+      sessionReady,
+      reactUserId: user?.id,
+      reactSessionUserId: session?.user?.id,
+    });
+    if (!stable.ok) {
+      if (stable.reason === "session_not_ready") {
+        logQrAuth("pay blocked — waitForStableSession session_not_ready", { waitedMs: stable.waitedMs });
+        setError("Checking your session — wait a moment and tap Pay again.");
+        return;
+      }
+      if (!sessionGraceElapsed) {
+        logQrAuth("pay deferred — stable wait during grace", { reason: stable.reason, waitedMs: stable.waitedMs });
+        setError("Restoring your session — wait a moment and tap Pay again.");
+        return;
+      }
+      const signedOut = await confirmRequiresSignInForPayment();
+      if (!signedOut) {
+        logQrAuth("pay retry hint — session recovered after stable wait", { waitedMs: stable.waitedMs });
+        setError("Session restored. Tap Pay again.");
+        return;
+      }
+      logAuth("QR pay redirect to login (confirmed sign-out)", { token });
+      logQrAuth("redirect /login after confirmed sign-out", { token });
       sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
       navigate("/login", { replace: true });
       return;
+    }
+    const payerId = stable.userId;
+    if (!user?.id) {
+      logAuth("QR pay using recovered session (React user was briefly null)", { payerId });
+      logQrAuth("pay using recovered session id", { payerId, waitedMs: stable.waitedMs });
     }
     const payIssue = paystackEnvIssue();
     if (!hasPaystackPublicKey()) {
       setError(payIssue ?? "Payments are not configured on this deployment.");
       return;
     }
+    payInFlightRef.current = true;
     setPaying(true);
     setError(null);
     try {
@@ -93,13 +220,37 @@ export default function QrTipLanding() {
         sourceLinkToken: token,
         amountCents: cents,
         navigate,
-        onError: (msg) => setError(msg),
-        onCheckoutDismissed: () => setPaying(false),
+        onRequiresAuth: () => {
+          void (async () => {
+            releaseTipCheckoutLock();
+            if (!(await confirmRequiresSignInForPayment())) {
+              logQrAuth("onRequiresAuth ignored — session still present", {});
+              setError("Session restored. Tap Pay again.");
+              return;
+            }
+            logQrAuth("onRequiresAuth → /login", { token });
+            sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
+            navigate("/login", { replace: true });
+          })();
+        },
+        onError: (msg) => {
+          releaseTipCheckoutLock();
+          setError(msg);
+        },
+        onCheckoutDismissed: () => {
+          releaseTipCheckoutLock();
+          setPaying(false);
+        },
         onCheckoutPhase: setCheckoutPhase,
       });
+    } catch (e) {
+      releaseTipCheckoutLock();
+      const msg = e instanceof Error ? e.message : "Payment could not start.";
+      recordError("qr_tip_checkout", msg, { code: "exception" });
+      setError("Something went wrong starting checkout. Please try again.");
     } finally {
+      payInFlightRef.current = false;
       setPaying(false);
-      setCheckoutPhase("idle");
     }
   }
 
@@ -122,11 +273,16 @@ export default function QrTipLanding() {
   }
 
   if (loading) {
+    const label = optimisticName ? `Tip ${optimisticName}` : "Loading secure tip page…";
     return (
       <PageWrap>
-        <Skeleton style={{ height: 28, width: "60%", margin: "0 auto" }} />
+        <p className="text-xs font-bold uppercase tracking-wider text-amber-400/90">TipGuard SA</p>
+        <h1 className="mt-2 text-xl font-black text-white">{label}</h1>
         <Skeleton style={{ height: 180, width: "100%", borderRadius: 20, marginTop: 16 }} />
-        <p className="text-sm text-slate-400">Loading secure tip page…</p>
+        <p className="text-sm text-slate-400" role="status">
+          {optimisticName ? "Refreshing tip details…" : "Loading secure tip page…"}
+        </p>
+        <SlowLoadHint show={slowLoad} message="Connection is slow — still loading…" />
       </PageWrap>
     );
   }
@@ -153,10 +309,35 @@ export default function QrTipLanding() {
         <h1 className="text-xl font-black text-white">Tip link unavailable</h1>
         <FetchError
           message={error ?? "This QR code could not be loaded."}
-          onRetry={() => setReload((n) => n + 1)}
+          onRetry={() => {
+            if (token) clearResolveCacheForToken(token);
+            setResolveDebug(null);
+            setError(null);
+            setLoading(true);
+            setReload((n) => n + 1);
+          }}
         />
+        {token ? (
+          <p className="mt-2 font-mono text-[10px] text-slate-500">
+            Link code: <span className="text-slate-400">{token}</span>
+            {resolveDebugUi && resolveDebug ? (
+              <span className="mt-1 block text-left text-slate-400">
+                debug · rows={resolveDebug.rowCount} · rpcOk={String(resolveDebug.rpcOk)}
+                {resolveDebug.reason ? ` · ${resolveDebug.reason}` : ""}
+                {resolveDebug.rpcErrorCode ? ` · ${resolveDebug.rpcErrorCode}` : ""}
+                {resolveDebug.guardId ? ` · guard=${resolveDebug.guardId.slice(0, 8)}…` : ""}
+              </span>
+            ) : null}
+          </p>
+        ) : null}
         <p className="mt-2 text-xs text-slate-500">
           Check the code is current, the guard is verified, and your venue has finished setup.
+          {resolveDebugUi ? null : (
+            <>
+              {" "}
+              Add <span className="font-mono">?tg_resolve_debug=1</span> for field diagnostics.
+            </>
+          )}
         </p>
         <Link to="/customer" className="mt-4 text-amber-400">
           Browse guards
@@ -169,12 +350,12 @@ export default function QrTipLanding() {
   }
 
   return (
-    <div className="shell qr-landing mx-auto min-h-[100dvh] max-w-md px-4 py-6 pb-[max(7rem,env(safe-area-inset-bottom))]">
+    <div className="shell qr-landing mx-auto min-h-[100dvh] max-w-md overflow-x-hidden px-4 py-6 pb-[max(7rem,env(safe-area-inset-bottom))]">
       {checkoutPhase !== "idle" && overlayMsg ? <CheckoutLoadingOverlay message={overlayMsg} /> : null}
       <header className="fx-fade-up mb-4 text-center">
         <p className="text-xs font-bold uppercase tracking-wider text-amber-400/90">TipGuard SA</p>
-        <h1 className="mt-1 text-2xl font-black text-white">Tip {target.guard_display_name}</h1>
-        <p className="mt-1 text-xs text-slate-500">{target.scan_count} scans · ZAR only</p>
+        <h1 className="mt-1 text-2xl font-black text-white">Tip {target.guard_display_name ?? "Guard"}</h1>
+        <p className="mt-1 text-xs text-slate-500">{(target?.scan_count ?? 0) || 0} scans · ZAR only</p>
       </header>
 
       <TrustRibbon />
@@ -223,13 +404,32 @@ export default function QrTipLanding() {
         </p>
       )}
 
+      {payBlockedByAuth ? (
+        <div className="mb-3 space-y-2" role="status">
+          <Skeleton style={{ height: 52, width: "100%", borderRadius: 16 }} />
+          <p className="text-center text-xs text-slate-500">
+            {!sessionReady ? "Checking your session…" : "Restoring your session…"}
+          </p>
+        </div>
+      ) : null}
+
       <button
         type="button"
-        className={`tap-target w-full rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 text-lg font-black text-black shadow-lg ${!paying ? "fx-glow-pulse" : ""}`}
-        disabled={paying || !hasPaystackPublicKey()}
+        className={`tap-target min-h-[48px] w-full rounded-2xl bg-gradient-to-r from-amber-400 to-amber-600 py-4 text-lg font-black text-black shadow-lg ${!paying && !payBlockedByAuth ? "fx-glow-pulse" : ""}`}
+        disabled={paying || !hasPaystackPublicKey() || payBlockedByAuth}
         onClick={() => void pay()}
       >
-        {paying ? "Opening checkout…" : user ? `Pay ${amountLabel}` : "Sign in to pay"}
+        {paying
+          ? "Opening checkout…"
+          : payBlockedByAuth
+            ? !sessionReady
+              ? "Checking session…"
+              : "Restoring session…"
+            : sessionUserId
+              ? `Pay ${amountLabel}`
+              : sessionGraceElapsed
+                ? "Sign in to pay"
+                : "Restoring session…"}
       </button>
 
       <p className="mt-4 text-center text-xs text-slate-600">
@@ -247,9 +447,14 @@ export default function QrTipLanding() {
 
 function PageWrap({ children }: { children: ReactNode }) {
   return (
-    <div className="shell mx-auto flex min-h-[100dvh] max-w-md flex-col items-center justify-center gap-4 px-4 py-10 pb-[env(safe-area-inset-bottom)] text-center">
+    <div className="shell mx-auto flex min-h-[100dvh] max-w-md flex-col items-center justify-center gap-4 overflow-x-hidden px-4 py-10 pb-[env(safe-area-inset-bottom)] text-center">
       {children}
     </div>
   );
+}
+
+export default function QrTipLanding() {
+  const { token } = useParams<{ token: string }>();
+  return <QrTipLandingContent key={token ?? "missing"} />;
 }
 

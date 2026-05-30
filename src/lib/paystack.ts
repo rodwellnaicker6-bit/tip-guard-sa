@@ -77,11 +77,19 @@ export function loadPaystackInlineScript(): Promise<void> {
   return loadPromise;
 }
 
-export async function openPaystackInline(opts: PaystackInlineOptions): Promise<void> {
-  await loadPaystackInlineScript();
+export async function openPaystackInline(opts: PaystackInlineOptions): Promise<{ ok: true } | { ok: false; message: string }> {
+  try {
+    await loadPaystackInlineScript();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Failed to load Paystack";
+    console.error("[TipGuard:pay] Paystack script load failed", e);
+    return { ok: false, message };
+  }
   const PaystackPop = window.PaystackPop;
   if (!PaystackPop?.setup) {
-    throw new Error("Paystack Inline is not available on this page.");
+    const message = "Paystack checkout is not available on this page.";
+    console.error("[TipGuard:pay]", message);
+    return { ok: false, message };
   }
   PaystackPop.setup({
     key: opts.key,
@@ -99,4 +107,5 @@ export async function openPaystackInline(opts: PaystackInlineOptions): Promise<v
       opts.onClose();
     },
   });
+  return { ok: true };
 }

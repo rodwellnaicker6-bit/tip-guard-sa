@@ -1,10 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
+import { perfLog } from "../lib/perfLog";
+import { stabilLog } from "../lib/stabilLog";
+import { SlowLoadHint } from "../components/SlowLoadHint";
+import { useUiWatchdog } from "../lib/uiWatchdog";
 import { supabase } from "../lib/supabase";
+import { recordError } from "../lib/errorTelemetry";
 import { unwrapRpcSingle } from "../lib/rpcData";
 import { centsFromRandInput, zarFromCents } from "../lib/money";
 import { hasPaystackPublicKey } from "../services/paymentService";
 import { startTipCheckout } from "../payments/checkoutFlow";
+import { releaseTipCheckoutLock } from "../services/paystackCore";
 import type { PublicGuardRow } from "./CustomerHome";
 import { useToast } from "../context/useToast";
 import { Skeleton } from "../components/Skeleton";
@@ -16,7 +23,7 @@ import type { CheckoutPhase } from "../payments/types";
 
 const PRESETS = [10, 20, 50] as const;
 
-export default function TipCheckout() {
+function TipCheckoutPage() {
   const { guardId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -27,6 +34,8 @@ export default function TipCheckout() {
   const [checkoutPhase, setCheckoutPhase] = useState<CheckoutPhase>("idle");
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
+  const slowLoad = useUiWatchdog(loading);
+  const payInFlightRef = useRef(false);
 
   const cents = useMemo(() => centsFromRandInput(amount), [amount]);
   const amountLabel = cents != null ? zarFromCents(cents) : "R 0.00";
@@ -34,31 +43,58 @@ export default function TipCheckout() {
   useEffect(() => {
     if (!guardId) return;
     let cancelled = false;
+    const watchdog = window.setTimeout(() => {
+      if (cancelled) return;
+      setLoading(false);
+      setError((prev) => prev ?? "Loading guard timed out. Please try again.");
+    }, RPC_DEFAULT_TIMEOUT_MS + 1_000);
+
     (async () => {
       setLoading(true);
-      const { data, error: err } = await supabase.rpc("get_public_guard", { p_id: guardId });
-      if (cancelled) return;
-      const row = unwrapRpcSingle<PublicGuardRow>(data);
-      if (err || !row) {
-        setError(err?.message ?? "Guard not found");
-        setGuard(null);
-      } else {
-        setGuard(row as PublicGuardRow);
-        setError(null);
+      const t0 = performance.now();
+      try {
+        const { data, error: err } = await withOperationTimeout(
+          "rpc",
+          "get_public_guard",
+          (signal) => supabase.rpc("get_public_guard", { p_id: guardId }).abortSignal(signal),
+          RPC_DEFAULT_TIMEOUT_MS,
+        );
+        if (cancelled) return;
+        const row = unwrapRpcSingle<PublicGuardRow>(data);
+        if (err || !row) {
+          setError(err?.message ?? "Guard not found");
+          setGuard(null);
+        } else {
+          setGuard(row as PublicGuardRow);
+          setError(null);
+        }
+        perfLog("get_public_guard", Math.round(performance.now() - t0), { ok: !err && !!row });
+      } catch {
+        if (!cancelled) {
+          setError("Loading guard timed out. Please try again.");
+          setGuard(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(watchdog);
     };
   }, [guardId, reload]);
 
-  async function startPayment() {
+  useEffect(() => () => releaseTipCheckoutLock(), []);
+
+  const startPayment = useCallback(async () => {
+    if (payInFlightRef.current) return;
+    stabilLog("pay", "Pay clicked (tip checkout)", { hasGuard: !!guardId, hasAmount: cents != null });
     setError(null);
     if (!guardId || cents == null) {
       setError("Enter a valid Rand amount.");
       return;
     }
+    payInFlightRef.current = true;
     setStarting(true);
     try {
       await startTipCheckout({
@@ -66,20 +102,36 @@ export default function TipCheckout() {
         guardId,
         amountCents: cents,
         navigate,
+        onRequiresAuth: () => {
+          releaseTipCheckoutLock();
+          sessionStorage.setItem("tipguard_redirect", `/customer/tip/${encodeURIComponent(guardId)}`);
+          navigate("/login", { replace: true });
+        },
         onError: (msg) => {
+          releaseTipCheckoutLock();
           setError(msg);
           toast.error(msg);
         },
         onCheckoutDismissed: () => {
+          releaseTipCheckoutLock();
           toast.info("Checkout closed — no charge yet.");
         },
         onCheckoutPhase: setCheckoutPhase,
       });
+    } catch (e) {
+      releaseTipCheckoutLock();
+      const msg = e instanceof Error ? e.message : String(e);
+      recordError("customer_tip_checkout", msg, { code: "exception" });
+      setError("Something went wrong starting checkout. Please try again.");
+      toast.error("Checkout failed to start.");
     } finally {
+      payInFlightRef.current = false;
       setStarting(false);
       setCheckoutPhase("idle");
     }
-  }
+  }, [guardId, cents, navigate, toast]);
+
+  const onRetryLoad = useCallback(() => setReload((n) => n + 1), []);
 
   const overlayMsg =
     checkoutPhase === "initializing"
@@ -95,6 +147,7 @@ export default function TipCheckout() {
         <Skeleton style={{ height: 16, width: "40%" }} />
         <Skeleton style={{ height: 48, width: "100%", marginTop: 16 }} />
         <Skeleton style={{ height: 52, width: "100%", borderRadius: 16, marginTop: 12 }} />
+        <SlowLoadHint show={slowLoad} />
       </div>
     );
   }
@@ -103,7 +156,7 @@ export default function TipCheckout() {
     return (
       <div className="shell mx-auto max-w-md space-y-4 px-5 py-8">
         {error ? (
-          <FetchError message={error} onRetry={() => setReload((n) => n + 1)} retryLabel="Reload guard" />
+          <FetchError message={error} onRetry={onRetryLoad} retryLabel="Reload guard" />
         ) : (
           <p>Could not load this guard.</p>
         )}
@@ -204,3 +257,5 @@ export default function TipCheckout() {
     </div>
   );
 }
+
+export default memo(TipCheckoutPage);

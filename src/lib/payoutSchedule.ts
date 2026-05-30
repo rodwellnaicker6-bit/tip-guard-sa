@@ -1,3 +1,4 @@
+import { RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "./operationTimeout";
 import { supabase } from "./supabase";
 
 export type PayoutSchedule = "instant" | "daily" | "weekly" | "monthly";
@@ -103,12 +104,35 @@ export async function fetchEntityPayoutPrefs(
   table: EntityTable,
   userId: string,
 ): Promise<{ prefs: EntityPayoutPrefs | null; error: string | null }> {
-  const { data, error } = await supabase.from(table).select(PAYOUT_COLS).eq("user_id", userId).maybeSingle();
+  try {
+    return await withOperationTimeout(
+      "rpc",
+      "payout prefs",
+      (signal) => loadEntityPayoutPrefs(table, userId, signal),
+      RPC_DEFAULT_TIMEOUT_MS,
+      undefined,
+      { queued: false },
+    );
+  } catch {
+    return { prefs: null, error: "Payout preferences load timed out." };
+  }
+}
+
+async function loadEntityPayoutPrefs(
+  table: EntityTable,
+  userId: string,
+  signal?: AbortSignal,
+): Promise<{ prefs: EntityPayoutPrefs | null; error: string | null }> {
+  const q = supabase.from(table).select(PAYOUT_COLS).eq("user_id", userId);
+  const { data, error } = signal ? await q.abortSignal(signal).maybeSingle() : await q.maybeSingle();
   if (!error && data?.id) {
     return { prefs: prefsFromRow(data as PayoutRowSlice, true), error: null };
   }
   if (error && isMissingPayoutScheduleSchema(error)) {
-    const { data: legacy, error: legacyErr } = await supabase.from(table).select("id").eq("user_id", userId).maybeSingle();
+    const legacyQ = supabase.from(table).select("id").eq("user_id", userId);
+    const { data: legacy, error: legacyErr } = signal
+      ? await legacyQ.abortSignal(signal).maybeSingle()
+      : await legacyQ.maybeSingle();
     if (legacyErr) return { prefs: null, error: "We could not load payout preferences." };
     if (!legacy?.id) return { prefs: null, error: null };
     return {

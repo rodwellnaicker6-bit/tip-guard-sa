@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { usePostAuthRedirect } from "../hooks/usePostAuthRedirect";
@@ -16,7 +16,10 @@ function readAuthType(): string | null {
 
 type Status = "working" | "error";
 
+const AUTH_CALLBACK_TIMEOUT_MS = 8_000;
+
 export default function AuthCallback() {
+  const navigate = useNavigate();
   const [message, setMessage] = useState(() =>
     readAuthType() === "signup" ? "Confirming your email…" : "Signing you in…",
   );
@@ -36,6 +39,16 @@ export default function AuthCallback() {
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (sessionEstablished || status === "error") return;
+    const t = window.setTimeout(() => {
+      if (!mountedRef.current || sessionEstablished) return;
+      console.warn("[TipGuard] AuthCallback timeout — redirecting to login");
+      navigate("/login", { replace: true, state: { from: "/" } });
+    }, AUTH_CALLBACK_TIMEOUT_MS);
+    return () => window.clearTimeout(t);
+  }, [sessionEstablished, status, navigate]);
 
   useEffect(() => {
     if (exchangeStarted.current) return;

@@ -5,11 +5,12 @@ import { AuthProvider } from "./context/AuthProvider";
 import { ToastProvider } from "./context/ToastProvider";
 import { AppBootGate } from "./components/AppBootGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { EmergencyErrorBoundary } from "./lib/emergencySafeMode";
+import { BuildDeployBadge } from "./components/BuildDeployBadge";
 import { bootLog, logBootHealth } from "./lib/bootDebug";
 import { SessionIdleWatcher } from "./components/SessionIdleWatcher";
 import { RequireAdmin, RequireAuth, RequireGuard, RequireMerchant } from "./components/RequireAuth";
 import { HubLayout } from "./layouts/HubLayout";
-import { Skeleton } from "./components/Skeleton";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -18,10 +19,12 @@ import AuthCallback from "./pages/AuthCallback";
 import PasswordReset from "./pages/PasswordReset";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
+import RefundRedirect from "./pages/RefundRedirect";
 import TipResolve from "./pages/TipResolve";
-import PaymentSuccess from "./pages/PaymentSuccess";
-import PaymentFailure from "./pages/PaymentFailure";
 import NotFound from "./pages/NotFound";
+
+const PaymentSuccess = lazy(() => import("./pages/PaymentSuccess"));
+const PaymentFailure = lazy(() => import("./pages/PaymentFailure"));
 
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const Settings = lazy(() => import("./pages/Settings"));
@@ -51,20 +54,13 @@ const CookiesPolicy = lazy(() => import("./pages/CookiesPolicy"));
 const RefundPolicy = lazy(() => import("./pages/RefundPolicy"));
 const MerchantOnboardingLegal = lazy(() => import("./pages/MerchantOnboardingLegal"));
 const Contact = lazy(() => import("./pages/Contact"));
-const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
-const AdminSecurity = lazy(() => import("./pages/AdminSecurity"));
-const AdminTransactions = lazy(() => import("./pages/AdminTransactions"));
-const AdminAnalytics = lazy(() => import("./pages/AdminAnalytics"));
-const AdminMetrics = lazy(() => import("./pages/AdminMetrics"));
-const AdminFraud = lazy(() => import("./pages/AdminFraud"));
+const AdminRoutes = lazy(() => import("./routes/AdminRoutes"));
 const MerchantDisputes = lazy(() => import("./pages/MerchantDisputes"));
 
 function RouteFallback() {
   return (
-    <div className="shell mx-auto max-w-lg space-y-3 px-5 py-10">
-      <Skeleton style={{ height: 28, width: "55%" }} />
-      <Skeleton style={{ height: 140, width: "100%", borderRadius: 18 }} />
-      <Skeleton style={{ height: 80, width: "100%", borderRadius: 14 }} />
+    <div className="shell mx-auto max-w-lg px-5 py-10 text-center text-slate-400" role="status" aria-live="polite">
+      Loading page…
     </div>
   );
 }
@@ -90,10 +86,19 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route
+        path="/auth/callback"
+        element={
+          <EmergencyErrorBoundary>
+            <AuthCallback />
+          </EmergencyErrorBoundary>
+        }
+      />
       <Route path="/auth/reset" element={<PasswordReset />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
+      <Route path="/refund" element={<RefundRedirect />} />
+      <Route path="/refunds" element={<RefundRedirect />} />
       <Route
         path="/legal/popia"
         element={
@@ -134,32 +139,85 @@ function AppRoutes() {
           </Lazy>
         }
       />
-      <Route path="/t/:token" element={<TipResolve />} />
+      <Route
+        path="/t/:token"
+        element={
+          <ErrorBoundary>
+            <EmergencyErrorBoundary>
+              <TipResolve />
+            </EmergencyErrorBoundary>
+          </ErrorBoundary>
+        }
+      />
       <Route
         path="/tip/:token"
         element={
-          <Lazy>
-            <QrTipLanding />
-          </Lazy>
+          <ErrorBoundary>
+            <EmergencyErrorBoundary>
+              <Lazy>
+                <QrTipLanding />
+              </Lazy>
+            </EmergencyErrorBoundary>
+          </ErrorBoundary>
+        }
+      />
+      <Route
+        path="/nfc/:token"
+        element={
+          <ErrorBoundary>
+            <EmergencyErrorBoundary>
+              <TipResolve />
+            </EmergencyErrorBoundary>
+          </ErrorBoundary>
         }
       />
       <Route
         path="/qr/:token"
         element={
-          <Lazy>
-            <QrTipLanding />
-          </Lazy>
+          <ErrorBoundary>
+            <EmergencyErrorBoundary>
+              <Lazy>
+                <QrTipLanding />
+              </Lazy>
+            </EmergencyErrorBoundary>
+          </ErrorBoundary>
         }
       />
-      <Route path="/payment/success" element={<PaymentSuccess />} />
-      <Route path="/payment/failure" element={<PaymentFailure />} />
+      <Route
+        path="/payment/success"
+        element={
+          <ErrorBoundary>
+            <EmergencyErrorBoundary>
+              <Lazy>
+                <PaymentSuccess />
+              </Lazy>
+            </EmergencyErrorBoundary>
+          </ErrorBoundary>
+        }
+      />
+      <Route
+        path="/payment/failure"
+        element={
+          <ErrorBoundary>
+            <EmergencyErrorBoundary>
+              <Lazy>
+                <PaymentFailure />
+              </Lazy>
+            </EmergencyErrorBoundary>
+          </ErrorBoundary>
+        }
+      />
       <Route
         path="/customer/tip/:guardId"
         element={
           <RequireAuth>
-            <Lazy>
-              <TipCheckout />
-            </Lazy>
+            <ErrorBoundary>
+              <EmergencyErrorBoundary>
+                <Lazy>
+                  <TipCheckout />
+                </Lazy>
+              </EmergencyErrorBoundary>
+            </ErrorBoundary>
           </RequireAuth>
         }
       />
@@ -414,61 +472,11 @@ function AppRoutes() {
       </Route>
 
       <Route
-        path="/admin"
+        path="/admin/*"
         element={
           <RequireAdmin>
             <Lazy>
-              <AdminDashboard />
-            </Lazy>
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/admin/security"
-        element={
-          <RequireAdmin>
-            <Lazy>
-              <AdminSecurity />
-            </Lazy>
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/admin/transactions"
-        element={
-          <RequireAdmin>
-            <Lazy>
-              <AdminTransactions />
-            </Lazy>
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/admin/analytics"
-        element={
-          <RequireAdmin>
-            <Lazy>
-              <AdminAnalytics />
-            </Lazy>
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/admin/metrics"
-        element={
-          <RequireAdmin>
-            <Lazy>
-              <AdminMetrics />
-            </Lazy>
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/admin/fraud"
-        element={
-          <RequireAdmin>
-            <Lazy>
-              <AdminFraud />
+              <AdminRoutes />
             </Lazy>
           </RequireAdmin>
         }
@@ -491,8 +499,11 @@ export default function App() {
           <AuthProvider>
             <SessionIdleWatcher />
             <AppBootGate>
-              <AppRoutes />
+              <EmergencyErrorBoundary>
+                <AppRoutes />
+              </EmergencyErrorBoundary>
             </AppBootGate>
+            <BuildDeployBadge />
           </AuthProvider>
         </ToastProvider>
       </BrowserRouter>

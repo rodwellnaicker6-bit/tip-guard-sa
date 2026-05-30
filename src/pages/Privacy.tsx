@@ -1,8 +1,9 @@
 import { LegalPageLayout } from "../components/LegalPageLayout";
+import { BusinessContactBlock } from "../components/BusinessContactBlock";
 
 export default function Privacy() {
   return (
-    <LegalPageLayout title="Privacy policy" updated="20 May 2026">
+    <LegalPageLayout title="Privacy policy" updated="27 May 2026">
       <p>
         This policy explains how TipGuard SA processes personal information when you use our tipping platform. For POPIA
         rights and the information officer contact, see our <a href="/legal/popia">POPIA notice</a>.
@@ -33,6 +34,7 @@ export default function Privacy() {
       <p>
         See our <a href="/legal/cookies">cookie policy</a> for browser storage used by the app.
       </p>
+      <BusinessContactBlock compact />
     </LegalPageLayout>
   );
 }

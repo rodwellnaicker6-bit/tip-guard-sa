@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import { zarFromCents } from "../lib/money";
 import PageLoader from "../components/PageLoader";
 import EmptyState from "../components/EmptyState";
 import { FetchError } from "../components/FetchError";
+import { SlowLoadHint } from "../components/SlowLoadHint";
+import { useUiWatchdog } from "../lib/uiWatchdog";
 
 type TipHistoryRow = {
   id: string;
@@ -16,35 +19,53 @@ type TipHistoryRow = {
 };
 
 export default function CustomerHistory() {
-  const { user } = useAuth();
+  const { user, sessionReady } = useAuth();
   const [tips, setTips] = useState<TipHistoryRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
+  const slowLoad = useUiWatchdog(loading);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!sessionReady || !user?.id) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError(null);
-      const { data, error: tErr } = await supabase.rpc("get_customer_tip_history");
-      if (cancelled) return;
-      if (tErr) {
-        setError("Could not load tip history. Please try again.");
-        setTips([]);
-      } else {
-        setTips((data as TipHistoryRow[]) ?? []);
+      try {
+        const { data, error: tErr } = await withOperationTimeout(
+          "dashboard",
+          "get_customer_tip_history",
+          (signal) => supabase.rpc("get_customer_tip_history").abortSignal(signal),
+          RPC_DEFAULT_TIMEOUT_MS,
+          undefined,
+          { queued: false },
+        );
+        if (cancelled) return;
+        if (tErr) {
+          setError("Could not load tip history. Please try again.");
+          setTips([]);
+        } else {
+          setTips((data as TipHistoryRow[]) ?? []);
+        }
+      } catch {
+        if (!cancelled) setError("Loading timed out. Please try again.");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.id, reload]);
+  }, [user?.id, sessionReady, reload]);
 
   if (loading && tips.length === 0 && !error) {
-    return <PageLoader />;
+    return (
+      <div className="shell dashboard-hub stack">
+        <PageLoader />
+        <SlowLoadHint show={slowLoad} />
+      </div>
+    );
   }
 
   return (

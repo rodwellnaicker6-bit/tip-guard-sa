@@ -87,6 +87,10 @@ export default function CustomerWallet() {
       await payWalletTopUpWithPaystack({
         amountCents: cents,
         navigate,
+        onRequiresAuth: () => {
+          sessionStorage.setItem("tipguard_redirect", "/customer/wallet");
+          navigate("/login", { replace: true });
+        },
         onError: (msg) => {
           setError(msg);
           toast.error(msg);

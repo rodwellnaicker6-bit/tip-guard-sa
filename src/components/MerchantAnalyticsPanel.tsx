@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, memo } from "react";
+import { RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
+import { perfLog } from "../lib/perfLog";
 import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
 import { Skeleton } from "./Skeleton";
@@ -23,51 +25,56 @@ const PERIODS = [
   { id: "all", label: "All" },
 ] as const;
 
-export function MerchantAnalyticsPanel() {
+export const MerchantAnalyticsPanel = memo(function MerchantAnalyticsPanel() {
   const [period, setPeriod] = useState<(typeof PERIODS)[number]["id"]>("30d");
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const loadInflightRef = useRef(false);
+  const loadGenRef = useRef(0);
 
   const load = useCallback(async () => {
+    if (loadInflightRef.current) return;
+    loadInflightRef.current = true;
+    const gen = ++loadGenRef.current;
     setLoading(true);
     setError(null);
-    const { data: raw, error: err } = await supabase.rpc("merchant_payment_analytics_v2", { p_period: period });
-    if (err) {
-      setError(err.message);
-      setData(null);
-    } else {
-      setData((raw as Analytics) ?? null);
-    }
-    setLoading(false);
-  }, [period]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      setLoading(true);
-      setError(null);
-      const { data: raw, error: err } = await supabase.rpc("merchant_payment_analytics_v2", { p_period: period });
-      if (cancelled) return;
+    const t0 = performance.now();
+    try {
+      const { data: raw, error: err } = await withOperationTimeout(
+        "rpc",
+        "merchant_payment_analytics_v2",
+        (signal) => supabase.rpc("merchant_payment_analytics_v2", { p_period: period }).abortSignal(signal),
+        RPC_DEFAULT_TIMEOUT_MS,
+      );
+      if (gen !== loadGenRef.current) return;
       if (err) {
         setError(err.message);
         setData(null);
       } else {
         setData((raw as Analytics) ?? null);
       }
-      setLoading(false);
-    };
+      perfLog("merchant_payment_analytics_v2", Math.round(performance.now() - t0), { ok: !err });
+    } catch {
+      if (gen === loadGenRef.current) {
+        setError("Analytics load timed out. Please try again.");
+        setData(null);
+      }
+    } finally {
+      loadInflightRef.current = false;
+      if (gen === loadGenRef.current) setLoading(false);
+    }
+  }, [period]);
+
+  useEffect(() => {
     queueMicrotask(() => {
-      void run();
+      void load();
     });
     const id = setInterval(() => {
-      if (document.visibilityState === "visible") void run();
+      if (document.visibilityState === "visible") void load();
     }, 30_000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [period]);
+    return () => clearInterval(id);
+  }, [load]);
 
   if (loading && !data) {
     return (
@@ -161,7 +168,7 @@ export function MerchantAnalyticsPanel() {
       </div>
     </div>
   );
-}
+});
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (

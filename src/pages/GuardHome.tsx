@@ -1,5 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { parseFunctionsInvokeError } from "../lib/edgeFunctionInvoke";
+import { PAYOUT_REQUEST_TIMEOUT_MS, DASHBOARD_LOAD_TIMEOUT_MS, logFlow, withOperationTimeout } from "../lib/operationTimeout";
+import { perfLog } from "../lib/perfLog";
+import { SlowLoadHint } from "../components/SlowLoadHint";
+import { useUiWatchdog } from "../lib/uiWatchdog";
+import { ensurePaymentAccessToken } from "../lib/paymentSession";
 import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
 import { useAuth } from "../context/useAuth";
@@ -29,8 +35,10 @@ type PayoutRow = {
   created_at: string;
 };
 
-export default function GuardHome() {
-  const { user, profileFields, signOut } = useAuth();
+import { EmergencyErrorBoundary } from "../lib/emergencySafeMode";
+
+function GuardHomeContent() {
+  const { user, profileFields, signOut, sessionReady } = useAuth();
   const [guard, setGuard] = useState<GuardRow | null>(null);
   const [recentTips, setRecentTips] = useState<TipRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +46,8 @@ export default function GuardHome() {
   const [reload, setReload] = useState(0);
   const [payoutAmount, setPayoutAmount] = useState("500");
   const [payoutBusy, setPayoutBusy] = useState(false);
+  const payoutLastSubmitRef = useRef(0);
+  const PAYOUT_DEBOUNCE_MS = 2_500;
   const [toast, setToast] = useState<string | null>(null);
   const [sparkValues, setSparkValues] = useState<number[]>([]);
   const [walletAvail, setWalletAvail] = useState<number | null>(null);
@@ -47,106 +57,140 @@ export default function GuardHome() {
   const [minPayoutCents, setMinPayoutCents] = useState(10000);
   const [payoutSchemaComplete, setPayoutSchemaComplete] = useState(true);
   const [recentPayouts, setRecentPayouts] = useState<PayoutRow[]>([]);
+  const slowLoad = useUiWatchdog(loading);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!sessionReady || !user?.id) return;
     let cancelled = false;
+    const watchdog = window.setTimeout(() => {
+      if (cancelled) return;
+      setLoading(false);
+      setError((prev) => prev ?? "Dashboard load timed out. Please try again.");
+    }, DASHBOARD_LOAD_TIMEOUT_MS + 1_000);
+
     (async () => {
       setLoading(true);
       setError(null);
-      const { data, error: err } = await supabase.from("guards").select("*").eq("user_id", user.id).maybeSingle();
-      if (cancelled) return;
-      if (err) {
-        setError("We could not load your guard profile. Please try again.");
-        setGuard(null);
-        setLoading(false);
-        return;
-      }
-      const g = (data as GuardRow & {
-        payout_schedule?: string;
-        next_payout_at?: string | null;
-        minimum_payout_threshold_cents?: number;
-      }) ?? null;
-      setGuard(g);
-      if (g) {
-        const hasPayoutCols = "payout_schedule" in g;
-        setPayoutSchemaComplete(hasPayoutCols);
-        const sched = g.payout_schedule ?? "";
-        setPayoutSchedule(isPayoutSchedule(sched) ? sched : "weekly");
-        setNextPayoutAt(g.next_payout_at ?? null);
-        setMinPayoutCents(g.minimum_payout_threshold_cents ?? 10000);
-      }
-      if (g?.id) {
-        const { data: w } = await supabase
-          .from("wallet_accounts")
-          .select("available_cents, pending_cents")
-          .eq("guard_id", g.id)
-          .maybeSingle();
+      const t0 = performance.now();
+      try {
+        await withOperationTimeout(
+          "dashboard",
+          "guard home load",
+          async (signal) => {
+            const { data, error: err } = await supabase
+              .from("guards")
+              .select(
+                "id, display_name, location, province, avatar_initials, verified, rating, tips_count, balance_cents, payout_schedule, next_payout_at, minimum_payout_threshold_cents",
+              )
+              .eq("user_id", user.id)
+              .abortSignal(signal)
+              .maybeSingle();
+            if (cancelled) return;
+            if (err) {
+              setError("We could not load your guard profile. Please try again.");
+              setGuard(null);
+              return;
+            }
+            const g = (data as GuardRow & {
+              payout_schedule?: string;
+              next_payout_at?: string | null;
+              minimum_payout_threshold_cents?: number;
+            }) ?? null;
+            setGuard(g);
+            if (g) {
+              const hasPayoutCols = g.payout_schedule != null || g.next_payout_at != null;
+              setPayoutSchemaComplete(hasPayoutCols);
+              const sched = g.payout_schedule ?? "";
+              setPayoutSchedule(isPayoutSchedule(sched) ? sched : "weekly");
+              setNextPayoutAt(g.next_payout_at ?? null);
+              setMinPayoutCents(g.minimum_payout_threshold_cents ?? 10000);
+            }
+            if (g?.id) {
+              const keys: string[] = [];
+              for (let i = 13; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                d.setHours(0, 0, 0, 0);
+                keys.push(d.toISOString().slice(0, 10));
+              }
+              const since = `${keys[0]}T00:00:00.000Z`;
+              const [walletRes, tipsRes, payoutsRes, sparkRes] = await Promise.all([
+                supabase
+                  .from("wallet_accounts")
+                  .select("available_cents, pending_cents")
+                  .eq("guard_id", g.id)
+                  .abortSignal(signal)
+                  .maybeSingle(),
+                supabase
+                  .from("tips")
+                  .select("id, amount_cents, status, created_at")
+                  .eq("guard_id", g.id)
+                  .order("created_at", { ascending: false })
+                  .limit(12)
+                  .abortSignal(signal),
+                supabase
+                  .from("payouts")
+                  .select("id, amount_cents, status, created_at")
+                  .eq("user_id", user.id)
+                  .order("created_at", { ascending: false })
+                  .limit(5)
+                  .abortSignal(signal),
+                supabase
+                  .from("tips")
+                  .select("amount_cents, created_at")
+                  .eq("guard_id", g.id)
+                  .eq("status", "succeeded")
+                  .gte("created_at", since)
+                  .abortSignal(signal),
+              ]);
+              if (!cancelled) {
+                const w = walletRes.data;
+                setWalletAvail((w?.available_cents as number | undefined) ?? g.balance_cents ?? 0);
+                setWalletPending((w?.pending_cents as number | undefined) ?? 0);
+                if (!tipsRes.error && tipsRes.data) setRecentTips(tipsRes.data as TipRow[]);
+                else setRecentTips([]);
+                setRecentPayouts((payoutsRes.data as PayoutRow[]) ?? []);
+                if (!sparkRes.error && sparkRes.data) {
+                  const totals: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 0]));
+                  for (const row of sparkRes.data) {
+                    const day = (row.created_at as string).slice(0, 10);
+                    if (totals[day] != null) totals[day] += row.amount_cents as number;
+                  }
+                  setSparkValues(keys.map((k) => totals[k] ?? 0));
+                }
+              }
+            } else if (!cancelled) {
+              setRecentTips([]);
+              setRecentPayouts([]);
+              setSparkValues([]);
+            }
+          },
+          DASHBOARD_LOAD_TIMEOUT_MS,
+          undefined,
+          { queued: false },
+        );
+        perfLog("guard home load", Math.round(performance.now() - t0), { ok: true });
+      } catch {
         if (!cancelled) {
-          setWalletAvail((w?.available_cents as number | undefined) ?? g.balance_cents ?? 0);
-          setWalletPending((w?.pending_cents as number | undefined) ?? 0);
+          setError("Dashboard load timed out. Please try again.");
+          setGuard(null);
         }
-        const { data: tips, error: tErr } = await supabase
-          .from("tips")
-          .select("id, amount_cents, status, created_at")
-          .eq("guard_id", g.id)
-          .order("created_at", { ascending: false })
-          .limit(12);
-        if (!cancelled && !tErr && tips) setRecentTips(tips as TipRow[]);
-        else if (!cancelled) setRecentTips([]);
-        if (!cancelled && user?.id) {
-          const { data: payouts } = await supabase
-            .from("payouts")
-            .select("id, amount_cents, status, created_at")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: false })
-            .limit(5);
-          if (!cancelled) setRecentPayouts((payouts as PayoutRow[]) ?? []);
-        }
-      } else if (!cancelled) {
-        setRecentTips([]);
-        setRecentPayouts([]);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      if (!cancelled) setLoading(false);
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(watchdog);
     };
-  }, [user?.id, reload]);
-
-  useEffect(() => {
-    if (!guard?.id) return;
-    let cancelled = false;
-    (async () => {
-      const keys: string[] = [];
-      for (let i = 13; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        d.setHours(0, 0, 0, 0);
-        keys.push(d.toISOString().slice(0, 10));
-      }
-      const since = `${keys[0]}T00:00:00.000Z`;
-      const { data, error: qErr } = await supabase
-        .from("tips")
-        .select("amount_cents, created_at")
-        .eq("guard_id", guard.id)
-        .eq("status", "succeeded")
-        .gte("created_at", since);
-      if (cancelled || qErr || !data) return;
-      const totals: Record<string, number> = Object.fromEntries(keys.map((k) => [k, 0]));
-      for (const row of data) {
-        const day = (row.created_at as string).slice(0, 10);
-        if (totals[day] != null) totals[day] += row.amount_cents as number;
-      }
-      setSparkValues(keys.map((k) => totals[k] ?? 0));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [guard?.id]);
+  }, [user?.id, sessionReady, reload]);
 
   async function onRequestPayout(e: FormEvent) {
     e.preventDefault();
+    if (payoutBusy) return;
+    const now = Date.now();
+    if (now - payoutLastSubmitRef.current < PAYOUT_DEBOUNCE_MS) return;
+    payoutLastSubmitRef.current = now;
     setToast(null);
     const raw = payoutAmount.replace(/\D/g, "");
     const rands = Number(raw || "0");
@@ -156,16 +200,40 @@ export default function GuardHome() {
       return;
     }
     setPayoutBusy(true);
-    const { data, error: fnErr } = await supabase.functions.invoke("request-payout", {
-      body: { amount_cents: cents },
-    });
-    setPayoutBusy(false);
-    if (fnErr) {
-      setToast(fnErr.message);
-      return;
+    try {
+      const session = await ensurePaymentAccessToken();
+      if (!session.ok) {
+        setToast(session.message);
+        return;
+      }
+      const { data, error: fnErr } = await withOperationTimeout(
+        "payout",
+        "request-payout",
+        supabase.functions.invoke("request-payout", {
+          body: { amount_cents: cents },
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        }),
+        PAYOUT_REQUEST_TIMEOUT_MS,
+      );
+      if (fnErr) {
+        const detail = await parseFunctionsInvokeError(fnErr);
+        logFlow("payout", "request-payout failed", { message: detail.message, code: detail.code });
+        setToast(detail.message);
+        return;
+      }
+      const body = data as { error?: string; message?: string } | null;
+      if (body?.error) {
+        setToast(body.error);
+        return;
+      }
+      setToast(body?.message ?? "Payout request submitted.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Payout request failed.";
+      logFlow("payout", "request-payout error", { message: msg });
+      setToast(msg);
+    } finally {
+      setPayoutBusy(false);
     }
-    const msg = (data as { message?: string })?.message ?? "Payout request submitted.";
-    setToast(msg);
   }
 
   if (loading) {
@@ -176,6 +244,7 @@ export default function GuardHome() {
           <p className="text-slate-400">Loading…</p>
         </header>
         <StatCardsSkeleton />
+        <SlowLoadHint show={slowLoad} />
       </div>
     );
   }
@@ -209,7 +278,7 @@ export default function GuardHome() {
     );
   }
 
-  const first = guard.display_name.split(" ")[0];
+  const first = (guard.display_name ?? "Guard").split(/\s+/).filter(Boolean)[0] ?? "there";
 
   return (
     <div className="shell dashboard-hub mx-auto max-w-lg space-y-5 px-4 py-8 pb-16 sm:px-5">
@@ -260,8 +329,8 @@ export default function GuardHome() {
         </GlassPanel>
         <GlassPanel glow="slate" className="fx-fade-up">
           <p className="text-xs font-semibold uppercase text-slate-500">Tips</p>
-          <p className="mt-1 text-2xl font-black text-white">{guard.tips_count}</p>
-          <p className="text-xs text-slate-500">{guard.rating.toFixed(1)}★ avg</p>
+          <p className="mt-1 text-2xl font-black text-white">{guard.tips_count ?? 0}</p>
+          <p className="text-xs text-slate-500">{(guard.rating ?? 0).toFixed(1)}★ avg</p>
         </GlassPanel>
       </section>
 
@@ -363,5 +432,13 @@ export default function GuardHome() {
         </Link>
       </div>
     </div>
+  );
+}
+
+export default function GuardHome() {
+  return (
+    <EmergencyErrorBoundary>
+      <GuardHomeContent />
+    </EmergencyErrorBoundary>
   );
 }

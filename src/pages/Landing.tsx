@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 import PaystackTestBanner from "../components/PaystackTestBanner";
@@ -6,6 +7,10 @@ import { TipGuardLogo } from "../components/TipGuardLogo";
 
 export default function Landing() {
   const { user, role, isGuardUser, isMerchantUser } = useAuth();
+
+  useEffect(() => {
+    void import("./QrTipLanding");
+  }, []);
 
   return (
     <div className="marketing-page">
@@ -85,6 +90,12 @@ export default function Landing() {
               Paystack
             </a>
           </div>
+          <p className="mt-4 text-center text-xs text-slate-500">
+            TipGuard SA (Pty) Ltd · South Africa ·{" "}
+            <Link to="/contact" className="underline">
+              support &amp; business details
+            </Link>
+          </p>
         </footer>
       </div>
     </div>

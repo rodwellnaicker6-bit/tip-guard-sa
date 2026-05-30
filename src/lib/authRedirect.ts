@@ -1,5 +1,8 @@
 import type { NavigateFunction } from "react-router-dom";
 import type { AuthProfileFields, AuthRole } from "../context/authTypes";
+import { logAuth, logAuthKickout } from "./authDebug";
+import { recordError } from "./errorTelemetry";
+import { stabilLog } from "./stabilLog";
 import { isSupabaseBrowserConfigured, supabase } from "./supabase";
 import { pathAfterSignIn } from "./postAuthRedirect";
 import { withTimeout } from "./asyncTimeout";
@@ -37,8 +40,17 @@ export async function navigateAfterAuth(
       typeof sessionStorage !== "undefined" ? sessionStorage.getItem("tipguard_redirect") : null;
     if (stored?.startsWith("/") && !stored.startsWith("//")) {
       sessionStorage.removeItem("tipguard_redirect");
+      stabilLog("auth", "auth restore redirect", { path: stored.split("?")[0] });
+      if (stored.startsWith("/tip/")) {
+        stabilLog("nfc", "auth restore after tip flow", { path: stored.split("?")[0] });
+      }
       authNavigate(navigate, stored);
       return;
+    }
+    if (stored && (!stored.startsWith("/") || stored.startsWith("//"))) {
+      stabilLog("auth", "auth restore rejected unsafe redirect");
+      recordError("auth_restore", "unsafe tipguard_redirect", { code: "redirect_sanitize" });
+      sessionStorage.removeItem("tipguard_redirect");
     }
 
     const from = opts?.from;
@@ -54,7 +66,7 @@ export async function navigateAfterAuth(
     }
 
     if (!isSupabaseBrowserConfigured) {
-      authNavigate(navigate, "/");
+      authNavigate(navigate, "/login");
       return;
     }
 
@@ -75,14 +87,17 @@ export async function navigateAfterAuth(
         "Post-login session check timed out",
       );
       if (sessErr || !session?.user?.id) {
-        if (!userId) {
-          console.error("[AuthCrash] navigateAfterAuth: no session before redirect", sessErr?.message);
-          authNavigate(navigate, "/login");
+        if (userId) {
+          logAuth("navigateAfterAuth session miss — onboarding recovery", { message: sessErr?.message });
+          authNavigate(navigate, "/onboarding");
           return;
         }
-      } else {
-        userId = session.user.id;
+        console.error("[AuthCrash] navigateAfterAuth: no session before redirect", sessErr?.message);
+        logAuthKickout("navigateAfterAuth no session", "authRedirect", { message: sessErr?.message });
+        authNavigate(navigate, "/login");
+        return;
       }
+      userId = session.user.id;
     }
 
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -114,7 +129,15 @@ export async function navigateAfterAuth(
     );
   } catch (e) {
     console.error("[AuthCrash] navigateAfterAuth", e);
-    authNavigate(navigate, "/login");
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id) {
+      authNavigate(navigate, pathAfterSignIn(undefined, false, false, null));
+      return;
+    }
+    logAuth("navigateAfterAuth exception — onboarding recovery", {
+      message: e instanceof Error ? e.message : String(e),
+    });
+    authNavigate(navigate, "/onboarding");
   }
 }
 

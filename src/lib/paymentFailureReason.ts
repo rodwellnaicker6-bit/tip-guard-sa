@@ -18,7 +18,7 @@ export function paymentFailureMessage(reason: string): string {
   if (key === "invalid_amount") {
     return "The tip amount is invalid. Choose at least R1.";
   }
-  if (key === "unauthorized" || key === "auth") {
+  if (key === "unauthorized" || key === "auth" || key === "invalid_session") {
     return "Please sign in again before paying.";
   }
   if (key.startsWith("http")) {

@@ -1,74 +1,42 @@
-# Paystack review checklist
+# Paystack review checklist — TipGuard SA
 
-Use when submitting TipGuard SA for Paystack merchant / live-key review.
+Use before submitting to Paystack or running live smoke.
 
-**Demo pack:** [PAYSTACK_REVIEW_DEMO.md](./PAYSTACK_REVIEW_DEMO.md)  
-**Production URL:** https://tip-guard-sa.vercel.app  
-**Webhook:** `https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/paystack-webhook`
+## Environment
 
----
+- [ ] Supabase `PAYSTACK_SECRET_KEY` = `sk_live_…` (Edge secrets)
+- [ ] Vercel `VITE_PAYSTACK_PUBLIC_KEY` = `pk_live_…`
+- [ ] `PUBLIC_APP_URL` = `https://tip-guard-sa.vercel.app` (or custom domain)
+- [ ] Webhook URL registered: `https://fyjmujhlqpvfryelnfum.supabase.co/functions/v1/paystack-webhook`
+- [ ] Events: `charge.success`, `charge.failed`, transfer events if using payouts
 
-## Business & compliance
+## Code paths
 
-- [ ] Live site on HTTPS with TipGuard branding
-- [ ] Footer links: Terms, Privacy, Refunds, POPIA, **Contact**
-- [ ] Support email on `/contact` matches operator inbox
-- [ ] Description of service: digital tipping for guards / merchants (South Africa)
-- [ ] No card PAN stored in TipGuard SPA (Paystack hosted checkout)
+- [ ] `paystack-initialize` deployed; logs show `PAYSTACK_SECRET_KEY present`
+- [ ] Customer must be **signed in** (JWT on invoke — not guest anon)
+- [ ] `paystack-verify` after redirect
+- [ ] Webhook HMAC rejects unsigned POST (400)
+- [ ] Duplicate webhook does not double-credit
 
----
+## R5 live test (minimum)
 
-## Technical integration
+1. Sign in as demo customer on production.
+2. Open `/tip/demo-staging-qr-01` (or pilot QR).
+3. Pay **R5** with live test card per Paystack docs.
+4. Confirm Paystack dashboard shows charge.
+5. Confirm `tips` / `transactions` succeeded in Supabase.
+6. Confirm guard wallet / ledger updated.
+7. Replay webhook in Paystack → still single credit.
 
-- [ ] `npm run verify:paystack` exit **0** on deployed project
-- [ ] Webhook HMAC: unsigned POST → **400**; signed test payload → **200**
-- [ ] Events subscribed: `charge.success`, `charge.failed`
-- [ ] `paystack-initialize`, `paystack-verify`, `paystack-webhook` Edge **ACTIVE**
-- [ ] Idempotency: duplicate `charge.success` does not double-credit (`claim_provider_webhook_event`)
-- [ ] Test card E2E documented:
+## Reviewer demo
 
-| Field | Value |
-|-------|--------|
-| Card | `4084084084084081` |
-| CVV | `408` |
-| OTP | `123456` |
+Follow `docs/DEMO_SCRIPT.md` (10 steps) on **test keys** for submission; switch to live only in controlled smoke.
 
----
+## Failure triage
 
-## Demo walkthrough (test keys)
-
-1. `npm run seed:demo` (operator)
-2. Open `/qr/demo-staging-qr-01` on production or staging URL
-3. Tip R10+ → Paystack test checkout → success
-4. Confirm `tips` / `transactions` → `succeeded` in Supabase
-5. Guard dashboard shows balance movement
-6. Optional: guard payout request → admin marks Paid ([OPERATOR_PAYOUT_PROCEDURES.md](./OPERATOR_PAYOUT_PROCEDURES.md))
-
----
-
-## Keys & environments
-
-| Location | Key type |
-|----------|----------|
-| Vercel `VITE_PAYSTACK_PUBLIC_KEY` | `pk_test_` → then `pk_live_` |
-| Supabase secret `PAYSTACK_SECRET_KEY` | matching `sk_test_` / `sk_live_` |
-| Redeploy Edge after secret change | Required |
-
----
-
-## Pre-live (after Paystack approval)
-
-- [ ] Switch Vercel + Supabase secrets to **live** pair
-- [ ] `vercel --prod` redeploy
-- [ ] Update Paystack webhook URL if project ref changes (same ref today)
-- [ ] One **live** small tip (R10) on invited merchant QR
-- [ ] Schedule cron: webhook retries + daily reconcile ([CRON.md](./CRON.md))
-
----
-
-## Review decision (22 May 2026 automated pass)
-
-| Mode | GO? |
-|------|-----|
-| Paystack review / test mode | **YES** |
-| High-volume live without cron + live E2E | **NO** — complete operator items first |
+| Symptom | Check |
+|---------|--------|
+| `Invalid session` | Sign out/in; DevTools → Application → clear site data; confirm `Authorization` on initialize is user JWT |
+| `guard_unverified` | Guard `verified = true` in DB |
+| `paystack_init` | Secret/key mode mismatch (test vs live) |
+| Webhook 400 | HMAC / wrong secret in Supabase |

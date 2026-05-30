@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { PAYOUT_REQUEST_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
 import { supabase } from "../lib/supabase";
 import { zarFromCents } from "../lib/money";
 import {
@@ -58,19 +59,29 @@ export function PayoutSchedulePanel({
     };
     if (table === "merchants") payload.updated_at = new Date().toISOString();
 
-    const { error: uErr } = await supabase.from(table).update(payload).eq("id", entityId);
-    setBusy(false);
-    if (uErr) {
-      setError(
-        isMissingPayoutScheduleSchema(uErr)
-          ? PAYOUT_SCHEMA_UPDATE_HINT
-          : "Could not save payout schedule. Try again.",
+    try {
+      const { error: uErr } = await withOperationTimeout(
+        "payout",
+        "save payout schedule",
+        supabase.from(table).update(payload).eq("id", entityId),
+        PAYOUT_REQUEST_TIMEOUT_MS,
       );
-      return;
+      if (uErr) {
+        setError(
+          isMissingPayoutScheduleSchema(uErr)
+            ? PAYOUT_SCHEMA_UPDATE_HINT
+            : uErr.message || "Could not save payout schedule. Try again.",
+        );
+        return;
+      }
+      setSavedNext(nextAt);
+      setMessage("Payout schedule saved.");
+      onSaved?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save payout schedule. Try again.");
+    } finally {
+      setBusy(false);
     }
-    setSavedNext(nextAt);
-    setMessage("Payout schedule saved.");
-    onSaved?.();
   }
 
   const displayNext = formatNextPayoutAt(savedNext ?? initialNext);

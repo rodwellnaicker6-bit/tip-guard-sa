@@ -1,8 +1,9 @@
 import { LegalPageLayout } from "../components/LegalPageLayout";
+import { BusinessContactBlock } from "../components/BusinessContactBlock";
 
 export default function RefundPolicy() {
   return (
-    <LegalPageLayout title="Refunds & disputes" updated="20 May 2026">
+    <LegalPageLayout title="Refunds & disputes" updated="27 May 2026">
       <p>
         Tips are voluntary payments to car guards. Once Paystack confirms a successful charge, funds follow your
         operator&apos;s payout schedule to guards or venues. TipGuard software does not hold customer funds as a bank.
@@ -23,6 +24,7 @@ export default function RefundPolicy() {
         Unauthorised transaction claims are handled under Paystack and card network rules. Guards and merchants must
         cooperate with evidence requests. Repeated chargebacks may lead to account suspension.
       </p>
+      <BusinessContactBlock compact />
     </LegalPageLayout>
   );
 }
