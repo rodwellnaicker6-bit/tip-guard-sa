@@ -67,6 +67,8 @@ export function RequireGuard({ children }: { children: ReactElement }) {
   const location = useLocation();
   const sessionMissing = sessionReady && !hasAuthenticatedSession(user?.id, session?.user?.id);
   const graceElapsed = useGracePeriod(sessionMissing, LOGIN_REDIRECT_GRACE_MS);
+  const guardAccessPending = authReady && !isGuardUser;
+  const guardAccessGraceElapsed = useGracePeriod(guardAccessPending, LOGIN_REDIRECT_GRACE_MS);
   if (!sessionReady) return <TimedPageLoader label="Loading guard hub…" />;
   if (!hasAuthenticatedSession(user?.id, session?.user?.id)) {
     if (session?.user?.id && !user?.id) return <TimedPageLoader label="Restoring your session…" />;
@@ -82,6 +84,9 @@ export function RequireGuard({ children }: { children: ReactElement }) {
     return <TimedPageLoader label="Loading your guard profile…" />;
   }
   if (!isGuardUser) {
+    if (!guardAccessGraceElapsed) {
+      return <TimedPageLoader label="Loading your guard profile…" />;
+    }
     return <Navigate to="/onboarding" replace state={loginRedirectState(location.pathname, location.search)} />;
   }
   return children;
