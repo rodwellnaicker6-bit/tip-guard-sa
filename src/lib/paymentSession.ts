@@ -94,7 +94,7 @@ async function refreshSessionIfNeeded(session: Session): Promise<Session | null>
 
 /** Ensures a user JWT for payment Edge invokes. Never calls signOut; timeouts ≠ logout. */
 export async function ensurePaymentAccessToken(): Promise<PaymentSessionResult> {
-  const stableWait = await waitForStableSession({ maxMs: QR_AUTH_GRACE_MS + 2_000 });
+  const stableWait = await waitForStableSession({ forPayment: true, maxMs: QR_AUTH_GRACE_MS + 2_000 });
   logFlow("pay", "ensurePaymentAccessToken stable wait", {
     ok: stableWait.ok,
     reason: stableWait.ok ? undefined : stableWait.reason,

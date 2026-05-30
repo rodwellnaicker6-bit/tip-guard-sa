@@ -138,7 +138,7 @@ export async function initializePaystackTransaction(body: {
     };
   }
 
-  const stable = await waitForStableSession();
+  const stable = await waitForStableSession({ forPayment: true });
   logQrAuth("initializePaystackTransaction after stable session", {
     ok: stable.ok,
     reason: stable.ok ? undefined : stable.reason,
@@ -246,7 +246,7 @@ export async function payTipWithPaystack(opts: {
     t: qrAuthTimestamp(),
   });
 
-  const stable = await waitForStableSession();
+  const stable = await waitForStableSession({ forPayment: true });
   logQrAuth("payTipWithPaystack after stable session", {
     ok: stable.ok,
     reason: stable.ok ? undefined : stable.reason,
@@ -362,6 +362,12 @@ export async function payWalletTopUpWithPaystack(opts: {
     amountCents: opts.amountCents,
     functionsUrl: edgeFunctionUrl("paystack-initialize"),
   });
+
+  const stable = await waitForStableSession({ forPayment: true });
+  if (!stable.ok && stable.reason !== "not_signed_in") {
+    opts.onError("Restoring your session — wait a moment and try again.");
+    return;
+  }
 
   if (!acquireWalletTopUpLock()) {
     opts.onError("Deposit already starting. Please wait.");

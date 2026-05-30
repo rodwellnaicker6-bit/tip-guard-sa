@@ -62,17 +62,25 @@ export function RequireAdmin({ children }: { children: ReactElement }) {
 
 /** Guard dashboard routes (not `/guard/setup`, where new guards land first). */
 export function RequireGuard({ children }: { children: ReactElement }) {
-  const { user, session, authReady, sessionReady, isGuardUser } = useAuth();
+  const { user, session, authReady, sessionReady, isGuardUser, hasGuardRow, role, effectiveRole } =
+    useAuth();
   const location = useLocation();
+  const sessionMissing = sessionReady && !hasAuthenticatedSession(user?.id, session?.user?.id);
+  const graceElapsed = useGracePeriod(sessionMissing, LOGIN_REDIRECT_GRACE_MS);
   if (!sessionReady) return <TimedPageLoader label="Loading guard hub…" />;
   if (!hasAuthenticatedSession(user?.id, session?.user?.id)) {
     if (session?.user?.id && !user?.id) return <TimedPageLoader label="Restoring your session…" />;
+    if (!graceElapsed) return <TimedPageLoader label="Restoring your session…" />;
     logAuthKickout("no user", "RequireGuard", { path: location.pathname });
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
     );
   }
   if (!authReady) return <TimedPageLoader label="Loading your account…" />;
+  const guardRoleHint = effectiveRole === "guard" || role === "guard";
+  if (!isGuardUser && !hasGuardRow && guardRoleHint) {
+    return <TimedPageLoader label="Loading your guard profile…" />;
+  }
   if (!isGuardUser) {
     return <Navigate to="/onboarding" replace state={loginRedirectState(location.pathname, location.search)} />;
   }

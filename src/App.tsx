@@ -162,6 +162,16 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/nfc/:token"
+        element={
+          <ErrorBoundary>
+            <EmergencyErrorBoundary>
+              <TipResolve />
+            </EmergencyErrorBoundary>
+          </ErrorBoundary>
+        }
+      />
+      <Route
         path="/qr/:token"
         element={
           <ErrorBoundary>

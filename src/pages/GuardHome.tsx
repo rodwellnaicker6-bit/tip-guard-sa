@@ -38,7 +38,7 @@ type PayoutRow = {
 import { EmergencyErrorBoundary } from "../lib/emergencySafeMode";
 
 function GuardHomeContent() {
-  const { user, profileFields, signOut } = useAuth();
+  const { user, profileFields, signOut, sessionReady } = useAuth();
   const [guard, setGuard] = useState<GuardRow | null>(null);
   const [recentTips, setRecentTips] = useState<TipRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +60,7 @@ function GuardHomeContent() {
   const slowLoad = useUiWatchdog(loading);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!sessionReady || !user?.id) return;
     let cancelled = false;
     const watchdog = window.setTimeout(() => {
       if (cancelled) return;
@@ -166,6 +166,8 @@ function GuardHomeContent() {
             }
           },
           DASHBOARD_LOAD_TIMEOUT_MS,
+          undefined,
+          { queued: false },
         );
         perfLog("guard home load", Math.round(performance.now() - t0), { ok: true });
       } catch {
@@ -181,7 +183,7 @@ function GuardHomeContent() {
       cancelled = true;
       window.clearTimeout(watchdog);
     };
-  }, [user?.id, reload]);
+  }, [user?.id, sessionReady, reload]);
 
   async function onRequestPayout(e: FormEvent) {
     e.preventDefault();

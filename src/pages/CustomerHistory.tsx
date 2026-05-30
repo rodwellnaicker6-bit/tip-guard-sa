@@ -19,7 +19,7 @@ type TipHistoryRow = {
 };
 
 export default function CustomerHistory() {
-  const { user } = useAuth();
+  const { user, sessionReady } = useAuth();
   const [tips, setTips] = useState<TipHistoryRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -27,7 +27,7 @@ export default function CustomerHistory() {
   const slowLoad = useUiWatchdog(loading);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!sessionReady || !user?.id) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -38,6 +38,8 @@ export default function CustomerHistory() {
           "get_customer_tip_history",
           (signal) => supabase.rpc("get_customer_tip_history").abortSignal(signal),
           RPC_DEFAULT_TIMEOUT_MS,
+          undefined,
+          { queued: false },
         );
         if (cancelled) return;
         if (tErr) {
@@ -55,7 +57,7 @@ export default function CustomerHistory() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, reload]);
+  }, [user?.id, sessionReady, reload]);
 
   if (loading && tips.length === 0 && !error) {
     return (

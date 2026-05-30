@@ -102,9 +102,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return null;
         }
         if (!mountedRef.current) return null;
-        const cur = accountStateRef.current;
-        const hasGuardRow = guardRes.error ? cur.hasGuardRow : !!guardRes.data && !guardRes.error;
-        const hasMerchantRow = merchRes.error ? cur.hasMerchantRow : !!merchRes.data && !merchRes.error;
+        let hasGuardRow = !!guardRes.data && !guardRes.error;
+        if (guardRes.error && !guardRes.data) {
+          const guardRetry = await supabase.from("guards").select("id").eq("user_id", uid).maybeSingle();
+          if (!signal?.aborted) {
+            hasGuardRow = !!guardRetry.data && !guardRetry.error;
+          }
+        }
+        let hasMerchantRow = !!merchRes.data && !merchRes.error;
+        if (merchRes.error && !merchRes.data) {
+          const merchRetry = await supabase.from("merchants").select("id").eq("user_id", uid).maybeSingle();
+          if (!signal?.aborted) {
+            hasMerchantRow = !!merchRetry.data && !merchRetry.error;
+          }
+        }
         if (profRes.error) {
           logAuth("loadAccount profile error — preserving role state", { message: profRes.error.message });
           const cur = accountStateRef.current;
@@ -430,13 +441,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, 4_000);
 
     const profileFallback = window.setTimeout(() => {
-      if (mountedRef.current) {
-        setProfileReady((ready) => {
-          if (!ready) bootLog("profile load timeout — marking ready");
-          return true;
-        });
+      if (!mountedRef.current) return;
+      if (profileLoadInflightUidRef.current) {
+        bootLog("profile load timeout deferred — account load still in flight");
+        return;
       }
-    }, 6_000);
+      setProfileReady((ready) => {
+        if (!ready) bootLog("profile load timeout — marking ready");
+        return true;
+      });
+    }, 10_000);
 
     return () => {
       effectCancelled = true;

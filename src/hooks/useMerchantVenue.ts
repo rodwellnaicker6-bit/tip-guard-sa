@@ -35,6 +35,8 @@ async function queryMerchantRow(userId: string): Promise<{ row: MerchantVenueRow
       (signal) =>
         supabase.from("merchants").select(FULL_COLS).eq("user_id", userId).abortSignal(signal).maybeSingle(),
       VENUE_LOAD_TIMEOUT_MS,
+      undefined,
+      { queued: false },
     );
 
     if (error && isMissingColumnError(error)) {
@@ -45,6 +47,8 @@ async function queryMerchantRow(userId: string): Promise<{ row: MerchantVenueRow
         (signal) =>
           supabase.from("merchants").select(CORE_COLS).eq("user_id", userId).abortSignal(signal).maybeSingle(),
         VENUE_LOAD_TIMEOUT_MS,
+        undefined,
+        { queued: false },
       );
       data = retry.data as typeof data;
       error = retry.error;
@@ -156,7 +160,7 @@ export function useMerchantVenue(): MerchantVenueLoadState {
       if (cancelled || gen !== loadGenRef.current) return;
       setLoading(false);
       setError((prev) => prev ?? "Venue load timed out. Please try again.");
-    }, VENUE_LOAD_TIMEOUT_MS + 1_000);
+    }, VENUE_LOAD_TIMEOUT_MS + 3_000);
 
     void (async () => {
       setLoading(true);

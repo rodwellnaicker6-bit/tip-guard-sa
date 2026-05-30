@@ -126,6 +126,8 @@ export async function waitForStableSession(opts?: {
   reactUserId?: string | null;
   reactSessionUserId?: string | null;
   maxMs?: number;
+  /** Pay / wallet: trust React or getSession when JWT exists; skip auth-event quiet wait. */
+  forPayment?: boolean;
 }): Promise<StableSessionResult> {
   ensureQrAuthSessionListener();
   const t0 = Date.now();
@@ -136,7 +138,28 @@ export async function waitForStableSession(opts?: {
     sessionReady: opts?.sessionReady ?? null,
     refreshInFlight: tokenRefreshInFlight,
     lastAuthEvent,
+    forPayment: !!opts?.forPayment,
   });
+
+  if (opts?.forPayment) {
+    const reactUid = opts.reactUserId ?? opts.reactSessionUserId ?? null;
+    if (reactUid) {
+      const waitedMs = Date.now() - t0;
+      logQrAuth("waitForStableSession ok (payment react)", { userId: reactUid, waitedMs });
+      return { ok: true, userId: reactUid, waitedMs };
+    }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id ?? null;
+      if (uid) {
+        const waitedMs = Date.now() - t0;
+        logQrAuth("waitForStableSession ok (payment getSession)", { userId: uid, waitedMs });
+        return { ok: true, userId: uid, waitedMs };
+      }
+    } catch {
+      /* continue to poll */
+    }
+  }
 
   while (Date.now() < deadline) {
     if (opts?.sessionReady === false) {
@@ -150,7 +173,11 @@ export async function waitForStableSession(opts?: {
     }
 
     const sinceEvent = Date.now() - lastAuthEventAt;
-    if (lastAuthEvent && sinceEvent < QR_SESSION_STABLE_QUIET_MS) {
+    if (
+      !opts?.forPayment &&
+      lastAuthEvent &&
+      sinceEvent < QR_SESSION_STABLE_QUIET_MS
+    ) {
       await sleep(POLL_MS);
       continue;
     }
@@ -168,7 +195,7 @@ export async function waitForStableSession(opts?: {
         logQrAuth("waitForStableSession getSession error", { message: error.message });
       }
       const uid = session?.user?.id ?? null;
-      if (uid && !tokenRefreshInFlight) {
+      if (uid && (opts?.forPayment || !tokenRefreshInFlight)) {
         const waitedMs = Date.now() - t0;
         logQrAuth("waitForStableSession ok (getSession)", { userId: uid, waitedMs });
         return { ok: true, userId: uid, waitedMs };

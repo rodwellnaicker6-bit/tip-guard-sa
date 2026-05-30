@@ -28,7 +28,7 @@ const PRODUCTION_TIP_HOSTS = new Set(["tipguardsa.co.za", "www.tipguardsa.co.za"
 const DEV_TIP_HOSTS = new Set(["localhost", "127.0.0.1"]);
 
 /** Paths allowed on tip domain deep links (no Paystack / arbitrary URLs). */
-const ALLOWED_TIP_PATH = /^\/tip\/([a-zA-Z0-9_-]+)\/?$/i;
+const ALLOWED_TIP_PATH = /^\/(?:tip|nfc)\/([a-zA-Z0-9_-]+)\/?$/i;
 
 const NFC_DEBOUNCE_MS = 2_500;
 let lastNfcTapAt = 0;

@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { DASHBOARD_LOAD_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
+import { DASHBOARD_LOAD_TIMEOUT_MS, RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/useAuth";
 import { TrustRibbon } from "../components/fintech/TrustRibbon";
@@ -15,8 +15,20 @@ import { GlassPanel } from "../components/fintech/GlassPanel";
 import { SlowLoadHint } from "../components/SlowLoadHint";
 import { useUiWatchdog } from "../lib/uiWatchdog";
 
+type CustomerTipStats = { tip_count?: number; volume_cents?: number };
+
+function isMissingRpcError(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false;
+  if (err.code === "PGRST202") return true;
+  const msg = (err.message ?? "").toLowerCase();
+  return (
+    msg.includes("could not find the function") ||
+    (msg.includes("function") && msg.includes("not found"))
+  );
+}
+
 function CustomerDashboardPage() {
-  const { user, profileFields, signOut } = useAuth();
+  const { user, profileFields, signOut, sessionReady } = useAuth();
   const email = user?.email ?? "your account";
   const [tipCount, setTipCount] = useState<number | null>(null);
   const [volume, setVolume] = useState<number | null>(null);
@@ -32,33 +44,59 @@ function CustomerDashboardPage() {
   );
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!sessionReady || !user?.id) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const { data, error: qErr } = await withOperationTimeout(
+        let stats: CustomerTipStats | null = null;
+        let qErr: { code?: string; message?: string } | null = null;
+
+        const rpcRes = await withOperationTimeout(
           "dashboard",
-          "customer tip stats",
-          (signal) =>
-            supabase
-              .from("tips")
-              .select("amount_cents")
-              .eq("payer_id", user.id)
-              .eq("status", "succeeded")
-              .abortSignal(signal),
-          DASHBOARD_LOAD_TIMEOUT_MS,
+          "get_customer_tip_stats",
+          (signal) => supabase.rpc("get_customer_tip_stats").abortSignal(signal),
+          RPC_DEFAULT_TIMEOUT_MS,
+          undefined,
+          { queued: false },
         );
+        qErr = rpcRes.error;
+        if (!qErr && rpcRes.data && typeof rpcRes.data === "object" && !Array.isArray(rpcRes.data)) {
+          stats = rpcRes.data as CustomerTipStats;
+        } else if (isMissingRpcError(qErr)) {
+          const fallback = await withOperationTimeout(
+            "dashboard",
+            "customer tip stats fallback",
+            (signal) =>
+              supabase
+                .from("tips")
+                .select("amount_cents")
+                .eq("payer_id", user.id)
+                .eq("status", "succeeded")
+                .abortSignal(signal),
+            DASHBOARD_LOAD_TIMEOUT_MS,
+            undefined,
+            { queued: false },
+          );
+          qErr = fallback.error;
+          if (!qErr) {
+            const rows = fallback.data ?? [];
+            stats = {
+              tip_count: rows.length,
+              volume_cents: rows.reduce((s, r) => s + (r.amount_cents as number), 0),
+            };
+          }
+        }
+
         if (cancelled) return;
-        if (qErr) {
+        if (qErr || !stats) {
           setError("We could not load your tip stats. Check your connection and try again.");
           setTipCount(null);
           setVolume(null);
         } else {
-          const rows = data ?? [];
-          setTipCount(rows.length);
-          setVolume(rows.reduce((s, r) => s + (r.amount_cents as number), 0));
+          setTipCount(stats.tip_count ?? 0);
+          setVolume(Number(stats.volume_cents ?? 0));
         }
       } catch {
         if (!cancelled) setError("Loading timed out. Please try again.");
@@ -69,7 +107,7 @@ function CustomerDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, reload]);
+  }, [user?.id, sessionReady, reload]);
 
   const statsReady = !loading && !error;
 

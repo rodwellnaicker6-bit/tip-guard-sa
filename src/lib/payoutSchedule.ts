@@ -110,6 +110,8 @@ export async function fetchEntityPayoutPrefs(
       "payout prefs",
       (signal) => loadEntityPayoutPrefs(table, userId, signal),
       RPC_DEFAULT_TIMEOUT_MS,
+      undefined,
+      { queued: false },
     );
   } catch {
     return { prefs: null, error: "Payout preferences load timed out." };
