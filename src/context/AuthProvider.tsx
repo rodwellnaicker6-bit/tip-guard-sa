@@ -133,7 +133,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           };
           setRole(nextRole);
           setProfileFields(nextFields);
-          if (nextRole && nextRole === accountStateRef.current.pendingRole) {
+          if (
+            nextRole &&
+            (nextRole === accountStateRef.current.pendingRole ||
+              nextRole === "guard" ||
+              nextRole === "merchant" ||
+              nextRole === "admin")
+          ) {
             setPendingRoleState(null);
             writePendingRole(uid, null);
           }
@@ -668,8 +674,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     markSessionReady();
   }, [markSessionReady, user?.id]);
 
-  const isGuardUser = effectiveRole === "guard" || hasGuardRow;
-  const isMerchantUser = effectiveRole === "merchant" || hasMerchantRow;
+  const isGuardUser = role === "guard" || hasGuardRow || pendingRole === "guard";
+  const isMerchantUser = role === "merchant" || hasMerchantRow || pendingRole === "merchant";
 
   const value = useMemo(
     () =>
