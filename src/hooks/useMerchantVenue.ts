@@ -28,6 +28,7 @@ const FULL_COLS = `${CORE_COLS}, risk_score`;
 
 async function queryMerchantRow(userId: string): Promise<{ row: MerchantVenueRow | null; error: Error | null }> {
   const t0 = performance.now();
+  logVenue("merchants select start", { userId, cols: FULL_COLS });
   try {
     let { data, error } = await withOperationTimeout(
       "venue",
@@ -85,11 +86,14 @@ export async function fetchMerchantVenueForUser(userId: string): Promise<{
   let p = inflight.get(userId);
   if (!p) {
     p = (async () => {
-      const result = await queryMerchantRow(userId);
-      inflight.delete(userId);
-      if (result.error) throw result.error;
-      venueCache.set(userId, { at: Date.now(), row: result.row });
-      return result.row;
+      try {
+        const result = await queryMerchantRow(userId);
+        if (result.error) throw result.error;
+        venueCache.set(userId, { at: Date.now(), row: result.row });
+        return result.row;
+      } finally {
+        inflight.delete(userId);
+      }
     })();
     inflight.set(userId, p);
   }
@@ -158,9 +162,14 @@ export function useMerchantVenue(): MerchantVenueLoadState {
 
     const watchdog = window.setTimeout(() => {
       if (cancelled || gen !== loadGenRef.current) return;
+      logVenue("load watchdog fired", {
+        uid,
+        timeoutMs: VENUE_LOAD_TIMEOUT_MS + 1_000,
+        route: typeof window !== "undefined" ? window.location.pathname : null,
+      });
       setLoading(false);
       setError((prev) => prev ?? "Venue load timed out. Please try again.");
-    }, VENUE_LOAD_TIMEOUT_MS + 3_000);
+    }, VENUE_LOAD_TIMEOUT_MS + 1_000);
 
     void (async () => {
       setLoading(true);
@@ -168,17 +177,19 @@ export function useMerchantVenue(): MerchantVenueLoadState {
       setErrorCode(null);
 
       const t0 = performance.now();
-      const [{ row, error: venueErr }, payoutLoad] = await Promise.all([
-        fetchMerchantVenueForUser(uid),
-        fetchEntityPayoutPrefs("merchants", uid),
-      ]);
+      const venueQuery = "from.merchants.select(id,business_name,location,verified,risk_score?).eq(user_id)";
+      logVenue("venue fetch start", { uid, supabaseQuery: venueQuery, timeoutMs: VENUE_LOAD_TIMEOUT_MS });
+
+      const { row, error: venueErr } = await fetchMerchantVenueForUser(uid);
+      const venueMs = Math.round(performance.now() - t0);
 
       if (cancelled || gen !== loadGenRef.current) return;
 
-      logVenue("load end", {
-        ms: Math.round(performance.now() - t0),
-        hasRow: !!row,
-        payoutError: payoutLoad.error,
+      logVenue("venue fetch end", {
+        uid,
+        supabaseQuery: venueQuery,
+        queryDurationMs: venueMs,
+        queryResponse: { hasRow: !!row?.id, error: venueErr?.message ?? null },
       });
 
       if (venueErr) {
@@ -196,14 +207,27 @@ export function useMerchantVenue(): MerchantVenueLoadState {
         setErrorCode(null);
       }
 
-      if (payoutLoad.prefs) {
-        setPayoutSchedule(payoutLoad.prefs.schedule);
-        setNextPayoutAt(payoutLoad.prefs.nextPayoutAt);
-        setMinPayoutCents(payoutLoad.prefs.minCents);
-        setPayoutSchemaComplete(payoutLoad.prefs.schemaComplete);
-      }
-
       setLoading(false);
+
+      void (async () => {
+        const payoutQuery = "from.merchants.select(payout_schedule,...).eq(user_id)";
+        const p0 = performance.now();
+        logVenue("payout prefs fetch start", { uid, supabaseQuery: payoutQuery });
+        const payoutLoad = await fetchEntityPayoutPrefs("merchants", uid);
+        if (cancelled || gen !== loadGenRef.current) return;
+        logVenue("payout prefs fetch end", {
+          uid,
+          queryDurationMs: Math.round(performance.now() - p0),
+          hasPrefs: !!payoutLoad.prefs,
+          error: payoutLoad.error,
+        });
+        if (payoutLoad.prefs) {
+          setPayoutSchedule(payoutLoad.prefs.schedule);
+          setNextPayoutAt(payoutLoad.prefs.nextPayoutAt);
+          setMinPayoutCents(payoutLoad.prefs.minCents);
+          setPayoutSchemaComplete(payoutLoad.prefs.schemaComplete);
+        }
+      })();
     })();
 
     return () => {

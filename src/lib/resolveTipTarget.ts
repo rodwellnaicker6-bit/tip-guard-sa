@@ -6,6 +6,7 @@ import { isValidTipToken } from "./nfc";
 import { stabilLog } from "./stabilLog";
 import { recordError } from "./errorTelemetry";
 import { type QrResolveFailureReason, qrResolveErrorMessage } from "./userFacingErrors";
+import { logQrResolveTrace, qrAnalyticsEventId } from "./qrResolveTrace";
 
 /** Production-safe resolve diagnostics (always on; no tokens). */
 function resolveLog(
@@ -250,10 +251,13 @@ function finishResolve(
 async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetResult> {
   const endPerf = perfMark("qr:resolve_tip_target");
   const resolveTimeoutMs = qrResolveTimeoutMs();
+  const queryStarted = performance.now();
+  const supabaseQuery = "rpc.resolve_tip_target(p_token)";
+  const eventId = qrAnalyticsEventId(trimmed);
   try {
-    resolveLog("start", { tokenLen: trimmed.length });
-    stabilLog("qr", "resolve tip target start", { tokenLen: trimmed.length });
-    logFlow("qr", "resolveTipTarget", { tokenLen: trimmed.length });
+    resolveLog("start", { tokenLen: trimmed.length, qrValue: trimmed, eventId });
+    stabilLog("qr", "resolve tip target start", { tokenLen: trimmed.length, qrValue: trimmed });
+    logFlow("qr", "resolveTipTarget", { tokenLen: trimmed.length, qrValue: trimmed });
 
     const { data, error: rpcErr } = await withOperationTimeout(
       "qr",
@@ -263,6 +267,7 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       undefined,
       QR_TIMEOUT_OPTS,
     );
+    const queryDurationMs = Math.round(performance.now() - queryStarted);
     const rpcSucceeded = !rpcErr;
     const rowCount = Array.isArray(data) ? data.length : data && typeof data === "object" ? 1 : 0;
     if (rpcSucceeded) {
@@ -272,8 +277,18 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
           ? (data as Record<string, unknown>)
           : undefined;
       const mapped = row ? mapRow(row) : null;
+      logQrResolveTrace({
+        qrValue: trimmed,
+        venueId: mapped?.merchant_id ?? null,
+        locationId: mapped?.location_id ?? null,
+        guardId: mapped?.guard_id ?? null,
+        eventId,
+        supabaseQuery,
+        queryDurationMs,
+        queryResponse: { rpcOk: true, rowCount, reason: mapped ? "ok" : "empty_rpc" },
+      });
       if (mapped) {
-        resolveLog("rpc ok", { guardId: mapped.guard_id, rowCount });
+        resolveLog("rpc ok", { guardId: mapped.guard_id, rowCount, venueId: mapped.merchant_id });
         stabilLog("qr", "resolve tip target ok", { guardId: mapped.guard_id });
         void fireTouchAnalytics(trimmed);
         const debug: ResolveTipTargetDebug = {
@@ -294,6 +309,21 @@ async function resolveTipTargetInner(trimmed: string): Promise<ResolveTipTargetR
       rpcErr?.code === "PGRST202";
 
     if (!isMissingRpc && rpcErr) {
+      logQrResolveTrace({
+        qrValue: trimmed,
+        venueId: null,
+        locationId: null,
+        guardId: null,
+        eventId,
+        supabaseQuery,
+        queryDurationMs,
+        queryResponse: {
+          rpcOk: false,
+          rowCount,
+          reason: "rpc_error",
+          rpcErrorCode: rpcErr.code,
+        },
+      });
       resolveLog("rpc error", { code: rpcErr.code, message: rpcErr.message }, "warn");
       const stale = readStaleCachedResolve(trimmed);
       if (stale?.target) {
