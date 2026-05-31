@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import QRCode from "qrcode";
 import { DASHBOARD_LOAD_TIMEOUT_MS, RPC_DEFAULT_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTimeout";
@@ -10,6 +10,16 @@ import { FetchError } from "../components/FetchError";
 import { downloadDataUrl, renderQrPrintCard } from "../lib/qrBranding";
 import { sanitizeDisplayName } from "../lib/sanitize";
 import { recordError } from "../lib/errorTelemetry";
+import { BUILD_ID } from "../lib/buildInfo";
+import { logMerchantQrHubTrace, type MerchantQrHubQueryTrace } from "../lib/merchantQrHubTrace";
+import { devInfo } from "../lib/prodLog";
+
+const QR_HUB_QUERY_MS = 12_000;
+const QR_HUB_OPTS = { queued: false as const };
+
+function logQrHub(message: string, extra?: Record<string, unknown>): void {
+  devInfo(`[TipGuard:qr-hub] ${message}`, extra ?? "");
+}
 
 type QrRow = {
   id: string;
@@ -51,82 +61,211 @@ export default function MerchantQr() {
   const [newLocationId, setNewLocationId] = useState("");
   const [newGuardId, setNewGuardId] = useState("");
   const [newAmountRands, setNewAmountRands] = useState("");
+  const loadGenRef = useRef(0);
 
   useEffect(() => {
-    if (!user?.id) return;
+    const uid = user?.id;
+    if (!uid) return;
+
+    const gen = ++loadGenRef.current;
     let cancelled = false;
+    const loadStarted = performance.now();
+
+    logQrHub("load start", { userId: uid, buildId: BUILD_ID, reload });
+
     const watchdog = window.setTimeout(() => {
-      if (!cancelled) {
-        setLoading(false);
-        setError((prev) => prev ?? "QR hub load timed out. Please try again.");
-      }
-    }, DASHBOARD_LOAD_TIMEOUT_MS + 1_000);
+      if (cancelled || gen !== loadGenRef.current) return;
+      logQrHub("watchdog fired", {
+        userId: uid,
+        elapsedMs: Math.round(performance.now() - loadStarted),
+        timeoutMs: DASHBOARD_LOAD_TIMEOUT_MS + 2_000,
+      });
+      logMerchantQrHubTrace({
+        userId: uid,
+        merchantId: null,
+        buildId: BUILD_ID,
+        totalDurationMs: Math.round(performance.now() - loadStarted),
+        queries: [],
+        outcome: "timeout",
+      });
+      setLoading(false);
+      setError((prev) => prev ?? "QR hub load timed out. Please try again.");
+    }, DASHBOARD_LOAD_TIMEOUT_MS + 2_000);
 
     void (async () => {
       setLoading(true);
       setError(null);
+      const queries: MerchantQrHubQueryTrace[] = [];
+
       try {
-        await withOperationTimeout(
+        const m0 = performance.now();
+        const { data: m, error: mErr } = await withOperationTimeout(
           "dashboard",
-          "merchant qr load",
-          async (signal) => {
-            const { data: m, error: mErr } = await supabase
+          "merchants by user_id",
+          (signal) =>
+            supabase
               .from("merchants")
               .select("id, business_name")
-              .eq("user_id", user.id)
+              .eq("user_id", uid)
               .abortSignal(signal)
-              .maybeSingle();
-            if (cancelled) return;
-            if (mErr || !m?.id) {
-              setError(mErr?.message ?? "No venue profile found.");
-              return;
-            }
-            setMerchantId(m.id);
-            setBusinessName(m.business_name ?? "Venue");
-
-            const [qrRes, locRes, guardRes] = await Promise.all([
-              supabase
-                .from("qr_codes")
-                .select(
-                  "id, code_token, label, qr_type, location_id, guard_id, default_amount_cents, scan_count, revoked_at, expires_at",
-                )
-                .eq("merchant_id", m.id)
-                .order("created_at", { ascending: false })
-                .abortSignal(signal),
-              supabase
-                .from("merchant_locations")
-                .select("id, name")
-                .eq("merchant_id", m.id)
-                .eq("active", true)
-                .order("name")
-                .abortSignal(signal),
-              supabase
-                .from("guards")
-                .select("id, display_name")
-                .eq("merchant_id", m.id)
-                .order("display_name")
-                .abortSignal(signal),
-            ]);
-
-            if (cancelled) return;
-            if (qrRes.error) setError(qrRes.error.message);
-            else setRows((qrRes.data as QrRow[]) ?? []);
-            setLocations((locRes.data as LocationOpt[]) ?? []);
-            setGuards((guardRes.data as GuardOpt[]) ?? []);
-          },
-          DASHBOARD_LOAD_TIMEOUT_MS,
+              .maybeSingle(),
+          QR_HUB_QUERY_MS,
+          undefined,
+          QR_HUB_OPTS,
         );
-      } catch {
-        if (!cancelled) setError("QR hub load timed out. Please try again.");
+        queries.push({
+          name: "from.merchants.select(id,business_name).eq(user_id)",
+          durationMs: Math.round(performance.now() - m0),
+          ok: !mErr && !!m?.id,
+          rowCount: m?.id ? 1 : 0,
+          error: mErr?.message ?? null,
+        });
+
+        if (cancelled || gen !== loadGenRef.current) {
+          logMerchantQrHubTrace({
+            userId: uid,
+            merchantId: m?.id ?? null,
+            buildId: BUILD_ID,
+            totalDurationMs: Math.round(performance.now() - loadStarted),
+            queries,
+            outcome: "cancelled",
+          });
+          return;
+        }
+
+        if (mErr || !m?.id) {
+          setError(mErr?.message ?? "No venue profile found.");
+          logMerchantQrHubTrace({
+            userId: uid,
+            merchantId: null,
+            buildId: BUILD_ID,
+            totalDurationMs: Math.round(performance.now() - loadStarted),
+            queries,
+            outcome: "error",
+          });
+          return;
+        }
+
+        setMerchantId(m.id);
+        setBusinessName(m.business_name ?? "Venue");
+
+        const runParallel = async <T extends { data: unknown; error: { message: string } | null }>(
+          name: string,
+          run: (signal: AbortSignal) => PromiseLike<T>,
+        ): Promise<T> => {
+          const t0 = performance.now();
+          try {
+            const result = await withOperationTimeout(
+              "dashboard",
+              name,
+              (signal) => run(signal),
+              QR_HUB_QUERY_MS,
+              undefined,
+              QR_HUB_OPTS,
+            );
+            queries.push({
+              name,
+              durationMs: Math.round(performance.now() - t0),
+              ok: !result.error,
+              rowCount: Array.isArray(result.data) ? result.data.length : result.data ? 1 : 0,
+              error: result.error?.message ?? null,
+            });
+            return result;
+          } catch (e) {
+            queries.push({
+              name,
+              durationMs: Math.round(performance.now() - t0),
+              ok: false,
+              error: e instanceof Error ? e.message : String(e),
+            });
+            throw e;
+          }
+        };
+
+        const [qrRes, locRes, guardRes] = await Promise.all([
+          runParallel("from.qr_codes.select(...).eq(merchant_id)", (signal) =>
+            supabase
+              .from("qr_codes")
+              .select(
+                "id, code_token, label, qr_type, location_id, guard_id, default_amount_cents, scan_count, revoked_at, expires_at",
+              )
+              .eq("merchant_id", m.id)
+              .order("created_at", { ascending: false })
+              .abortSignal(signal),
+          ),
+          runParallel("from.merchant_locations.select(...).eq(merchant_id)", (signal) =>
+            supabase
+              .from("merchant_locations")
+              .select("id, name")
+              .eq("merchant_id", m.id)
+              .eq("active", true)
+              .order("name")
+              .abortSignal(signal),
+          ),
+          runParallel("from.guards.select(...).eq(merchant_id)", (signal) =>
+            supabase
+              .from("guards")
+              .select("id, display_name")
+              .eq("merchant_id", m.id)
+              .order("display_name")
+              .abortSignal(signal),
+          ),
+        ]);
+
+        if (cancelled || gen !== loadGenRef.current) {
+          logMerchantQrHubTrace({
+            userId: uid,
+            merchantId: m.id,
+            buildId: BUILD_ID,
+            totalDurationMs: Math.round(performance.now() - loadStarted),
+            queries,
+            outcome: "cancelled",
+          });
+          return;
+        }
+
+        if (qrRes.error) setError(qrRes.error.message);
+        else setRows((qrRes.data as QrRow[]) ?? []);
+        setLocations((locRes.data as LocationOpt[]) ?? []);
+        setGuards((guardRes.data as GuardOpt[]) ?? []);
+
+        logMerchantQrHubTrace({
+          userId: uid,
+          merchantId: m.id,
+          buildId: BUILD_ID,
+          totalDurationMs: Math.round(performance.now() - loadStarted),
+          queries,
+          outcome: "ok",
+        });
+        logQrHub("load ok", {
+          userId: uid,
+          merchantId: m.id,
+          qrCount: (qrRes.data as QrRow[] | null)?.length ?? 0,
+          ms: Math.round(performance.now() - loadStarted),
+        });
+      } catch (e) {
+        if (cancelled || gen !== loadGenRef.current) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        logMerchantQrHubTrace({
+          userId: uid,
+          merchantId: null,
+          buildId: BUILD_ID,
+          totalDurationMs: Math.round(performance.now() - loadStarted),
+          queries,
+          outcome: "timeout",
+        });
+        recordError("merchant_qr_hub_load", msg, { code: "timeout" });
+        setError("QR hub load timed out. Please try again.");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && gen === loadGenRef.current) setLoading(false);
       }
     })();
+
     return () => {
       cancelled = true;
       window.clearTimeout(watchdog);
     };
-  }, [user, reload]);
+  }, [user?.id, reload]);
 
   async function createQr() {
     if (!merchantId) return;

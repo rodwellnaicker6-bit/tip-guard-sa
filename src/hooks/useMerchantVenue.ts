@@ -139,7 +139,7 @@ export function useMerchantVenue(): MerchantVenueLoadState {
   const reload = useCallback(() => {
     if (user?.id) invalidateMerchantVenueCache(user.id);
     setReloadToken((n) => n + 1);
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!sessionReady) return;

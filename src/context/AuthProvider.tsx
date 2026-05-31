@@ -350,7 +350,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (next?.user?.id) {
         sessionSnapshotRef.current = next;
         setSession(next);
-        setUser(next.user);
+        setUser((prev) => {
+          const nu = next.user;
+          if (!nu?.id) return null;
+          if (
+            prev?.id === nu.id &&
+            prev.email === nu.email &&
+            prev.updated_at === nu.updated_at
+          ) {
+            return prev;
+          }
+          return nu;
+        });
         const storedPending = readPendingRole(next.user.id);
         if (storedPending) setPendingRoleState(storedPending);
         return;
@@ -545,7 +556,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .then(({ data: { session: next } }) => {
           if (!mountedRef.current || !next) return;
           setSession(next);
-          setUser(next.user ?? null);
+          setUser((prev) => {
+            const nu = next.user;
+            if (!nu?.id) return prev ?? null;
+            if (
+              prev?.id === nu.id &&
+              prev.email === nu.email &&
+              prev.updated_at === nu.updated_at
+            ) {
+              return prev;
+            }
+            return nu;
+          });
         })
         .catch((e) => {
           if (import.meta.env.DEV) console.warn("[AuthProvider] reconnect getSession", e);
