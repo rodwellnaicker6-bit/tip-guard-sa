@@ -19,6 +19,7 @@ import {
   isSessionRestoreInFlight,
   logQrAuth,
   qrAuthTimestamp,
+  resolvePaymentUserId,
   subscribeQrAuthSession,
   waitForStableSession,
 } from "../lib/qrAuthSession";
@@ -37,6 +38,7 @@ import { Skeleton } from "../components/Skeleton";
 import { FetchError } from "../components/FetchError";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { recordError } from "../lib/errorTelemetry";
+import { supabase } from "../lib/supabase";
 import { isQrResolveUserMessage, qrResolveErrorMessage } from "../lib/userFacingErrors";
 
 const PRESETS = [10, 20, 50] as const;
@@ -188,28 +190,50 @@ function QrTipLandingContent() {
         setError("Restoring your session — wait a moment and tap Pay again.");
         return;
       }
-      const signedOut = await confirmRequiresSignInForPayment();
+      const signedOut = await confirmRequiresSignInForPayment({
+        knownUserId: user?.id ?? session?.user?.id,
+        knownAccessToken: session?.access_token,
+      });
       if (!signedOut) {
-        logQrAuth("pay retry hint — session recovered after stable wait", { waitedMs: stable.waitedMs });
-        setError("Session restored. Tap Pay again.");
+        logQrAuth("pay continuing — session recovered after stable wait", { waitedMs: stable.waitedMs });
+      } else {
+        logAuth("QR pay redirect to login (confirmed sign-out)", { token });
+        logQrAuth("redirect /login after confirmed sign-out", { token });
+        sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
+        navigate("/login", { replace: true });
         return;
       }
-      logAuth("QR pay redirect to login (confirmed sign-out)", { token });
-      logQrAuth("redirect /login after confirmed sign-out", { token });
+    }
+    let payerUserId = stable.ok ? stable.userId : null;
+    if (!payerUserId) {
+      payerUserId = await resolvePaymentUserId(user?.id, session?.user?.id);
+    }
+    if (!payerUserId) {
+      setError("Please sign in to continue.");
       sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
       navigate("/login", { replace: true });
       return;
     }
-    const payerId = stable.userId;
     if (!user?.id) {
-      logAuth("QR pay using recovered session (React user was briefly null)", { payerId });
-      logQrAuth("pay using recovered session id", { payerId, waitedMs: stable.waitedMs });
+      logAuth("QR pay using recovered session (React user was briefly null)", { payerUserId });
+      logQrAuth("pay using recovered session id", { payerUserId, waitedMs: stable.waitedMs });
     }
     const payIssue = paystackEnvIssue();
     if (!hasPaystackPublicKey()) {
       setError(payIssue ?? "Payments are not configured on this deployment.");
       return;
     }
+    let payerAccessToken = session?.access_token ?? null;
+    if (!payerAccessToken) {
+      const { data: { session: live } } = await supabase.auth.getSession();
+      payerAccessToken = live?.access_token ?? null;
+      if (!payerUserId && live?.user?.id) payerUserId = live.user.id;
+    }
+    if (!payerAccessToken || !payerUserId) {
+      setError("Checking your session — wait a moment and tap Pay again.");
+      return;
+    }
+
     payInFlightRef.current = true;
     setPaying(true);
     setError(null);
@@ -219,13 +243,22 @@ function QrTipLandingContent() {
         guardId: target.guard_id,
         sourceLinkToken: token,
         amountCents: cents,
+        payerUserId,
+        payerAccessToken,
+        sessionPrechecked: true,
         navigate,
         onRequiresAuth: () => {
           void (async () => {
             releaseTipCheckoutLock();
-            if (!(await confirmRequiresSignInForPayment())) {
+            const { data: { session: live } } = await supabase.auth.getSession();
+            if (live?.user?.id && live?.access_token) {
+              logQrAuth("onRequiresAuth ignored — live getSession has user", { uid: live.user.id });
+              setError("Could not start checkout. Tap Pay again.");
+              return;
+            }
+            if (!(await confirmRequiresSignInForPayment({ knownUserId: payerUserId, knownAccessToken: payerAccessToken }))) {
               logQrAuth("onRequiresAuth ignored — session still present", {});
-              setError("Session restored. Tap Pay again.");
+              setError("Could not start checkout. Tap Pay again.");
               return;
             }
             logQrAuth("onRequiresAuth → /login", { token });

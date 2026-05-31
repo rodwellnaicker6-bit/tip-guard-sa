@@ -19,6 +19,9 @@ export const paystackAdapter: PaymentAdapter = {
       onCheckoutDismissed: ctx.onCheckoutDismissed,
       onCheckoutPhase: ctx.onCheckoutPhase,
       onRequiresAuth: ctx.onRequiresAuth,
+      payerUserId: ctx.payerUserId,
+      payerAccessToken: ctx.payerAccessToken,
+      sessionPrechecked: ctx.sessionPrechecked,
     });
   },
   async startWalletTopUp(ctx) {
@@ -29,6 +32,9 @@ export const paystackAdapter: PaymentAdapter = {
       onCheckoutDismissed: ctx.onCheckoutDismissed,
       onCheckoutPhase: ctx.onCheckoutPhase,
       onRequiresAuth: ctx.onRequiresAuth,
+      payerUserId: ctx.payerUserId,
+      payerAccessToken: ctx.payerAccessToken,
+      sessionPrechecked: ctx.sessionPrechecked,
     });
   },
 };

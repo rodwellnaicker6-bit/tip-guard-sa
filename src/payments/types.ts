@@ -28,6 +28,11 @@ export type TipCheckoutContext = {
   onCheckoutPhase?: (phase: CheckoutPhase) => void;
   /** Paystack / edge rejected JWT — redirect to login when wired */
   onRequiresAuth?: () => void;
+  /** Signed-in payer from React auth — avoids getSession/refresh races on Pay. */
+  payerUserId?: string | null;
+  payerAccessToken?: string | null;
+  /** QR landing already confirmed session stability before checkout. */
+  sessionPrechecked?: boolean;
 };
 
 export type PaymentAdapter = {
