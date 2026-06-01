@@ -28,6 +28,7 @@ import {
   waitForStableSession,
 } from "../lib/qrAuthSession";
 import { ensurePaymentAccessToken, hintFastPath, type PaymentSessionHint } from "../lib/paymentSession";
+import { ensureTipPayerSession } from "../lib/tipPayerSession";
 
 /** Prevents double-invoke (double-tap) opening two Paystack sessions. */
 let tipCheckoutInFlight = false;
@@ -336,6 +337,15 @@ export async function payTipWithPaystack(opts: {
       paymentHint.userId = live.user.id;
       paymentHint.accessToken = live.access_token;
       logQrAuth("payTip hydrated JWT from getSession", { userId: live.user.id });
+    }
+  }
+  if (!paymentHint.accessToken || !paymentHint.userId) {
+    const guest = await ensureTipPayerSession();
+    if (guest) {
+      paymentHint.userId = guest.userId;
+      paymentHint.accessToken = guest.accessToken;
+      paymentHint.sessionPrechecked = true;
+      logQrAuth("payTip guest/anonymous JWT for initialize", { userId: guest.userId });
     }
   }
 

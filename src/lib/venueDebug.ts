@@ -2,10 +2,27 @@
 
 import { devInfo } from "./prodLog";
 
+const LOG_VENUE_TRACE =
+  import.meta.env.DEV ||
+  import.meta.env.VITE_DEBUG_VENUE === "true" ||
+  import.meta.env.VITE_DEBUG_VENUE === "1" ||
+  import.meta.env.VITE_TIPGUARD_VERBOSE === "true";
+
 export function logVenue(message: string, extra?: Record<string, unknown>): void {
   if (typeof console === "undefined") return;
   const payload = extra && Object.keys(extra).length > 0 ? extra : undefined;
+  if (LOG_VENUE_TRACE) {
+    console.info(`[TipGuard:venue] ${message}`, payload ?? "");
+    return;
+  }
   devInfo(`[TipGuard:venue] ${message}`, payload ?? "");
+}
+
+/** Always logged — timeouts and watchdogs in production. */
+export function logVenueWarn(message: string, extra?: Record<string, unknown>): void {
+  if (typeof console === "undefined") return;
+  const payload = extra && Object.keys(extra).length > 0 ? extra : undefined;
+  console.warn(`[TipGuard:venue] ${message}`, payload ?? "");
 }
 
 export function isMissingColumnError(err: { code?: string; message?: string } | null | undefined): boolean {

@@ -3,6 +3,7 @@ import { logAuth } from "./authDebug";
 import { stabilLog } from "./stabilLog";
 import { isSupabaseBrowserConfigured, supabase } from "./supabase";
 import { withTimeout } from "./asyncTimeout";
+import { ensureQrAuthSessionListener } from "./qrAuthSession";
 
 const ANON_SIGN_IN_MS = 8_000;
 
@@ -31,7 +32,8 @@ export async function ensureTipPayerSession(
     }
     const session = data.session;
     if (!session?.user?.id || !session.access_token) return null;
-    logAuth("tip payer anonymous session", { uid: session.user.id });
+    ensureQrAuthSessionListener();
+    logAuth("tip payer anonymous session", { uid: session.user.id, isAnonymous: session.user.is_anonymous === true });
     return { userId: session.user.id, accessToken: session.access_token };
   } catch (e) {
     stabilLog("pay", "anonymous tip sign-in exception", {

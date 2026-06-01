@@ -41,6 +41,7 @@ import { recordError } from "../lib/errorTelemetry";
 import { supabase } from "../lib/supabase";
 import { stashAuthRedirectPath } from "../lib/loginRedirect";
 import { ensureTipPayerSession } from "../lib/tipPayerSession";
+import { useGuestTipPayer } from "../hooks/useGuestTipPayer";
 import { isQrResolveUserMessage, qrResolveErrorMessage } from "../lib/userFacingErrors";
 
 const PRESETS = [10, 20, 50] as const;
@@ -60,7 +61,12 @@ function QrTipLandingContent() {
   const navigate = useNavigate();
   const { user, session, authReady, sessionReady } = useAuth();
   const sessionUserId = user?.id ?? session?.user?.id ?? null;
-  const sessionMissing = sessionReady && !sessionUserId;
+  const { payerUserId, payerReady, guestLoading, guestFailed, ensureGuest } = useGuestTipPayer({
+    sessionReady,
+    sessionUserId,
+    session,
+  });
+  const sessionMissing = sessionReady && !payerUserId;
   const sessionGraceElapsed = useGracePeriod(sessionMissing, QR_AUTH_GRACE_MS);
   const [, setAuthSessionTick] = useState(0);
   useEffect(() => subscribeQrAuthSession(() => setAuthSessionTick((n) => n + 1)), []);
@@ -69,7 +75,8 @@ function QrTipLandingContent() {
     sessionMissing,
     sessionGraceElapsed,
   );
-  const payBlockedByAuth = sessionRestoreInFlight;
+  const payBlockedByAuth =
+    sessionRestoreInFlight || (guestLoading && !payerReady) || (!payerReady && !sessionGraceElapsed && !guestFailed);
   const [target, setTarget] = useState<Awaited<ReturnType<typeof resolveTipTarget>>["target"]>(() =>
     initialTipState(token).target,
   );
@@ -168,12 +175,23 @@ function QrTipLandingContent() {
       setError("Choose a valid amount.");
       return;
     }
+    if (!payerReady) {
+      const ok = await ensureGuest();
+      if (!ok) {
+        setError(
+          guestFailed
+            ? "Guest checkout is unavailable. Enable anonymous sign-in in Supabase or try again."
+            : "Preparing secure checkout — wait a moment and tap Pay again.",
+        );
+        return;
+      }
+    }
     if (payBlockedByAuth) {
       logQrAuth("pay blocked — session restore in flight", {
         sessionReady,
         sessionRestoreInFlight,
       });
-      setError("Restoring your session — wait a moment and tap Pay again.");
+      setError("Preparing secure checkout — wait a moment and tap Pay again.");
       return;
     }
     const stable = await waitForStableSession({
@@ -212,33 +230,31 @@ function QrTipLandingContent() {
         }
       }
     }
-    let payerUserId = stable.ok ? stable.userId : null;
+    let resolvedPayerId = stable.ok ? stable.userId : payerUserId ?? null;
     let payerAccessToken: string | null = stable.ok ? session?.access_token ?? null : null;
-    if (!payerUserId) {
-      payerUserId = await resolvePaymentUserId(user?.id, session?.user?.id);
+    if (!resolvedPayerId) {
+      resolvedPayerId = (await resolvePaymentUserId(user?.id, session?.user?.id)) ?? payerUserId;
     }
-    if (!payerUserId || !payerAccessToken) {
+    if (!resolvedPayerId || !payerAccessToken) {
       const { data: { session: live } } = await supabase.auth.getSession();
-      if (live?.user?.id) payerUserId = live.user.id;
+      if (live?.user?.id) resolvedPayerId = live.user.id;
       if (live?.access_token) payerAccessToken = live.access_token;
     }
-    if (!payerUserId || !payerAccessToken) {
+    if (!resolvedPayerId || !payerAccessToken) {
       const guest = await ensureTipPayerSession(session);
       if (guest) {
-        payerUserId = guest.userId;
+        resolvedPayerId = guest.userId;
         payerAccessToken = guest.accessToken;
-        logQrAuth("pay using guest session after resolve", { uid: payerUserId });
+        logQrAuth("pay using guest session after resolve", { uid: resolvedPayerId });
       }
     }
-    if (!payerUserId || !payerAccessToken) {
-      setError("Please sign in to continue.");
-      stashAuthRedirectPath(`/tip/${token}?amount=${encodeURIComponent(amount)}`);
-      navigate("/login", { replace: true });
+    if (!resolvedPayerId || !payerAccessToken) {
+      setError("Could not start checkout. Check your connection and try again.");
       return;
     }
     if (!user?.id) {
-      logAuth("QR pay using recovered session (React user was briefly null)", { payerUserId });
-      logQrAuth("pay using recovered session id", { payerUserId, waitedMs: stable.waitedMs });
+      logAuth("QR pay using recovered session (React user was briefly null)", { payerUserId: resolvedPayerId });
+      logQrAuth("pay using recovered session id", { payerUserId: resolvedPayerId, waitedMs: stable.waitedMs });
     }
     const payIssue = paystackEnvIssue();
     if (!hasPaystackPublicKey()) {
@@ -255,7 +271,7 @@ function QrTipLandingContent() {
         guardId: target.guard_id,
         sourceLinkToken: token,
         amountCents: cents,
-        payerUserId,
+        payerUserId: resolvedPayerId,
         payerAccessToken,
         sessionPrechecked: true,
         navigate,
@@ -274,7 +290,7 @@ function QrTipLandingContent() {
               setError("Could not start checkout. Tap Pay again.");
               return;
             }
-            if (!(await confirmRequiresSignInForPayment({ knownUserId: payerUserId, knownAccessToken: payerAccessToken }))) {
+            if (!(await confirmRequiresSignInForPayment({ knownUserId: resolvedPayerId, knownAccessToken: payerAccessToken }))) {
               logQrAuth("onRequiresAuth ignored — session still present", {});
               setError("Could not start checkout. Tap Pay again.");
               return;
@@ -459,7 +475,7 @@ function QrTipLandingContent() {
         <div className="mb-3 space-y-2" role="status">
           <Skeleton style={{ height: 52, width: "100%", borderRadius: 16 }} />
           <p className="text-center text-xs text-slate-500">
-            {!sessionReady ? "Checking your session…" : "Restoring your session…"}
+            {!sessionReady ? "Checking your session…" : "Preparing secure checkout…"}
           </p>
         </div>
       ) : null}
@@ -473,14 +489,14 @@ function QrTipLandingContent() {
         {paying
           ? "Opening checkout…"
           : payBlockedByAuth
-            ? !sessionReady
-              ? "Checking session…"
-              : "Restoring session…"
-            : sessionUserId
+            ? guestLoading || !sessionReady
+              ? "Preparing checkout…"
+              : "Preparing checkout…"
+            : payerReady
               ? `Pay ${amountLabel}`
-              : sessionGraceElapsed
-                ? "Sign in to pay"
-                : "Restoring session…"}
+              : guestFailed
+                ? "Checkout unavailable"
+                : "Preparing checkout…"}
       </button>
 
       <p className="mt-4 text-center text-xs text-slate-600">

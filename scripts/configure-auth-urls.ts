@@ -36,6 +36,7 @@ async function main() {
     body: JSON.stringify({
       site_url: siteUrl,
       uri_allow_list: redirectUrls.join(","),
+      external_anonymous_users_enabled: true,
     }),
   });
 

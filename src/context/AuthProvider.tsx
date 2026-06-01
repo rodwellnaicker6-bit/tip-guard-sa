@@ -462,7 +462,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       applySession(next, event);
       // TOKEN_REFRESHED can fire in a tight loop and abort in-flight profile loads,
       // leaving profileReady false and blocking post-login redirects.
-      if (
+      const isAnonymousGuest = next?.user?.is_anonymous === true;
+      if (isAnonymousGuest) {
+        setProfileReady(true);
+      } else if (
         next?.user?.id &&
         (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "USER_UPDATED")
       ) {
