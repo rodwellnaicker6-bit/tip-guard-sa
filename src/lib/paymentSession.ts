@@ -139,14 +139,15 @@ function jwtStillValidForInvoke(accessToken: string): boolean {
   return exp > Date.now() + 5_000;
 }
 
-function hintFastPath(hint?: PaymentSessionHint): PaymentSessionResult | null {
+export function hintFastPath(hint?: PaymentSessionHint): PaymentSessionResult | null {
   const userId = hint?.userId?.trim();
   const accessToken = hint?.accessToken?.trim();
   if (!userId || !accessToken) return null;
-  const okForCheckout = hint?.sessionPrechecked
-    ? jwtStillValidForInvoke(accessToken)
-    : accessTokenUsableForCheckout(accessToken);
-  if (!okForCheckout) return null;
+  if (hint?.sessionPrechecked) {
+    logFlow("pay", "ensurePaymentAccessToken prechecked fast path", { userId, t: qrAuthTimestamp() });
+    return { ok: true, accessToken, userId };
+  }
+  if (!accessTokenUsableForCheckout(accessToken)) return null;
   logFlow("pay", "ensurePaymentAccessToken fast path (React JWT)", {
     userId,
     t: qrAuthTimestamp(),

@@ -303,8 +303,17 @@ export async function resolvePaymentUserId(
 }
 
 /** True only when grace polling + refresh could not find a user — safe to send to /login. */
-export async function confirmRequiresSignInForPayment(): Promise<boolean> {
-  const uid = await resolvePaymentUserId(null, null);
+export async function confirmRequiresSignInForPayment(opts?: {
+  knownUserId?: string | null;
+  knownAccessToken?: string | null;
+}): Promise<boolean> {
+  const knownUid = opts?.knownUserId?.trim();
+  const knownJwt = opts?.knownAccessToken?.trim();
+  if (knownUid && knownJwt) {
+    logQrAuth("confirmRequiresSignInForPayment skipped — caller JWT", { knownUid });
+    return false;
+  }
+  const uid = await resolvePaymentUserId(knownUid ?? null, knownUid ?? null);
   const signedOut = !uid;
   logQrAuth("confirmRequiresSignInForPayment", { signedOut });
   return signedOut;

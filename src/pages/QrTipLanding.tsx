@@ -190,7 +190,10 @@ function QrTipLandingContent() {
         setError("Restoring your session — wait a moment and tap Pay again.");
         return;
       }
-      const signedOut = await confirmRequiresSignInForPayment();
+      const signedOut = await confirmRequiresSignInForPayment({
+        knownUserId: user?.id ?? session?.user?.id,
+        knownAccessToken: session?.access_token,
+      });
       if (!signedOut) {
         logQrAuth("pay continuing — session recovered after stable wait", { waitedMs: stable.waitedMs });
       } else {
@@ -226,6 +229,10 @@ function QrTipLandingContent() {
       payerAccessToken = live?.access_token ?? null;
       if (!payerUserId && live?.user?.id) payerUserId = live.user.id;
     }
+    if (!payerAccessToken || !payerUserId) {
+      setError("Checking your session — wait a moment and tap Pay again.");
+      return;
+    }
 
     payInFlightRef.current = true;
     setPaying(true);
@@ -249,7 +256,7 @@ function QrTipLandingContent() {
               setError("Could not start checkout. Tap Pay again.");
               return;
             }
-            if (!(await confirmRequiresSignInForPayment())) {
+            if (!(await confirmRequiresSignInForPayment({ knownUserId: payerUserId, knownAccessToken: payerAccessToken }))) {
               logQrAuth("onRequiresAuth ignored — session still present", {});
               setError("Could not start checkout. Tap Pay again.");
               return;
