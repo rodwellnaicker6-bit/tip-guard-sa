@@ -38,6 +38,7 @@ import { Skeleton } from "../components/Skeleton";
 import { FetchError } from "../components/FetchError";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { recordError } from "../lib/errorTelemetry";
+import { supabase } from "../lib/supabase";
 import { isQrResolveUserMessage, qrResolveErrorMessage } from "../lib/userFacingErrors";
 
 const PRESETS = [10, 20, 50] as const;
@@ -219,6 +220,13 @@ function QrTipLandingContent() {
       setError(payIssue ?? "Payments are not configured on this deployment.");
       return;
     }
+    let payerAccessToken = session?.access_token ?? null;
+    if (!payerAccessToken) {
+      const { data: { session: live } } = await supabase.auth.getSession();
+      payerAccessToken = live?.access_token ?? null;
+      if (!payerUserId && live?.user?.id) payerUserId = live.user.id;
+    }
+
     payInFlightRef.current = true;
     setPaying(true);
     setError(null);
@@ -229,7 +237,7 @@ function QrTipLandingContent() {
         sourceLinkToken: token,
         amountCents: cents,
         payerUserId,
-        payerAccessToken: session?.access_token ?? null,
+        payerAccessToken,
         sessionPrechecked: true,
         navigate,
         onRequiresAuth: () => {

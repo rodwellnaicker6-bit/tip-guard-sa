@@ -299,6 +299,14 @@ export async function payTipWithPaystack(opts: {
   });
 
   const paymentHint: PaymentSessionHint = toPaymentHint(opts);
+  if (!paymentHint.accessToken || !paymentHint.userId) {
+    const { data: { session: live } } = await supabase.auth.getSession();
+    if (live?.access_token && live?.user?.id) {
+      paymentHint.userId = live.user.id;
+      paymentHint.accessToken = live.access_token;
+      logQrAuth("payTip hydrated JWT from getSession", { userId: live.user.id });
+    }
+  }
 
   if (!opts.sessionPrechecked) {
     const stable = await waitForStableSession({

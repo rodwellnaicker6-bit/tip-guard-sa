@@ -133,11 +133,20 @@ async function refreshSessionOnce(session: Session): Promise<Session | null> {
   return refreshSessionPromise;
 }
 
+function jwtStillValidForInvoke(accessToken: string): boolean {
+  const exp = jwtExpiresAtMs(accessToken);
+  if (exp == null) return true;
+  return exp > Date.now() + 5_000;
+}
+
 function hintFastPath(hint?: PaymentSessionHint): PaymentSessionResult | null {
   const userId = hint?.userId?.trim();
   const accessToken = hint?.accessToken?.trim();
   if (!userId || !accessToken) return null;
-  if (!accessTokenUsableForCheckout(accessToken)) return null;
+  const okForCheckout = hint?.sessionPrechecked
+    ? jwtStillValidForInvoke(accessToken)
+    : accessTokenUsableForCheckout(accessToken);
+  if (!okForCheckout) return null;
   logFlow("pay", "ensurePaymentAccessToken fast path (React JWT)", {
     userId,
     t: qrAuthTimestamp(),
@@ -184,13 +193,20 @@ export async function ensurePaymentAccessToken(
       };
     }
 
-    if (needsRefresh(session) && accessTokenUsableForCheckout(session.access_token)) {
-      logFlow("pay", "skipping refresh — JWT still valid for checkout window");
-      return {
-        ok: true,
-        accessToken: session.access_token,
-        userId: session.user!.id,
-      };
+    if (
+      hint?.sessionPrechecked ||
+      (needsRefresh(session) && accessTokenUsableForCheckout(session.access_token))
+    ) {
+      if (sessionStillValid(session)) {
+        logFlow("pay", "skipping refresh — using JWT for checkout", {
+          prechecked: !!hint?.sessionPrechecked,
+        });
+        return {
+          ok: true,
+          accessToken: session.access_token,
+          userId: session.user!.id,
+        };
+      }
     }
 
     session = (await refreshSessionOnce(session)) ?? session;
