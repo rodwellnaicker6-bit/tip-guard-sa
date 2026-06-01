@@ -8,10 +8,12 @@ import { useToast } from "../context/useToast";
 import PageLoader from "../components/PageLoader";
 import EmptyState from "../components/EmptyState";
 import { FetchError } from "../components/FetchError";
+import { useSupabaseQueryPage } from "../hooks/useSupabaseQueryPage";
 
 const REFRESH_MS = 45_000;
 
 export default function CustomerWallet() {
+  useSupabaseQueryPage("wallet-dashboard");
   const navigate = useNavigate();
   const toast = useToast();
   const [balanceCents, setBalanceCents] = useState<number | null>(null);

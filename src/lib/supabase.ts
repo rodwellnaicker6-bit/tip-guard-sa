@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { bootLog } from "./bootDebug";
 import { reconcileSupabaseAuthStorage } from "./supabaseAuthStorage";
 import { normalizeSupabaseUrl, projectRefFromSupabaseUrl } from "./supabaseProject";
+import { isSupabaseQueryTraceEnabled, wrapPostgrestBuilder } from "./supabaseQueryInstrument";
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
 const rawAnon = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
@@ -126,6 +127,13 @@ export function getSupabaseClient(): SupabaseClient {
 export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
   get(_target, prop, receiver) {
     const client = getSupabaseClient();
+    if (isSupabaseQueryTraceEnabled() && prop === "from") {
+      return (table: string) => wrapPostgrestBuilder(client.from(table), `from.${table}`);
+    }
+    if (isSupabaseQueryTraceEnabled() && prop === "rpc") {
+      return (fn: string, args?: object, options?: object) =>
+        wrapPostgrestBuilder(client.rpc(fn, args, options), `rpc.${fn}`);
+    }
     const value = Reflect.get(client, prop, receiver);
     return typeof value === "function" ? value.bind(client) : value;
   },

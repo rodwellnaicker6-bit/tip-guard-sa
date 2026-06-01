@@ -6,6 +6,18 @@
       "has": [{ "type": "host", "value": "www.tipguardsa.co.za" }],
       "destination": "https://tipguardsa.co.za/:path*",
       "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www.tipguradsa.co.za" }],
+      "destination": "https://tipguardsa.co.za/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "tipguradsa.co.za" }],
+      "destination": "https://tipguardsa.co.za/:path*",
+      "permanent": true
     }
   ],
   "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],

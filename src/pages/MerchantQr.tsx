@@ -13,6 +13,7 @@ import { recordError } from "../lib/errorTelemetry";
 import { BUILD_ID } from "../lib/buildInfo";
 import { logMerchantQrHubTrace, type MerchantQrHubQueryTrace } from "../lib/merchantQrHubTrace";
 import { devInfo } from "../lib/prodLog";
+import { useSupabaseQueryPage } from "../hooks/useSupabaseQueryPage";
 
 const QR_HUB_QUERY_MS = 12_000;
 const QR_HUB_OPTS = { queued: false as const };
@@ -45,6 +46,7 @@ const QR_TYPES = [
 ] as const;
 
 export default function MerchantQr() {
+  useSupabaseQueryPage("merchant-qr-hub");
   const { user } = useAuth();
   const toast = useToast();
   const [merchantId, setMerchantId] = useState<string | null>(null);

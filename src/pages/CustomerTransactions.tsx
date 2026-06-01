@@ -8,6 +8,7 @@ import { FetchError } from "../components/FetchError";
 import { TxStatusBadge } from "../components/TxStatusBadge";
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import PaystackTestBanner from "../components/PaystackTestBanner";
+import { useSupabaseQueryPage } from "../hooks/useSupabaseQueryPage";
 
 type TxRow = {
   id: string;
@@ -32,6 +33,7 @@ function endOfDay(d: Date) {
 }
 
 export default function CustomerTransactions() {
+  useSupabaseQueryPage("transaction-ledger");
   const [rows, setRows] = useState<TxRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
