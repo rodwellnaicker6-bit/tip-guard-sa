@@ -27,7 +27,7 @@ import {
   qrAuthTimestamp,
   waitForStableSession,
 } from "../lib/qrAuthSession";
-import { ensurePaymentAccessToken } from "../lib/paymentSession";
+import { ensurePaymentAccessToken, type PaymentSessionHint } from "../lib/paymentSession";
 
 /** Prevents double-invoke (double-tap) opening two Paystack sessions. */
 let tipCheckoutInFlight = false;
@@ -109,6 +109,7 @@ export type PaystackInitResult = {
 };
 
 function invokeSuggestsSignIn(detail: InvokeErrorDetail): boolean {
+  if (detail.code === "session_replay" || detail.code === "duplicate_pending") return false;
   const st = detail.status;
   if (st === 401 || st === 403) return true;
   const m = (detail.message ?? "").toLowerCase();
@@ -117,17 +118,42 @@ function invokeSuggestsSignIn(detail: InvokeErrorDetail): boolean {
   return false;
 }
 
+function formatPayInitError(detail: InvokeErrorDetail): string {
+  if (detail.code === "session_replay") {
+    return "This tip link was already used for checkout. Scan a fresh QR or open a new link.";
+  }
+  if (detail.code === "duplicate_pending") {
+    return detail.message;
+  }
+  return detail.message;
+}
+
+function toPaymentHint(opts: {
+  payerUserId?: string | null;
+  payerAccessToken?: string | null;
+  sessionPrechecked?: boolean;
+}): PaymentSessionHint {
+  return {
+    userId: opts.payerUserId,
+    accessToken: opts.payerAccessToken,
+    sessionPrechecked: opts.sessionPrechecked,
+  };
+}
+
 export function hasPaystackPublicKey(): boolean {
   return isPaystackConfigured();
 }
 
-export async function initializePaystackTransaction(body: {
-  kind: "tip" | "wallet_topup";
-  guard_id?: string;
-  amount_cents: number;
-  qr_code_id?: string;
-  source_link_token?: string;
-}): Promise<PaystackInitResult> {
+export async function initializePaystackTransaction(
+  body: {
+    kind: "tip" | "wallet_topup";
+    guard_id?: string;
+    amount_cents: number;
+    qr_code_id?: string;
+    source_link_token?: string;
+  },
+  paymentHint?: PaymentSessionHint,
+): Promise<PaystackInitResult> {
   if (!isSupabaseBrowserConfigured) {
     console.error("[TipGuard:pay] Supabase not configured — cannot invoke paystack-initialize", {
       url: edgeFunctionUrl("paystack-initialize"),
@@ -138,21 +164,31 @@ export async function initializePaystackTransaction(body: {
     };
   }
 
-  const stable = await waitForStableSession({ forPayment: true });
-  logQrAuth("initializePaystackTransaction after stable session", {
-    ok: stable.ok,
-    reason: stable.ok ? undefined : stable.reason,
-    waitedMs: stable.waitedMs,
-    t: qrAuthTimestamp(),
-  });
-  if (!stable.ok && stable.reason === "session_not_ready") {
-    return {
-      data: null,
-      errorMessage: "Restoring your session — wait a moment and try again.",
-    };
+  if (!paymentHint?.sessionPrechecked) {
+    const stable = await waitForStableSession({
+      forPayment: true,
+      reactUserId: paymentHint?.userId,
+    });
+    logQrAuth("initializePaystackTransaction after stable session", {
+      ok: stable.ok,
+      reason: stable.ok ? undefined : stable.reason,
+      waitedMs: stable.waitedMs,
+      t: qrAuthTimestamp(),
+    });
+    if (!stable.ok && stable.reason === "session_not_ready") {
+      return {
+        data: null,
+        errorMessage: "Restoring your session — wait a moment and try again.",
+      };
+    }
+  } else {
+    logQrAuth("initializePaystackTransaction skip stable wait (prechecked)", {
+      userId: paymentHint.userId ?? null,
+      t: qrAuthTimestamp(),
+    });
   }
 
-  const session = await ensurePaymentAccessToken();
+  const session = await ensurePaymentAccessToken(paymentHint);
   if (!session.ok) {
     const requiresSignIn = session.code === "not_signed_in" || session.code === "session_expired";
     return { data: null, errorMessage: session.message, requiresSignIn };
@@ -182,7 +218,7 @@ export async function initializePaystackTransaction(body: {
     const detail = await parseFunctionsInvokeError(error);
     logPayInvokeFailure("paystack-initialize", detail, Date.now() - started);
     const requiresSignIn = invokeSuggestsSignIn(detail);
-    return { data: null, errorMessage: detail.message, requiresSignIn };
+    return { data: null, errorMessage: formatPayInitError(detail), requiresSignIn };
   }
 
   const responsePayload = data as PaystackInitResponse & { error?: string; code?: string };
@@ -195,7 +231,7 @@ export async function initializePaystackTransaction(body: {
     };
     logPayInvokeFailure("paystack-initialize", detail, Date.now() - started);
     const requiresSignIn = invokeSuggestsSignIn(detail);
-    return { data: null, errorMessage: responsePayload.error, requiresSignIn };
+    return { data: null, errorMessage: formatPayInitError(detail), requiresSignIn };
   }
   if (!responsePayload?.access_code || !responsePayload?.reference) {
     logPayInvokeFailure(
@@ -218,6 +254,19 @@ function setPhase(opts: { onCheckoutPhase?: (p: CheckoutPhase) => void }, phase:
   opts.onCheckoutPhase?.(phase);
 }
 
+async function resolvePaystackInit(
+  body: Parameters<typeof initializePaystackTransaction>[0],
+  hint: PaymentSessionHint,
+): Promise<PaystackInitResult> {
+  let result = await initializePaystackTransaction(body, hint);
+  if (result.requiresSignIn && hint.sessionPrechecked) {
+    logQrAuth("paystack init requiresSignIn — retry after brief settle", { t: qrAuthTimestamp() });
+    await new Promise((r) => setTimeout(r, 400));
+    result = await initializePaystackTransaction(body, { ...hint, sessionPrechecked: true });
+  }
+  return result;
+}
+
 export async function payTipWithPaystack(opts: {
   guardId: string;
   sourceLinkToken?: string;
@@ -228,6 +277,9 @@ export async function payTipWithPaystack(opts: {
   onCheckoutPhase?: (phase: import("../payments/types").CheckoutPhase) => void;
   /** When session/JWT is rejected — e.g. redirect to login with return path */
   onRequiresAuth?: () => void;
+  payerUserId?: string | null;
+  payerAccessToken?: string | null;
+  sessionPrechecked?: boolean;
 }): Promise<void> {
   if (!opts.guardId?.trim()) {
     opts.onError("Tip target is missing. Reload the page and try again.");
@@ -246,23 +298,36 @@ export async function payTipWithPaystack(opts: {
     t: qrAuthTimestamp(),
   });
 
-  const stable = await waitForStableSession({ forPayment: true });
-  logQrAuth("payTipWithPaystack after stable session", {
-    ok: stable.ok,
-    reason: stable.ok ? undefined : stable.reason,
-    waitedMs: stable.waitedMs,
-  });
-  if (!stable.ok) {
-    if (stable.reason === "not_signed_in" || stable.reason === "timeout") {
-      const signedOut = await confirmRequiresSignInForPayment();
-      if (signedOut) {
-        if (opts.onRequiresAuth) opts.onRequiresAuth();
-        else opts.onError("Please sign in to continue.");
-        return;
+  const paymentHint: PaymentSessionHint = toPaymentHint(opts);
+
+  if (!opts.sessionPrechecked) {
+    const stable = await waitForStableSession({
+      forPayment: true,
+      reactUserId: opts.payerUserId,
+    });
+    logQrAuth("payTipWithPaystack after stable session", {
+      ok: stable.ok,
+      reason: stable.ok ? undefined : stable.reason,
+      waitedMs: stable.waitedMs,
+    });
+    if (!stable.ok) {
+      if (stable.reason === "not_signed_in" || stable.reason === "timeout") {
+        const signedOut = await confirmRequiresSignInForPayment();
+        if (signedOut) {
+          if (opts.onRequiresAuth) opts.onRequiresAuth();
+          else opts.onError("Please sign in to continue.");
+          return;
+        }
       }
+      opts.onError("Restoring your session — wait a moment and tap Pay again.");
+      return;
     }
-    opts.onError("Restoring your session — wait a moment and tap Pay again.");
-    return;
+    paymentHint.userId = stable.userId;
+    paymentHint.sessionPrechecked = true;
+  } else {
+    logQrAuth("payTipWithPaystack skip stable wait (prechecked)", {
+      userId: opts.payerUserId ?? null,
+    });
   }
 
   if (!acquireTipCheckoutLock()) {
@@ -281,21 +346,22 @@ export async function payTipWithPaystack(opts: {
     setPhase(opts, "initializing");
     logFlow("pay", "tip checkout initializing");
 
-    const { data, errorMessage, requiresSignIn } = await initializePaystackTransaction({
-      kind: "tip",
+    const initBody = {
+      kind: "tip" as const,
       guard_id: opts.guardId,
       amount_cents: opts.amountCents,
       source_link_token: opts.sourceLinkToken,
-    });
+    };
+    const { data, errorMessage, requiresSignIn } = await resolvePaystackInit(initBody, paymentHint);
     if (requiresSignIn) {
       releaseTipCheckoutLock();
       setPhase(opts, "idle");
       const signedOut = await confirmRequiresSignInForPayment();
       if (!signedOut) {
-        logQrAuth("payTip requiresSignIn ignored — session recovered", {
+        logQrAuth("payTip requiresSignIn after retry — still has session", {
           hasLinkToken: Boolean(opts.sourceLinkToken),
         });
-        opts.onError("Your session was restored. Tap Pay again.");
+        opts.onError("Could not start checkout. Tap Pay again.");
         return;
       }
       logQrAuth("payTip requiresSignIn confirmed — invoking onRequiresAuth", {});
@@ -357,16 +423,26 @@ export async function payWalletTopUpWithPaystack(opts: {
   onCheckoutDismissed?: () => void;
   onCheckoutPhase?: (phase: CheckoutPhase) => void;
   onRequiresAuth?: () => void;
+  payerUserId?: string | null;
+  payerAccessToken?: string | null;
+  sessionPrechecked?: boolean;
 }): Promise<void> {
   console.info("[TipGuard:pay] wallet top-up start", {
     amountCents: opts.amountCents,
     functionsUrl: edgeFunctionUrl("paystack-initialize"),
   });
 
-  const stable = await waitForStableSession({ forPayment: true });
-  if (!stable.ok && stable.reason !== "not_signed_in") {
-    opts.onError("Restoring your session — wait a moment and try again.");
-    return;
+  const paymentHint: PaymentSessionHint = toPaymentHint(opts);
+  if (!opts.sessionPrechecked) {
+    const stable = await waitForStableSession({ forPayment: true, reactUserId: opts.payerUserId });
+    if (!stable.ok && stable.reason !== "not_signed_in") {
+      opts.onError("Restoring your session — wait a moment and try again.");
+      return;
+    }
+    if (stable.ok) {
+      paymentHint.userId = stable.userId;
+      paymentHint.sessionPrechecked = true;
+    }
   }
 
   if (!acquireWalletTopUpLock()) {
@@ -384,17 +460,17 @@ export async function payWalletTopUpWithPaystack(opts: {
   try {
     setPhase(opts, "initializing");
 
-    const { data, errorMessage, requiresSignIn } = await initializePaystackTransaction({
-      kind: "wallet_topup",
-      amount_cents: opts.amountCents,
-    });
+    const { data, errorMessage, requiresSignIn } = await resolvePaystackInit(
+      { kind: "wallet_topup", amount_cents: opts.amountCents },
+      paymentHint,
+    );
     if (requiresSignIn) {
       releaseWalletTopUpLock();
       setPhase(opts, "idle");
       const signedOut = await confirmRequiresSignInForPayment();
       if (!signedOut) {
-        logQrAuth("walletTopUp requiresSignIn ignored — session recovered", {});
-        opts.onError("Your session was restored. Try again.");
+        logQrAuth("walletTopUp requiresSignIn after retry — still has session", {});
+        opts.onError("Could not start deposit. Try again.");
         return;
       }
       if (opts.onRequiresAuth) opts.onRequiresAuth();
