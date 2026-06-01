@@ -39,6 +39,8 @@ import { FetchError } from "../components/FetchError";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { recordError } from "../lib/errorTelemetry";
 import { supabase } from "../lib/supabase";
+import { stashAuthRedirectPath } from "../lib/loginRedirect";
+import { ensureTipPayerSession } from "../lib/tipPayerSession";
 import { isQrResolveUserMessage, qrResolveErrorMessage } from "../lib/userFacingErrors";
 
 const PRESETS = [10, 20, 50] as const;
@@ -197,20 +199,40 @@ function QrTipLandingContent() {
       if (!signedOut) {
         logQrAuth("pay continuing — session recovered after stable wait", { waitedMs: stable.waitedMs });
       } else {
-        logAuth("QR pay redirect to login (confirmed sign-out)", { token });
-        logQrAuth("redirect /login after confirmed sign-out", { token });
-        sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
-        navigate("/login", { replace: true });
-        return;
+        const guest = await ensureTipPayerSession(session);
+        if (guest) {
+          logQrAuth("pay using anonymous guest session", { uid: guest.userId });
+          // Resolved below via getSession after anonymous sign-in.
+        } else {
+          logAuth("QR pay redirect to login (confirmed sign-out)", { token });
+          logQrAuth("redirect /login after confirmed sign-out", { token });
+          stashAuthRedirectPath(`/tip/${token}?amount=${encodeURIComponent(amount)}`);
+          navigate("/login", { replace: true });
+          return;
+        }
       }
     }
     let payerUserId = stable.ok ? stable.userId : null;
+    let payerAccessToken: string | null = stable.ok ? session?.access_token ?? null : null;
     if (!payerUserId) {
       payerUserId = await resolvePaymentUserId(user?.id, session?.user?.id);
     }
-    if (!payerUserId) {
+    if (!payerUserId || !payerAccessToken) {
+      const { data: { session: live } } = await supabase.auth.getSession();
+      if (live?.user?.id) payerUserId = live.user.id;
+      if (live?.access_token) payerAccessToken = live.access_token;
+    }
+    if (!payerUserId || !payerAccessToken) {
+      const guest = await ensureTipPayerSession(session);
+      if (guest) {
+        payerUserId = guest.userId;
+        payerAccessToken = guest.accessToken;
+        logQrAuth("pay using guest session after resolve", { uid: payerUserId });
+      }
+    }
+    if (!payerUserId || !payerAccessToken) {
       setError("Please sign in to continue.");
-      sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
+      stashAuthRedirectPath(`/tip/${token}?amount=${encodeURIComponent(amount)}`);
       navigate("/login", { replace: true });
       return;
     }
@@ -221,16 +243,6 @@ function QrTipLandingContent() {
     const payIssue = paystackEnvIssue();
     if (!hasPaystackPublicKey()) {
       setError(payIssue ?? "Payments are not configured on this deployment.");
-      return;
-    }
-    let payerAccessToken = session?.access_token ?? null;
-    if (!payerAccessToken) {
-      const { data: { session: live } } = await supabase.auth.getSession();
-      payerAccessToken = live?.access_token ?? null;
-      if (!payerUserId && live?.user?.id) payerUserId = live.user.id;
-    }
-    if (!payerAccessToken || !payerUserId) {
-      setError("Checking your session — wait a moment and tap Pay again.");
       return;
     }
 
@@ -256,13 +268,19 @@ function QrTipLandingContent() {
               setError("Could not start checkout. Tap Pay again.");
               return;
             }
+            const guest = await ensureTipPayerSession(live);
+            if (guest) {
+              logQrAuth("onRequiresAuth recovered via guest session", { uid: guest.userId });
+              setError("Could not start checkout. Tap Pay again.");
+              return;
+            }
             if (!(await confirmRequiresSignInForPayment({ knownUserId: payerUserId, knownAccessToken: payerAccessToken }))) {
               logQrAuth("onRequiresAuth ignored — session still present", {});
               setError("Could not start checkout. Tap Pay again.");
               return;
             }
             logQrAuth("onRequiresAuth → /login", { token });
-            sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
+            stashAuthRedirectPath(`/tip/${token}?amount=${encodeURIComponent(amount)}`);
             navigate("/login", { replace: true });
           })();
         },

@@ -19,6 +19,11 @@ import { stabilLog } from "../lib/stabilLog";
 import { subscriptionManager } from "../lib/subscriptionManager";
 import { clearPendingRole, readPendingRole, writePendingRole } from "../lib/pendingRoleStorage";
 import { isSupabaseBrowserConfigured, supabase } from "../lib/supabase";
+import {
+  readPersistedAuthSession,
+  supabaseAuthStorageKey,
+} from "../lib/supabaseAuthStorage";
+import { normalizeSupabaseUrl } from "../lib/supabaseProject";
 import { withTimeout } from "../lib/asyncTimeout";
 import { AuthContext } from "./authReactContext";
 import type {
@@ -29,6 +34,8 @@ import type {
 } from "./authTypes";
 
 const AUTH_SESSION_TIMEOUT_MS = 10_000;
+/** Must exceed AUTH_SESSION_TIMEOUT_MS so we do not mark ready before getSession settles. */
+const AUTH_BOOT_READY_FALLBACK_MS = AUTH_SESSION_TIMEOUT_MS + 2_000;
 const AUTH_REQUEST_TIMEOUT_MS = 15_000;
 const AUTH_PROFILE_TIMEOUT_MS = 10_000;
 
@@ -320,9 +327,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const authBootRef = useRef(0);
+  const getSessionSettledRef = useRef(false);
 
   useEffect(() => {
     const bootGen = ++authBootRef.current;
+    getSessionSettledRef.current = false;
     sessionReadyRef.current = false;
     /** Do not clear `sessionSnapshotRef` here — a remount/re-run with live React session would allow a null auth event to wipe the user before getSession finishes. */
     let effectCancelled = false;
@@ -466,6 +475,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         "Session check timed out",
       )
         .then(({ data: { session: next }, error }) => {
+          getSessionSettledRef.current = true;
           if (bootGen !== authBootRef.current || effectCancelled || !mountedRef.current) return;
           if (error) {
             bootLog("getSession error", error.message);
@@ -496,6 +506,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           markSessionReady();
         })
         .catch((e) => {
+          getSessionSettledRef.current = true;
           if (bootGen !== authBootRef.current || effectCancelled || !mountedRef.current) return;
           const msg = e instanceof Error ? e.message : "Session check failed";
           console.error("[AuthCrash] AuthProvider.getSession", e);
@@ -511,12 +522,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     const bootFallback = window.setTimeout(() => {
-      if (mountedRef.current && !sessionReadyRef.current) {
-        bootLog("session hydration timeout — marking ready");
+      if (!mountedRef.current || sessionReadyRef.current) return;
+      if (!getSessionSettledRef.current) {
+        const rawUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+        if (rawUrl && !sessionSnapshotRef.current?.user?.id) {
+          const persisted = readPersistedAuthSession(normalizeSupabaseUrl(rawUrl));
+          if (persisted?.user?.id) {
+            bootLog("session hydration fallback — applying persisted storage", {
+              storageKey: supabaseAuthStorageKey(normalizeSupabaseUrl(rawUrl)),
+            });
+            applySession(persisted, "BOOT_STORAGE_FALLBACK");
+            scheduleLoadAccount(persisted.user.id, { force: true });
+          }
+        }
+        bootLog("session hydration timeout — marking ready", {
+          getSessionSettled: getSessionSettledRef.current,
+        });
         stabilLog("auth", "session hydration timeout — unblocking UI");
         markSessionReady();
       }
-    }, 4_000);
+    }, AUTH_BOOT_READY_FALLBACK_MS);
 
     const profileFallback = window.setTimeout(() => {
       if (!mountedRef.current) return;

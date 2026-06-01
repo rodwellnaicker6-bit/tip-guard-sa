@@ -214,7 +214,11 @@ export async function initializePaystackTransaction(
   const started = Date.now();
   logPayInvokeStart("paystack-initialize", payload);
 
-  const invokeHeaders = { Authorization: `Bearer ${accessToken}` };
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ?? "";
+  const invokeHeaders: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+  };
+  if (anonKey) invokeHeaders.apikey = anonKey;
   const attempt = async () =>
     supabase.functions.invoke("paystack-initialize", { body: payload, headers: invokeHeaders });
 

@@ -6,16 +6,21 @@ import PageLoader from "../components/PageLoader";
 import { AuthShell } from "../components/AuthShell";
 import { FetchError } from "../components/FetchError";
 import { DEMO_ACCOUNTS, isDemoMode } from "../lib/demoMode";
+import { readLoginRedirectTarget } from "../lib/loginRedirect";
 
 export default function Login() {
   const { signIn, user } = useAuth();
   const location = useLocation();
   const passwordUpdated = Boolean((location.state as { passwordUpdated?: boolean } | null)?.passwordUpdated);
   const redirectFrom = useMemo(
-    () => (location.state as { from?: string } | null)?.from,
-    [location.state],
+    () =>
+      readLoginRedirectTarget(
+        location.search,
+        (location.state as { from?: string } | null)?.from,
+      ),
+    [location.search, location.state],
   );
-  const { showLoader } = usePostAuthRedirect({ from: redirectFrom });
+  const { showLoader } = usePostAuthRedirect({ from: redirectFrom ?? undefined });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

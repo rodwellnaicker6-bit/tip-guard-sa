@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { bootLog } from "./bootDebug";
-import { reconcileSupabaseAuthStorage } from "./supabaseAuthStorage";
-import { normalizeSupabaseUrl, projectRefFromSupabaseUrl } from "./supabaseProject";
+import { reconcileSupabaseAuthStorage, supabaseAuthStorageKey } from "./supabaseAuthStorage";
+import { normalizeSupabaseUrl } from "./supabaseProject";
 import { isSupabaseQueryTraceEnabled, wrapPostgrestBuilder } from "./supabaseQueryInstrument";
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
@@ -53,8 +53,7 @@ function resolveSupabaseCredentials(): { url: string; anon: string; storageKey: 
       ? normalizeSupabaseUrl(rawUrl)
       : rawUrl || SUPABASE_LOCAL_PLACEHOLDER_URL;
   const anon = rawAnon || DEMO_ANON;
-  const projectRef = projectRefFromSupabaseUrl(url);
-  const storageKey = projectRef ? `tipguard-${projectRef}-auth` : "tipguard-auth";
+  const storageKey = supabaseAuthStorageKey(url);
   return { url, anon, storageKey };
 }
 
