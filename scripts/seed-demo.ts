@@ -12,17 +12,9 @@ loadEnvFiles();
 const env = requireEnv(["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]);
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD?.trim() || "TipGuardDemo2026!";
 
-/** Stable IDs for idempotent re-runs */
-export const DEMO_IDS = {
-  admin: "d1000001-0001-4001-8001-000000000001",
-  merchant: "d1000002-0002-4002-8002-000000000002",
-  guard: "d1000003-0003-4003-8003-000000000003",
-  customer: "d1000004-0004-4004-8004-000000000004",
-  merchantRow: "b1000001-0001-4001-8001-000000000001",
-  locationRow: "b1000002-0002-4002-8002-000000000002",
-  guardRow: "b1000003-0003-4003-8003-000000000003",
-  qrToken: "demo-staging-qr-01",
-} as const;
+import { DEMO_IDS } from "./demo-ids.js";
+
+export { DEMO_IDS };
 
 const USERS = [
   { id: DEMO_IDS.admin, email: "demo-admin@tipguard.staging", role: "admin", name: "Demo Admin" },
@@ -202,7 +194,10 @@ async function main() {
   console.log("\nSet VITE_DEMO_MODE=true on Vercel staging for one-click demo login.");
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+const isMain = process.argv[1]?.includes("seed-demo");
+if (isMain) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

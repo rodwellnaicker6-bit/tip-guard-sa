@@ -14,6 +14,7 @@
     "env:check:staging": "tsx scripts/validate-staging-env.ts --staging",
     "seed:demo": "tsx scripts/seed-demo.ts",
     "reset:demo": "tsx scripts/reset-demo.ts",
+    "reset:demo:onboarding": "tsx scripts/reset-demo-onboarding.ts",
     "verify:supabase": "tsx scripts/verify-supabase.ts",
     "verify:paystack": "tsx scripts/verify-paystack-beta.ts",
     "stress:qr": "tsx scripts/stress-qr-resolve.ts",

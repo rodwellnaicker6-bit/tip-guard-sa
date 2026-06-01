@@ -4,7 +4,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { loadEnvFiles, requireEnv } from "./lib/env.js";
-import { DEMO_IDS } from "./seed-demo.js";
+import { DEMO_IDS } from "./demo-ids.js";
 
 loadEnvFiles();
 const env = requireEnv(["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]);
