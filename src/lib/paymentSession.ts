@@ -186,6 +186,11 @@ export async function ensurePaymentAccessToken(
     }
 
     if (!session?.access_token) {
+      const { data: { session: live } } = await supabase.auth.getSession();
+      if (live?.access_token && live?.user?.id && jwtStillValidForInvoke(live.access_token)) {
+        logAuth("payment recovered JWT on final getSession", { userId: live.user.id });
+        return { ok: true, accessToken: live.access_token, userId: live.user.id };
+      }
       return {
         ok: false,
         message: "Please sign in to continue.",

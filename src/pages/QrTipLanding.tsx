@@ -243,6 +243,12 @@ function QrTipLandingContent() {
         onRequiresAuth: () => {
           void (async () => {
             releaseTipCheckoutLock();
+            const { data: { session: live } } = await supabase.auth.getSession();
+            if (live?.user?.id && live?.access_token) {
+              logQrAuth("onRequiresAuth ignored — live getSession has user", { uid: live.user.id });
+              setError("Could not start checkout. Tap Pay again.");
+              return;
+            }
             if (!(await confirmRequiresSignInForPayment())) {
               logQrAuth("onRequiresAuth ignored — session still present", {});
               setError("Could not start checkout. Tap Pay again.");

@@ -259,10 +259,22 @@ async function resolvePaystackInit(
   hint: PaymentSessionHint,
 ): Promise<PaystackInitResult> {
   let result = await initializePaystackTransaction(body, hint);
-  if (result.requiresSignIn && hint.sessionPrechecked) {
-    logQrAuth("paystack init requiresSignIn — retry after brief settle", { t: qrAuthTimestamp() });
-    await new Promise((r) => setTimeout(r, 400));
-    result = await initializePaystackTransaction(body, { ...hint, sessionPrechecked: true });
+  if (!result.requiresSignIn) return result;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    logQrAuth("paystack init requiresSignIn — retry with live session", {
+      attempt,
+      t: qrAuthTimestamp(),
+    });
+    await new Promise((r) => setTimeout(r, 350 * (attempt + 1)));
+    const { data: { session: live } } = await supabase.auth.getSession();
+    if (!live?.access_token || !live?.user?.id) break;
+    result = await initializePaystackTransaction(body, {
+      userId: live.user.id,
+      accessToken: live.access_token,
+      sessionPrechecked: true,
+    });
+    if (!result.requiresSignIn) return result;
   }
   return result;
 }
