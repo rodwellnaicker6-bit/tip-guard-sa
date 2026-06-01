@@ -4,6 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
 import { isMaintenanceMode, maintenanceResponse } from "../_shared/maintenance.ts";
 import { runFraudChecks } from "../_shared/fraudCheck.ts";
+import { resolvePaystackCheckoutEmail } from "../_shared/paystackEmail.ts";
 
 const RATE_MAX = 30;
 const RATE_WINDOW_SEC = 60;
@@ -155,7 +156,15 @@ serve(async (req) => {
       });
     }
 
-    const email = user.email ?? `${user.id}@customers.tipguard.local`;
+    const emailResolution = resolvePaystackCheckoutEmail(user.email, user.id);
+    const email = emailResolution.email;
+    if (emailResolution.source !== "auth") {
+      console.info("paystack-initialize: checkout email mapped", {
+        userId: user.id,
+        source: emailResolution.source,
+        authEmailPresent: emailResolution.authEmailPresent,
+      });
+    }
     const reference = randomRef(kind === "tip" ? "tg_" : "wl_");
     const paystackTest = paystackKeyMode === "test";
 
