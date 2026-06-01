@@ -6,7 +6,7 @@ import { useAuth } from "../context/useAuth";
 import { useGracePeriod } from "../hooks/useGracePeriod";
 import { TimedPageLoader } from "./TimedPageLoader";
 
-const LOGIN_REDIRECT_GRACE_MS = 3_500;
+const LOGIN_REDIRECT_GRACE_MS = 6_000;
 
 function loginRedirectState(pathname: string, search: string) {
   return { from: `${pathname}${search}` };

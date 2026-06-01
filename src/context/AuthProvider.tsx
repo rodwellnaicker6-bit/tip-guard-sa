@@ -46,13 +46,23 @@ function logAccountRequest(
   console.info(`[TipGuard:account] ${label}`, detail);
 }
 
+function readBootPersistedAuth(): Pick<AuthContextValue, "session" | "user"> {
+  const rawUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+  if (!rawUrl || !isSupabaseBrowserConfigured) {
+    return { session: null, user: null };
+  }
+  const session = readPersistedAuthSession(normalizeSupabaseUrl(rawUrl));
+  return { session, user: session?.user ?? null };
+}
+
 /**
  * Auth state provider. This module exports only this component so React Fast Refresh stays valid.
  * Consumer hook: `import { useAuth } from "./useAuth"`.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<AuthContextValue["session"]>(null);
-  const [user, setUser] = useState<AuthContextValue["user"]>(null);
+  const bootAuth = readBootPersistedAuth();
+  const [session, setSession] = useState<AuthContextValue["session"]>(bootAuth.session);
+  const [user, setUser] = useState<AuthContextValue["user"]>(bootAuth.user);
   const [role, setRole] = useState<AuthRole>(null);
   const [pendingRole, setPendingRoleState] = useState<AuthRole>(null);
   const [profileFields, setProfileFields] = useState<AuthProfileFields>({ full_name: null, phone: null });
@@ -72,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const lastReconnectAtRef = useRef(0);
   const RECONNECT_COOLDOWN_MS = 2_000;
   /** Last known good session — guards against transient null during TOKEN_REFRESHED. */
-  const sessionSnapshotRef = useRef<AuthContextValue["session"]>(null);
+  const sessionSnapshotRef = useRef<AuthContextValue["session"]>(bootAuth.session);
   const accountStateRef = useRef({
     role: null as AuthRole,
     pendingRole: null as AuthRole,
@@ -335,7 +345,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionReadyRef.current = false;
     /** Do not clear `sessionSnapshotRef` here — a remount/re-run with live React session would allow a null auth event to wipe the user before getSession finishes. */
     let effectCancelled = false;
-    bootLog("AuthProvider boot", { configured: isSupabaseBrowserConfigured });
+    bootLog("AuthProvider boot", {
+      configured: isSupabaseBrowserConfigured,
+      persistedUid: bootAuth.session?.user?.id ?? null,
+    });
+
+    if (bootAuth.session?.user?.id) {
+      const storedPending = readPendingRole(bootAuth.session.user.id);
+      if (storedPending) setPendingRoleState(storedPending);
+      scheduleLoadAccount(bootAuth.session.user.id, { force: true });
+    }
 
     if (!isSupabaseBrowserConfigured) {
       queueMicrotask(() => {
