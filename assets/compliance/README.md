@@ -1,6 +1,16 @@
 # Compliance media (Paystack / review pack)
 
-**Videos are recorded locally** — we do not commit MP4 binaries to git by default.
+**Videos are recorded locally** — MP4 binaries may be gitignored if large; the Paystack submission file is listed below.
+
+## Paystack account verification (primary)
+
+| File | Duration | Script |
+|------|----------|--------|
+| **`PAYSTACK_COMPLIANCE_PAYMENT_FLOW.mp4`** | ~66s (60–90s target) | `npm run record:compliance-video` |
+
+Covers: QR/tip landing → Paystack checkout → success page → merchant dashboard → guard wallet → contact/refunds.
+
+**Report:** [docs/PAYSTACK_COMPLIANCE_FINAL_REPORT.md](../../docs/PAYSTACK_COMPLIANCE_FINAL_REPORT.md)
 
 ## Professional 90s demo (investor + compliance)
 

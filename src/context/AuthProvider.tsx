@@ -19,6 +19,11 @@ import { stabilLog } from "../lib/stabilLog";
 import { subscriptionManager } from "../lib/subscriptionManager";
 import { clearPendingRole, readPendingRole, writePendingRole } from "../lib/pendingRoleStorage";
 import { isSupabaseBrowserConfigured, supabase } from "../lib/supabase";
+import {
+  readPersistedAuthSession,
+  supabaseAuthStorageKey,
+} from "../lib/supabaseAuthStorage";
+import { normalizeSupabaseUrl } from "../lib/supabaseProject";
 import { withTimeout } from "../lib/asyncTimeout";
 import { AuthContext } from "./authReactContext";
 import type {
@@ -29,6 +34,8 @@ import type {
 } from "./authTypes";
 
 const AUTH_SESSION_TIMEOUT_MS = 10_000;
+/** Must exceed AUTH_SESSION_TIMEOUT_MS so we do not mark ready before getSession settles. */
+const AUTH_BOOT_READY_FALLBACK_MS = AUTH_SESSION_TIMEOUT_MS + 2_000;
 const AUTH_REQUEST_TIMEOUT_MS = 15_000;
 const AUTH_PROFILE_TIMEOUT_MS = 10_000;
 
@@ -39,13 +46,23 @@ function logAccountRequest(
   console.info(`[TipGuard:account] ${label}`, detail);
 }
 
+function readBootPersistedAuth(): Pick<AuthContextValue, "session" | "user"> {
+  const rawUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+  if (!rawUrl || !isSupabaseBrowserConfigured) {
+    return { session: null, user: null };
+  }
+  const session = readPersistedAuthSession(normalizeSupabaseUrl(rawUrl));
+  return { session, user: session?.user ?? null };
+}
+
 /**
  * Auth state provider. This module exports only this component so React Fast Refresh stays valid.
  * Consumer hook: `import { useAuth } from "./useAuth"`.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<AuthContextValue["session"]>(null);
-  const [user, setUser] = useState<AuthContextValue["user"]>(null);
+  const bootAuth = readBootPersistedAuth();
+  const [session, setSession] = useState<AuthContextValue["session"]>(bootAuth.session);
+  const [user, setUser] = useState<AuthContextValue["user"]>(bootAuth.user);
   const [role, setRole] = useState<AuthRole>(null);
   const [pendingRole, setPendingRoleState] = useState<AuthRole>(null);
   const [profileFields, setProfileFields] = useState<AuthProfileFields>({ full_name: null, phone: null });
@@ -65,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const lastReconnectAtRef = useRef(0);
   const RECONNECT_COOLDOWN_MS = 2_000;
   /** Last known good session — guards against transient null during TOKEN_REFRESHED. */
-  const sessionSnapshotRef = useRef<AuthContextValue["session"]>(null);
+  const sessionSnapshotRef = useRef<AuthContextValue["session"]>(bootAuth.session);
   const accountStateRef = useRef({
     role: null as AuthRole,
     pendingRole: null as AuthRole,
@@ -320,13 +337,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const authBootRef = useRef(0);
+  const getSessionSettledRef = useRef(false);
 
   useEffect(() => {
     const bootGen = ++authBootRef.current;
+    getSessionSettledRef.current = false;
     sessionReadyRef.current = false;
     /** Do not clear `sessionSnapshotRef` here — a remount/re-run with live React session would allow a null auth event to wipe the user before getSession finishes. */
     let effectCancelled = false;
-    bootLog("AuthProvider boot", { configured: isSupabaseBrowserConfigured });
+    bootLog("AuthProvider boot", {
+      configured: isSupabaseBrowserConfigured,
+      persistedUid: bootAuth.session?.user?.id ?? null,
+    });
+
+    if (bootAuth.session?.user?.id) {
+      const storedPending = readPendingRole(bootAuth.session.user.id);
+      if (storedPending) setPendingRoleState(storedPending);
+      scheduleLoadAccount(bootAuth.session.user.id, { force: true });
+    }
 
     if (!isSupabaseBrowserConfigured) {
       queueMicrotask(() => {
@@ -434,7 +462,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       applySession(next, event);
       // TOKEN_REFRESHED can fire in a tight loop and abort in-flight profile loads,
       // leaving profileReady false and blocking post-login redirects.
-      if (
+      const isAnonymousGuest = next?.user?.is_anonymous === true;
+      if (isAnonymousGuest) {
+        setProfileReady(true);
+      } else if (
         next?.user?.id &&
         (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "USER_UPDATED")
       ) {
@@ -466,6 +497,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         "Session check timed out",
       )
         .then(({ data: { session: next }, error }) => {
+          getSessionSettledRef.current = true;
           if (bootGen !== authBootRef.current || effectCancelled || !mountedRef.current) return;
           if (error) {
             bootLog("getSession error", error.message);
@@ -496,6 +528,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           markSessionReady();
         })
         .catch((e) => {
+          getSessionSettledRef.current = true;
           if (bootGen !== authBootRef.current || effectCancelled || !mountedRef.current) return;
           const msg = e instanceof Error ? e.message : "Session check failed";
           console.error("[AuthCrash] AuthProvider.getSession", e);
@@ -511,12 +544,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     const bootFallback = window.setTimeout(() => {
-      if (mountedRef.current && !sessionReadyRef.current) {
-        bootLog("session hydration timeout — marking ready");
+      if (!mountedRef.current || sessionReadyRef.current) return;
+      if (!getSessionSettledRef.current) {
+        const rawUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+        if (rawUrl && !sessionSnapshotRef.current?.user?.id) {
+          const persisted = readPersistedAuthSession(normalizeSupabaseUrl(rawUrl));
+          if (persisted?.user?.id) {
+            bootLog("session hydration fallback — applying persisted storage", {
+              storageKey: supabaseAuthStorageKey(normalizeSupabaseUrl(rawUrl)),
+            });
+            applySession(persisted, "BOOT_STORAGE_FALLBACK");
+            scheduleLoadAccount(persisted.user.id, { force: true });
+          }
+        }
+        bootLog("session hydration timeout — marking ready", {
+          getSessionSettled: getSessionSettledRef.current,
+        });
         stabilLog("auth", "session hydration timeout — unblocking UI");
         markSessionReady();
       }
-    }, 4_000);
+    }, AUTH_BOOT_READY_FALLBACK_MS);
 
     const profileFallback = window.setTimeout(() => {
       if (!mountedRef.current) return;

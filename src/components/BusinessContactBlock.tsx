@@ -41,13 +41,6 @@ export function BusinessContactBlock({ compact = false }: { compact?: boolean })
           <dd>{c.address}</dd>
         </div>
       </dl>
-      {c.needsOperatorUpdate && (
-        <p className="mt-3 text-xs text-amber-200/90">
-          <strong>OPERATOR MUST UPDATE:</strong> Set <code className="text-amber-100">VITE_BUSINESS_PHONE</code>,{" "}
-          <code className="text-amber-100">VITE_BUSINESS_ADDRESS</code>, and{" "}
-          <code className="text-amber-100">VITE_BUSINESS_LEGAL_NAME</code> in Vercel production env (and redeploy).
-        </p>
-      )}
       {!compact && (
         <p className="mt-3 text-xs text-slate-500">
           Refunds &amp; delivery: <Link to="/legal/refunds">refund policy</Link> ·{" "}

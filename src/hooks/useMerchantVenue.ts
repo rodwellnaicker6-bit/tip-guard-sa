@@ -4,7 +4,7 @@ import { VENUE_LOAD_TIMEOUT_MS, withOperationTimeout } from "../lib/operationTim
 import { perfLog } from "../lib/perfLog";
 import { supabase } from "../lib/supabase";
 import { fetchEntityPayoutPrefs, type PayoutSchedule } from "../lib/payoutSchedule";
-import { isMissingColumnError, logVenue } from "../lib/venueDebug";
+import { isMissingColumnError, logVenue, logVenueWarn } from "../lib/venueDebug";
 
 export type MerchantVenueRow = {
   id: string;
@@ -20,8 +20,10 @@ type VenueCacheEntry = {
 };
 
 const CACHE_TTL_MS = 90_000;
+/** Drop stale in-flight venue fetches so a hung request cannot block later loads. */
+const INFLIGHT_MAX_MS = VENUE_LOAD_TIMEOUT_MS + 2_000;
 const venueCache = new Map<string, VenueCacheEntry>();
-const inflight = new Map<string, Promise<MerchantVenueRow | null>>();
+const inflight = new Map<string, { startedAt: number; promise: Promise<MerchantVenueRow | null> }>();
 
 const CORE_COLS = "id, business_name, location, verified";
 const FULL_COLS = `${CORE_COLS}, risk_score`;
@@ -83,9 +85,18 @@ export async function fetchMerchantVenueForUser(userId: string): Promise<{
     return { row: cached.row, error: null };
   }
 
-  let p = inflight.get(userId);
-  if (!p) {
-    p = (async () => {
+  const now = Date.now();
+  const existing = inflight.get(userId);
+  let entry = existing;
+  if (entry && now - entry.startedAt > INFLIGHT_MAX_MS) {
+    logVenue("inflight stale — discarding hung promise", { userId, ageMs: now - entry.startedAt });
+    inflight.delete(userId);
+    entry = undefined;
+  }
+
+  if (!entry) {
+    const startedAt = now;
+    const promise = (async () => {
       try {
         const result = await queryMerchantRow(userId);
         if (result.error) throw result.error;
@@ -95,20 +106,27 @@ export async function fetchMerchantVenueForUser(userId: string): Promise<{
         inflight.delete(userId);
       }
     })();
-    inflight.set(userId, p);
+    entry = { startedAt, promise };
+    inflight.set(userId, entry);
   }
 
   try {
-    const row = await p;
+    const row = await entry.promise;
     return { row, error: null };
   } catch (e) {
+    inflight.delete(userId);
     return { row: null, error: e instanceof Error ? e : new Error(String(e)) };
   }
 }
 
 export function invalidateMerchantVenueCache(userId?: string): void {
-  if (userId) venueCache.delete(userId);
-  else venueCache.clear();
+  if (userId) {
+    venueCache.delete(userId);
+    inflight.delete(userId);
+  } else {
+    venueCache.clear();
+    inflight.clear();
+  }
 }
 
 export type MerchantVenueLoadState = {
@@ -124,7 +142,7 @@ export type MerchantVenueLoadState = {
 };
 
 export function useMerchantVenue(): MerchantVenueLoadState {
-  const { user, sessionReady } = useAuth();
+  const { user, session, sessionReady } = useAuth();
   const [merchant, setMerchant] = useState<MerchantVenueRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -146,7 +164,7 @@ export function useMerchantVenue(): MerchantVenueLoadState {
 
     const gen = ++loadGenRef.current;
     let cancelled = false;
-    const uid = user?.id;
+    const uid = user?.id ?? session?.user?.id ?? null;
 
     if (!uid) {
       queueMicrotask(() => {
@@ -162,9 +180,11 @@ export function useMerchantVenue(): MerchantVenueLoadState {
 
     const watchdog = window.setTimeout(() => {
       if (cancelled || gen !== loadGenRef.current) return;
-      logVenue("load watchdog fired", {
+      inflight.delete(uid);
+      logVenueWarn("load watchdog fired — merchants select did not settle", {
         uid,
         timeoutMs: VENUE_LOAD_TIMEOUT_MS + 1_000,
+        supabaseQuery: "from.merchants.select(...).eq(user_id)",
         route: typeof window !== "undefined" ? window.location.pathname : null,
       });
       setLoading(false);
@@ -180,34 +200,39 @@ export function useMerchantVenue(): MerchantVenueLoadState {
       const venueQuery = "from.merchants.select(id,business_name,location,verified,risk_score?).eq(user_id)";
       logVenue("venue fetch start", { uid, supabaseQuery: venueQuery, timeoutMs: VENUE_LOAD_TIMEOUT_MS });
 
-      const { row, error: venueErr } = await fetchMerchantVenueForUser(uid);
-      const venueMs = Math.round(performance.now() - t0);
+      try {
+        const { row, error: venueErr } = await fetchMerchantVenueForUser(uid);
+        const venueMs = Math.round(performance.now() - t0);
 
-      if (cancelled || gen !== loadGenRef.current) return;
+        if (cancelled || gen !== loadGenRef.current) return;
 
-      logVenue("venue fetch end", {
-        uid,
-        supabaseQuery: venueQuery,
-        queryDurationMs: venueMs,
-        queryResponse: { hasRow: !!row?.id, error: venueErr?.message ?? null },
-      });
+        logVenue("venue fetch end", {
+          uid,
+          supabaseQuery: venueQuery,
+          queryDurationMs: venueMs,
+          queryResponse: { hasRow: !!row?.id, error: venueErr?.message ?? null },
+        });
 
-      if (venueErr) {
-        const msg = venueErr.message;
-        setError(
-          import.meta.env.DEV
-            ? `We could not load your venue. ${msg}`
-            : "We could not load your venue. Please try again.",
-        );
-        setErrorCode("venue_fetch");
-        setMerchant(null);
-      } else {
-        setMerchant(row);
-        setError(null);
-        setErrorCode(null);
+        if (venueErr) {
+          const msg = venueErr.message;
+          setError(
+            import.meta.env.DEV
+              ? `We could not load your venue. ${msg}`
+              : "We could not load your venue. Please try again.",
+          );
+          setErrorCode("venue_fetch");
+          setMerchant(null);
+        } else {
+          setMerchant(row);
+          setError(null);
+          setErrorCode(null);
+        }
+      } finally {
+        window.clearTimeout(watchdog);
+        if (!cancelled && gen === loadGenRef.current) setLoading(false);
       }
 
-      setLoading(false);
+      if (cancelled || gen !== loadGenRef.current) return;
 
       void (async () => {
         const payoutQuery = "from.merchants.select(payout_schedule,...).eq(user_id)";
@@ -234,7 +259,7 @@ export function useMerchantVenue(): MerchantVenueLoadState {
       cancelled = true;
       window.clearTimeout(watchdog);
     };
-  }, [user?.id, sessionReady, reloadToken]);
+  }, [user?.id, session?.user?.id, sessionReady, reloadToken]);
 
   return {
     merchant,

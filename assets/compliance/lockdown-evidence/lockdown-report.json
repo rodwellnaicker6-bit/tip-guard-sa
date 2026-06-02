@@ -1,0 +1,88 @@
+{
+  "generatedAt": "2026-06-02T05:21:55.799Z",
+  "app": "https://tipguardsa.co.za",
+  "steps": [
+    {
+      "id": "http_home",
+      "pass": true,
+      "detail": "200 https://tipguardsa.co.za/"
+    },
+    {
+      "id": "http_contact",
+      "pass": true,
+      "detail": "200 https://tipguardsa.co.za/contact"
+    },
+    {
+      "id": "http_terms",
+      "pass": true,
+      "detail": "200 https://tipguardsa.co.za/terms"
+    },
+    {
+      "id": "http_privacy",
+      "pass": true,
+      "detail": "200 https://tipguardsa.co.za/privacy"
+    },
+    {
+      "id": "http_refunds",
+      "pass": true,
+      "detail": "200 https://tipguardsa.co.za/legal/refunds"
+    },
+    {
+      "id": "http_tip",
+      "pass": true,
+      "detail": "200 https://tipguardsa.co.za/tip/demo-staging-qr-01"
+    },
+    {
+      "id": "ssl_no_mixed_content_index",
+      "pass": true,
+      "detail": "no insecure assets"
+    },
+    {
+      "id": "ssl_hsts",
+      "pass": true,
+      "detail": "max-age=63072000; includeSubDomains; preload"
+    },
+    {
+      "id": "ssl_cert_valid",
+      "pass": true,
+      "detail": "subject=CN=tipguardsa.co.za"
+    },
+    {
+      "id": "video_mp4_exists",
+      "pass": true,
+      "detail": "0.7MB 66s"
+    },
+    {
+      "id": "payment_anon_auth",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "id": "payment_callback_url",
+      "pass": true,
+      "detail": "https://tipguardsa.co.za/payment/success?ref=tg_9ee5f0eb70aa55cf7b6e52e30eb45f46&reference=tg_9ee5f0eb70aa55cf7b6e52e30eb45f46&kind=tip&amount_cents=1000&platform_fee_cents=20&charge_amount_cents=1020"
+    },
+    {
+      "id": "payment_paystack_hosted",
+      "pass": true,
+      "detail": "https://checkout.paystack.com/442gf00juwwfm9s"
+    },
+    {
+      "id": "payment_no_marketplace",
+      "pass": true,
+      "detail": "TipGuard + Paystack only"
+    },
+    {
+      "id": "paystack_api_reachable",
+      "pass": true,
+      "detail": "abandoned"
+    },
+    {
+      "id": "webhook_endpoint_live",
+      "pass": true,
+      "detail": "status 400"
+    }
+  ],
+  "passCount": 16,
+  "total": 16
+}

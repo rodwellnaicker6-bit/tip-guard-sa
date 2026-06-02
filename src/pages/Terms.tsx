@@ -3,7 +3,7 @@ import { BusinessContactBlock } from "../components/BusinessContactBlock";
 
 export default function Terms() {
   return (
-    <LegalPageLayout title="Terms of use" updated="27 May 2026">
+    <LegalPageLayout title="Terms & Conditions" updated="30 May 2026">
       <p>
         These terms govern your use of TipGuard SA software and related services operated in South Africa. By creating an
         account or sending a tip you agree to these terms and to Paystack&apos;s payment terms where applicable.

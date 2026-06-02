@@ -1,3 +1,4 @@
+import type { PostgrestError } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useGracePeriod } from "../hooks/useGracePeriod";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -14,6 +15,7 @@ import { isProfileComplete, profileCompletionPercent } from "../lib/profileCompl
 import { normalizeZaPhone } from "../lib/normalizeZaPhone";
 import { unwrapRpcSingle } from "../lib/rpcData";
 import { logOnboarding, ONBOARDING_FAILSAFE_MS, withOnboardingTimeout } from "../lib/onboardingDebug";
+import { logOnboardingMutation } from "../lib/onboardingMutationTrace";
 import { recordError } from "../lib/errorTelemetry";
 import { isComplianceDemoMode } from "../lib/complianceDemo";
 import { onboardingErrorMessage } from "../lib/userFacingErrors";
@@ -207,19 +209,55 @@ export default function Onboarding() {
     try {
       logOnboarding("continueFromRole", { intent, uid });
 
-      const { data: savedRoleRaw, error: rpcErr } = await withOnboardingTimeout(
-        "rpc save_onboarding_role",
-        supabase.rpc("save_onboarding_role", { p_role: intent }),
-      );
+      const rpcT0 = performance.now();
+      let savedRoleRaw: unknown;
+      let rpcErr: PostgrestError | null = null;
+      try {
+        const rpcRes = await withOnboardingTimeout(
+          "rpc save_onboarding_role",
+          supabase.rpc("save_onboarding_role", { p_role: intent }),
+        );
+        savedRoleRaw = rpcRes.data;
+        rpcErr = rpcRes.error;
+      } catch (thrown) {
+        logOnboardingMutation("save_onboarding_role_throw", {
+          frontendRequest: { rpc: "save_onboarding_role", body: { p_role: intent } },
+          table: "rpc",
+          operation: "save_onboarding_role",
+          payload: { p_role: intent },
+          durationMs: Math.round(performance.now() - rpcT0),
+          thrown,
+        });
+        throw thrown;
+      }
+      logOnboardingMutation("save_onboarding_role", {
+        frontendRequest: { rpc: "save_onboarding_role", body: { p_role: intent } },
+        table: "rpc",
+        operation: "save_onboarding_role",
+        payload: { p_role: intent },
+        durationMs: Math.round(performance.now() - rpcT0),
+        data: savedRoleRaw,
+        error: rpcErr,
+      });
 
       let roleSaved = unwrapRpcSingle<string>(savedRoleRaw);
 
       if (rpcErr) {
         if (import.meta.env.DEV) console.error("[Onboarding] save_onboarding_role", rpcErr.message, rpcErr.code);
+        const updT0 = performance.now();
         const { data: row, error: updErr } = await withOnboardingTimeout(
           "profiles update role",
           supabase.from("profiles").update({ role: intent }).eq("id", uid).select("role").maybeSingle(),
         );
+        logOnboardingMutation("profiles_update_role_fallback", {
+          frontendRequest: { table: "profiles", method: "PATCH", filter: { id: uid }, body: { role: intent } },
+          table: "profiles",
+          operation: "UPDATE",
+          payload: { id: uid, role: intent },
+          durationMs: Math.round(performance.now() - updT0),
+          data: row,
+          error: updErr,
+        });
         if (updErr) {
           setSaveError(onboardingErrorMessage(updErr.message, updErr.code));
           if (import.meta.env.DEV) console.warn("[Onboarding] role save", rpcErr, updErr);
@@ -227,6 +265,7 @@ export default function Onboarding() {
         }
         roleSaved = row?.role ?? null;
         if (!roleSaved) {
+          const insT0 = performance.now();
           const { error: insErr } = await withOnboardingTimeout(
             "profiles insert",
             supabase.from("profiles").insert({
@@ -240,14 +279,32 @@ export default function Onboarding() {
                 "Member",
             }),
           );
+          logOnboardingMutation("profiles_insert_fallback", {
+            frontendRequest: { table: "profiles", method: "POST", body: { id: uid, role: "customer" } },
+            table: "profiles",
+            operation: "INSERT",
+            payload: { id: uid, role: "customer" },
+            durationMs: Math.round(performance.now() - insT0),
+            error: insErr,
+          });
           if (insErr) {
             setSaveError(onboardingErrorMessage(insErr.message, insErr.code));
             return;
           }
+          const retryT0 = performance.now();
           const retry = await withOnboardingTimeout(
             "profiles update role retry",
             supabase.from("profiles").update({ role: intent }).eq("id", uid).select("role").maybeSingle(),
           );
+          logOnboardingMutation("profiles_update_role_retry", {
+            frontendRequest: { table: "profiles", method: "PATCH", filter: { id: uid }, body: { role: intent } },
+            table: "profiles",
+            operation: "UPDATE",
+            payload: { id: uid, role: intent },
+            durationMs: Math.round(performance.now() - retryT0),
+            data: retry.data,
+            error: retry.error,
+          });
           if (retry.error) {
             setSaveError(onboardingErrorMessage(retry.error.message, retry.error.code));
             return;
@@ -256,9 +313,18 @@ export default function Onboarding() {
         }
       }
 
-      if (!roleSaved) roleSaved = intent;
+      if (!roleSaved) {
+        logOnboardingMutation("role_saved_null", {
+          table: "profiles",
+          operation: "persist_check",
+          data: savedRoleRaw,
+          error: rpcErr,
+        });
+        setSaveError(onboardingErrorMessage("Role did not save. Please try again.", rpcErr?.code));
+        return;
+      }
 
-      const persistedRole = (roleSaved as AuthRole) ?? intent;
+      const persistedRole = roleSaved as AuthRole;
       if (persistedRole !== intent) {
         setSaveError(onboardingErrorMessage(`Role did not persist (expected ${intent}, got ${persistedRole ?? "none"}).`));
         return;

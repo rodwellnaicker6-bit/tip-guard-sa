@@ -1,3 +1,6 @@
+import type { Session } from "@supabase/supabase-js";
+import { projectRefFromSupabaseUrl } from "./supabaseProject";
+
 const HOST_MARKER = "tipguard_supabase_host";
 
 function isStaleAuthStorageKey(key: string): boolean {
@@ -29,4 +32,38 @@ export function reconcileSupabaseAuthStorage(supabaseUrl: string): void {
     }
   }
   localStorage.setItem(HOST_MARKER, host);
+}
+
+export function supabaseAuthStorageKey(supabaseUrl: string): string {
+  const ref = projectRefFromSupabaseUrl(supabaseUrl);
+  return ref ? `tipguard-${ref}-auth` : "tipguard-auth";
+}
+
+/** Synchronous read of persisted Supabase session (before async getSession completes). */
+export function readPersistedAuthSession(supabaseUrl: string): Session | null {
+  if (typeof localStorage === "undefined") return null;
+  const key = supabaseAuthStorageKey(supabaseUrl);
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (
+      typeof parsed.access_token === "string" &&
+      parsed.user &&
+      typeof parsed.user === "object"
+    ) {
+      return parsed as unknown as Session;
+    }
+    const nested = parsed.currentSession;
+    if (
+      nested &&
+      typeof nested === "object" &&
+      typeof (nested as Session).access_token === "string"
+    ) {
+      return nested as Session;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }

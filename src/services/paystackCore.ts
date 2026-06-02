@@ -16,6 +16,7 @@ import { recordError } from "../lib/errorTelemetry";
 const __paymentParserBundle = PAYMENT_PARSER_MARKER;
 void __paymentParserBundle;
 import { openPaystackInline, zarSubunitsFromCents } from "../lib/paystack";
+import { preferHostedPaystackCheckout } from "../lib/paymentReturnParams";
 import { getPaystackPublicKey, isPaystackConfigured, paystackEnvIssue } from "../lib/paystackEnv";
 import { isSupabaseBrowserConfigured } from "../lib/supabase";
 import { isTransientNetworkError } from "../lib/networkUtils";
@@ -28,6 +29,7 @@ import {
   waitForStableSession,
 } from "../lib/qrAuthSession";
 import { ensurePaymentAccessToken, hintFastPath, type PaymentSessionHint } from "../lib/paymentSession";
+import { ensureTipPayerSession } from "../lib/tipPayerSession";
 
 /** Prevents double-invoke (double-tap) opening two Paystack sessions. */
 let tipCheckoutInFlight = false;
@@ -99,6 +101,11 @@ export type PaystackInitResponse = {
   authorization_url?: string;
   reference: string;
   email: string;
+  fee_model?: string | null;
+  fee_bps?: number | null;
+  tip_amount_cents?: number | null;
+  platform_fee_cents?: number | null;
+  charge_amount_cents?: number | null;
 };
 
 export type PaystackInitResult = {
@@ -214,7 +221,11 @@ export async function initializePaystackTransaction(
   const started = Date.now();
   logPayInvokeStart("paystack-initialize", payload);
 
-  const invokeHeaders = { Authorization: `Bearer ${accessToken}` };
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ?? "";
+  const invokeHeaders: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+  };
+  if (anonKey) invokeHeaders.apikey = anonKey;
   const attempt = async () =>
     supabase.functions.invoke("paystack-initialize", { body: payload, headers: invokeHeaders });
 
@@ -334,6 +345,15 @@ export async function payTipWithPaystack(opts: {
       logQrAuth("payTip hydrated JWT from getSession", { userId: live.user.id });
     }
   }
+  if (!paymentHint.accessToken || !paymentHint.userId) {
+    const guest = await ensureTipPayerSession();
+    if (guest) {
+      paymentHint.userId = guest.userId;
+      paymentHint.accessToken = guest.accessToken;
+      paymentHint.sessionPrechecked = true;
+      logQrAuth("payTip guest/anonymous JWT for initialize", { userId: guest.userId });
+    }
+  }
 
   if (!opts.sessionPrechecked) {
     const stable = await waitForStableSession({
@@ -421,20 +441,37 @@ export async function payTipWithPaystack(opts: {
       return;
     }
 
+    const chargeCents = data.charge_amount_cents ?? opts.amountCents;
+    const tipCents = data.tip_amount_cents ?? opts.amountCents;
+    const feeCents = data.platform_fee_cents ?? 0;
+    const successQs = new URLSearchParams({
+      ref: data.reference,
+      kind: "tip",
+      amount_cents: String(tipCents),
+    });
+    if (feeCents > 0) successQs.set("platform_fee_cents", String(feeCents));
+    if (chargeCents > 0) successQs.set("charge_amount_cents", String(chargeCents));
+
+    if (data.authorization_url && preferHostedPaystackCheckout()) {
+      setPhase(opts, "opening_checkout");
+      logFlow("pay", "tip checkout redirecting to hosted Paystack", { reference: data.reference });
+      window.location.assign(data.authorization_url);
+      return;
+    }
+
     setPhase(opts, "opening_checkout");
     const opened = await openPaystackInline({
       key,
       email: data.email,
-      amountSubunits: zarSubunitsFromCents(opts.amountCents),
+      amountSubunits: zarSubunitsFromCents(chargeCents),
       currency: "ZAR",
       reference: data.reference,
       accessCode: data.access_code,
       onSuccess: (ref) => {
         releaseTipCheckoutLock();
         setPhase(opts, "idle");
-        opts.navigate(
-          `/payment/success?ref=${encodeURIComponent(ref)}&kind=tip&amount_cents=${encodeURIComponent(String(opts.amountCents))}`,
-        );
+        successQs.set("ref", ref);
+        opts.navigate(`/payment/success?${successQs.toString()}`);
       },
       onClose: () => {
         releaseTipCheckoutLock();
@@ -443,6 +480,11 @@ export async function payTipWithPaystack(opts: {
         opts.navigate(`/payment/failure?reason=${encodeURIComponent("cancelled")}&kind=tip`);
       },
     });
+    if (!opened.ok && data.authorization_url) {
+      logFlow("pay", "inline checkout unavailable — falling back to hosted Paystack");
+      window.location.assign(data.authorization_url);
+      return;
+    }
     if (!opened.ok) {
       recordError("pay_tip_inline", opened.message, { code: "paystack_pop" });
       opts.onError(opened.message);

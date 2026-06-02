@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { centsFromRandInput, zarFromCents } from "../lib/money";
+import { calcAdditivePlatformFee } from "../lib/platformFee";
 import { useAuth } from "../context/useAuth";
 import { startTipCheckout } from "../payments/checkoutFlow";
 import { releaseTipCheckoutLock } from "../services/paystackCore";
@@ -39,6 +40,9 @@ import { FetchError } from "../components/FetchError";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { recordError } from "../lib/errorTelemetry";
 import { supabase } from "../lib/supabase";
+import { stashAuthRedirectPath } from "../lib/loginRedirect";
+import { ensureTipPayerSession } from "../lib/tipPayerSession";
+import { useGuestTipPayer } from "../hooks/useGuestTipPayer";
 import { isQrResolveUserMessage, qrResolveErrorMessage } from "../lib/userFacingErrors";
 
 const PRESETS = [10, 20, 50] as const;
@@ -58,7 +62,12 @@ function QrTipLandingContent() {
   const navigate = useNavigate();
   const { user, session, authReady, sessionReady } = useAuth();
   const sessionUserId = user?.id ?? session?.user?.id ?? null;
-  const sessionMissing = sessionReady && !sessionUserId;
+  const { payerUserId, payerReady, guestLoading, guestFailed, ensureGuest } = useGuestTipPayer({
+    sessionReady,
+    sessionUserId,
+    session,
+  });
+  const sessionMissing = sessionReady && !payerUserId;
   const sessionGraceElapsed = useGracePeriod(sessionMissing, QR_AUTH_GRACE_MS);
   const [, setAuthSessionTick] = useState(0);
   useEffect(() => subscribeQrAuthSession(() => setAuthSessionTick((n) => n + 1)), []);
@@ -67,7 +76,8 @@ function QrTipLandingContent() {
     sessionMissing,
     sessionGraceElapsed,
   );
-  const payBlockedByAuth = sessionRestoreInFlight;
+  const payBlockedByAuth =
+    sessionRestoreInFlight || (guestLoading && !payerReady) || (!payerReady && !sessionGraceElapsed && !guestFailed);
   const [target, setTarget] = useState<Awaited<ReturnType<typeof resolveTipTarget>>["target"]>(() =>
     initialTipState(token).target,
   );
@@ -109,6 +119,10 @@ function QrTipLandingContent() {
 
   const cents = useMemo(() => centsFromRandInput(amount), [amount]);
   const amountLabel = cents != null ? zarFromCents(cents) : "R 0.00";
+  const feePreview = useMemo(() => {
+    if (cents == null || cents < 100) return null;
+    return calcAdditivePlatformFee(cents);
+  }, [cents]);
 
   useEffect(() => {
     if (!token) return;
@@ -166,12 +180,23 @@ function QrTipLandingContent() {
       setError("Choose a valid amount.");
       return;
     }
+    if (!payerReady) {
+      const ok = await ensureGuest();
+      if (!ok) {
+        setError(
+          guestFailed
+            ? "Guest checkout is unavailable. Enable anonymous sign-in in Supabase or try again."
+            : "Preparing secure checkout — wait a moment and tap Pay again.",
+        );
+        return;
+      }
+    }
     if (payBlockedByAuth) {
       logQrAuth("pay blocked — session restore in flight", {
         sessionReady,
         sessionRestoreInFlight,
       });
-      setError("Restoring your session — wait a moment and tap Pay again.");
+      setError("Preparing secure checkout — wait a moment and tap Pay again.");
       return;
     }
     const stable = await waitForStableSession({
@@ -197,40 +222,48 @@ function QrTipLandingContent() {
       if (!signedOut) {
         logQrAuth("pay continuing — session recovered after stable wait", { waitedMs: stable.waitedMs });
       } else {
-        logAuth("QR pay redirect to login (confirmed sign-out)", { token });
-        logQrAuth("redirect /login after confirmed sign-out", { token });
-        sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
-        navigate("/login", { replace: true });
-        return;
+        const guest = await ensureTipPayerSession(session);
+        if (guest) {
+          logQrAuth("pay using anonymous guest session", { uid: guest.userId });
+          // Resolved below via getSession after anonymous sign-in.
+        } else {
+          logAuth("QR pay redirect to login (confirmed sign-out)", { token });
+          logQrAuth("redirect /login after confirmed sign-out", { token });
+          stashAuthRedirectPath(`/tip/${token}?amount=${encodeURIComponent(amount)}`);
+          navigate("/login", { replace: true });
+          return;
+        }
       }
     }
-    let payerUserId = stable.ok ? stable.userId : null;
-    if (!payerUserId) {
-      payerUserId = await resolvePaymentUserId(user?.id, session?.user?.id);
+    let resolvedPayerId = stable.ok ? stable.userId : payerUserId ?? null;
+    let payerAccessToken: string | null = stable.ok ? session?.access_token ?? null : null;
+    if (!resolvedPayerId) {
+      resolvedPayerId = (await resolvePaymentUserId(user?.id, session?.user?.id)) ?? payerUserId;
     }
-    if (!payerUserId) {
-      setError("Please sign in to continue.");
-      sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
-      navigate("/login", { replace: true });
+    if (!resolvedPayerId || !payerAccessToken) {
+      const { data: { session: live } } = await supabase.auth.getSession();
+      if (live?.user?.id) resolvedPayerId = live.user.id;
+      if (live?.access_token) payerAccessToken = live.access_token;
+    }
+    if (!resolvedPayerId || !payerAccessToken) {
+      const guest = await ensureTipPayerSession(session);
+      if (guest) {
+        resolvedPayerId = guest.userId;
+        payerAccessToken = guest.accessToken;
+        logQrAuth("pay using guest session after resolve", { uid: resolvedPayerId });
+      }
+    }
+    if (!resolvedPayerId || !payerAccessToken) {
+      setError("Could not start checkout. Check your connection and try again.");
       return;
     }
     if (!user?.id) {
-      logAuth("QR pay using recovered session (React user was briefly null)", { payerUserId });
-      logQrAuth("pay using recovered session id", { payerUserId, waitedMs: stable.waitedMs });
+      logAuth("QR pay using recovered session (React user was briefly null)", { payerUserId: resolvedPayerId });
+      logQrAuth("pay using recovered session id", { payerUserId: resolvedPayerId, waitedMs: stable.waitedMs });
     }
     const payIssue = paystackEnvIssue();
     if (!hasPaystackPublicKey()) {
       setError(payIssue ?? "Payments are not configured on this deployment.");
-      return;
-    }
-    let payerAccessToken = session?.access_token ?? null;
-    if (!payerAccessToken) {
-      const { data: { session: live } } = await supabase.auth.getSession();
-      payerAccessToken = live?.access_token ?? null;
-      if (!payerUserId && live?.user?.id) payerUserId = live.user.id;
-    }
-    if (!payerAccessToken || !payerUserId) {
-      setError("Checking your session — wait a moment and tap Pay again.");
       return;
     }
 
@@ -243,7 +276,7 @@ function QrTipLandingContent() {
         guardId: target.guard_id,
         sourceLinkToken: token,
         amountCents: cents,
-        payerUserId,
+        payerUserId: resolvedPayerId,
         payerAccessToken,
         sessionPrechecked: true,
         navigate,
@@ -256,13 +289,19 @@ function QrTipLandingContent() {
               setError("Could not start checkout. Tap Pay again.");
               return;
             }
-            if (!(await confirmRequiresSignInForPayment({ knownUserId: payerUserId, knownAccessToken: payerAccessToken }))) {
+            const guest = await ensureTipPayerSession(live);
+            if (guest) {
+              logQrAuth("onRequiresAuth recovered via guest session", { uid: guest.userId });
+              setError("Could not start checkout. Tap Pay again.");
+              return;
+            }
+            if (!(await confirmRequiresSignInForPayment({ knownUserId: resolvedPayerId, knownAccessToken: payerAccessToken }))) {
               logQrAuth("onRequiresAuth ignored — session still present", {});
               setError("Could not start checkout. Tap Pay again.");
               return;
             }
             logQrAuth("onRequiresAuth → /login", { token });
-            sessionStorage.setItem("tipguard_redirect", `/tip/${token}?amount=${encodeURIComponent(amount)}`);
+            stashAuthRedirectPath(`/tip/${token}?amount=${encodeURIComponent(amount)}`);
             navigate("/login", { replace: true });
           })();
         },
@@ -423,6 +462,12 @@ function QrTipLandingContent() {
           />
         </label>
         <p className="mt-2 text-center text-3xl font-black text-amber-400">{amountLabel}</p>
+        {feePreview && feePreview.platformFeeCents > 0 ? (
+          <p className="mt-2 text-center text-sm text-slate-400">
+            Platform fee {zarFromCents(feePreview.platformFeeCents)} (2%) · You pay{" "}
+            <span className="font-semibold text-amber-300">{zarFromCents(feePreview.chargeAmountCents)}</span>
+          </p>
+        ) : null}
       </GlassPanel>
 
       <p className="mb-4 text-center text-xs text-slate-500">
@@ -441,7 +486,7 @@ function QrTipLandingContent() {
         <div className="mb-3 space-y-2" role="status">
           <Skeleton style={{ height: 52, width: "100%", borderRadius: 16 }} />
           <p className="text-center text-xs text-slate-500">
-            {!sessionReady ? "Checking your session…" : "Restoring your session…"}
+            {!sessionReady ? "Checking your session…" : "Preparing secure checkout…"}
           </p>
         </div>
       ) : null}
@@ -455,14 +500,16 @@ function QrTipLandingContent() {
         {paying
           ? "Opening checkout…"
           : payBlockedByAuth
-            ? !sessionReady
-              ? "Checking session…"
-              : "Restoring session…"
-            : sessionUserId
-              ? `Pay ${amountLabel}`
-              : sessionGraceElapsed
-                ? "Sign in to pay"
-                : "Restoring session…"}
+            ? guestLoading || !sessionReady
+              ? "Preparing checkout…"
+              : "Preparing checkout…"
+            : payerReady
+              ? feePreview && feePreview.platformFeeCents > 0
+                ? `Pay ${zarFromCents(feePreview.chargeAmountCents)}`
+                : `Pay ${amountLabel}`
+              : guestFailed
+                ? "Checkout unavailable"
+                : "Preparing checkout…"}
       </button>
 
       <p className="mt-4 text-center text-xs text-slate-600">

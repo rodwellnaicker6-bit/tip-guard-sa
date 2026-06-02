@@ -14,6 +14,7 @@ import { DashboardStatTile } from "../components/dashboard/DashboardStatTile";
 import { GlassPanel } from "../components/fintech/GlassPanel";
 import { SlowLoadHint } from "../components/SlowLoadHint";
 import { useUiWatchdog } from "../lib/uiWatchdog";
+import { useSupabaseQueryPage } from "../hooks/useSupabaseQueryPage";
 
 type CustomerTipStats = { tip_count?: number; volume_cents?: number };
 
@@ -28,6 +29,7 @@ function isMissingRpcError(err: { code?: string; message?: string } | null): boo
 }
 
 function CustomerDashboardPage() {
+  useSupabaseQueryPage("customer-tips");
   const { user, profileFields, signOut, sessionReady } = useAuth();
   const email = user?.email ?? "your account";
   const [tipCount, setTipCount] = useState<number | null>(null);

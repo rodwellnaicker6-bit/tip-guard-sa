@@ -24,7 +24,12 @@ export type NfcSupport = "unsupported" | "available" | "unknown";
 /** Public tip tokens — alphanumeric, underscore, hyphen; 4–128 chars. */
 export const TIP_TOKEN_RE = /^[a-zA-Z0-9_-]{4,128}$/;
 
-const PRODUCTION_TIP_HOSTS = new Set(["tipguardsa.co.za", "www.tipguardsa.co.za"]);
+const PRODUCTION_TIP_HOSTS = new Set([
+  "tipguardsa.co.za",
+  "www.tipguardsa.co.za",
+  "tipguradsa.co.za",
+  "www.tipguradsa.co.za",
+]);
 const DEV_TIP_HOSTS = new Set(["localhost", "127.0.0.1"]);
 
 /** Paths allowed on tip domain deep links (no Paystack / arbitrary URLs). */

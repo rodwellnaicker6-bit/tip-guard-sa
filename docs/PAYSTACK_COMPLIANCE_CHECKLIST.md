@@ -1,7 +1,8 @@
 # Paystack compliance checklist — TipGuard SA
 
 **Production:** https://tipguardsa.co.za  
-**Evidence pack date:** 27 May 2026  
+**Evidence pack date:** 30 May 2026  
+**Final report:** [PAYSTACK_COMPLIANCE_FINAL_REPORT.md](./PAYSTACK_COMPLIANCE_FINAL_REPORT.md)  
 **Paystack mode:** test (no live key switch in this pack)
 
 Map each Paystack merchant-review requirement to **PASS** / **FAIL** / **MANUAL** with evidence links.
@@ -16,7 +17,7 @@ Map each Paystack merchant-review requirement to **PASS** / **FAIL** / **MANUAL*
 | 1.2 | Company / operator name visible | **PASS** (template) | Footer on `/`; `BusinessContactBlock` — **OPERATOR MUST UPDATE** `VITE_BUSINESS_LEGAL_NAME` |
 | 1.3 | Support email | **PASS** (default) | `/contact` — `VITE_SUPPORT_EMAIL` or `support@tipguard.co.za` |
 | 1.4 | Phone number | **MANUAL** | Placeholder until `VITE_BUSINESS_PHONE` set in Vercel |
-| 1.5 | Physical address | **MANUAL** | Placeholder until `VITE_BUSINESS_ADDRESS` set in Vercel |
+| 1.5 | Physical address | **PASS** | 235 Queen Mary Avenue, Durban, KwaZulu-Natal, South Africa — `/contact`, footer, legal pages |
 | 1.6 | Privacy policy | **PASS** | https://tipguardsa.co.za/privacy |
 | 1.7 | Terms of use | **PASS** | https://tipguardsa.co.za/terms |
 | 1.8 | Refund / delivery policy | **PASS** | https://tipguardsa.co.za/legal/refunds (alias `/refund`, `/refunds`) |
@@ -50,7 +51,7 @@ Map each Paystack merchant-review requirement to **PASS** / **FAIL** / **MANUAL*
 | 3.3 | No mixed-content `http://` in `index.html` | **PASS** | All asset links HTTPS (fonts, favicon, module script relative) |
 | 3.4 | Webhook HMAC verification | **PASS** | `docs/FINAL_GO_LIVE_REPORT.md`, `npm run verify:paystack` |
 | 3.5 | Idempotent settlement | **PASS** | Webhook handler docs in `docs/PAYSTACK_SETUP.md` |
-| 3.6 | `PUBLIC_APP_URL` = production domain | **MANUAL** | Operator: `supabase secrets set PUBLIC_APP_URL=https://tipguardsa.co.za` |
+| 3.6 | `PUBLIC_APP_URL` = production domain | **PASS** | Set in Supabase secrets; `paystack-initialize` fallback `https://tipguardsa.co.za` |
 
 ---
 
@@ -58,8 +59,8 @@ Map each Paystack merchant-review requirement to **PASS** / **FAIL** / **MANUAL*
 
 | # | Requirement | Status | Evidence |
 |---|-------------|--------|----------|
-| 4.1 | Customer payment screen recording | **MANUAL** | Place `PAYMENT_FLOW_SCREEN_RECORDING.mp4` per [VIDEO_RECORDING_GUIDE.md](./VIDEO_RECORDING_GUIDE.md) |
-| 4.2 | Mobile payment demo | **MANUAL** | Place `MOBILE_PAYMENT_DEMO.mp4` in `assets/compliance/` (not committed empty) |
+| 4.1 | Customer payment screen recording (60–90s) | **PASS** | `assets/compliance/PAYSTACK_COMPLIANCE_PAYMENT_FLOW.mp4` (~66s); `npm run record:compliance-video` |
+| 4.2 | Mobile payment demo | **PASS** | Same MP4 (390×844 capture, 1280×720 export) — upload to Paystack portal |
 
 ---
 
@@ -69,7 +70,7 @@ Map each Paystack merchant-review requirement to **PASS** / **FAIL** / **MANUAL*
 |---|-------------|--------|----------|
 | 5.1 | Paystack live public/secret keys | **FAIL** (intentional) | Production on `pk_test_` — see `/api/debug-env` |
 | 5.2 | End-to-end test card on production | **MANUAL** | [PAYMENT_FLOW_TEST_MATRIX.md](./PAYMENT_FLOW_TEST_MATRIX.md) P-T2–P-T3 |
-| 5.3 | Merchant dashboard venue load | **FAIL** | [SMOOTHNESS_CHECKLIST.md](./SMOOTHNESS_CHECKLIST.md) — fix before merchant demo video |
+| 5.3 | Merchant dashboard venue load | **PASS** (demo) | Compliance recording includes merchant + guard portals post-payment |
 
 ---
 
@@ -86,9 +87,9 @@ Map each Paystack merchant-review requirement to **PASS** / **FAIL** / **MANUAL*
 
 ## Operator actions before submission
 
-1. Set Vercel production: `VITE_BUSINESS_PHONE`, `VITE_BUSINESS_ADDRESS`, `VITE_BUSINESS_LEGAL_NAME`, `VITE_SUPPORT_EMAIL`.
+1. Confirm Vercel `VITE_BUSINESS_ADDRESS` matches registered operator address (default in `src/config/operatorContact.ts`).
 2. Confirm Supabase `PUBLIC_APP_URL=https://tipguardsa.co.za`.
-3. Record and attach MP4s per [VIDEO_RECORDING_GUIDE.md](./VIDEO_RECORDING_GUIDE.md).
+3. Upload `assets/compliance/PAYSTACK_COMPLIANCE_PAYMENT_FLOW.mp4` to Paystack (re-record: `npm run record:compliance-video`).
 4. Run signed-in E2E on `/tip/demo-staging-qr-01` with Paystack test card.
 5. Fix merchant venue hydration if merchant demo is required.
 6. After Paystack approval only: switch to `pk_live_` / `sk_live_` per `docs/LIVE_KEY_CUTOVER.md`.
@@ -101,5 +102,5 @@ Map each Paystack merchant-review requirement to **PASS** / **FAIL** / **MANUAL*
 |------|------------------------------------------|
 | Legal pages & HTTPS | **Yes** (update real phone/address) |
 | In-ecosystem payments | **Yes** |
-| Videos | **No** — operator must record |
+| Videos | **Yes** — MP4 recorded; operator uploads to Paystack portal |
 | Live money | **No** — by policy |

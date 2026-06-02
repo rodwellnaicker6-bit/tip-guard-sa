@@ -6,7 +6,7 @@ import { useAuth } from "../context/useAuth";
 import { useGracePeriod } from "../hooks/useGracePeriod";
 import { TimedPageLoader } from "./TimedPageLoader";
 
-const LOGIN_REDIRECT_GRACE_MS = 3_500;
+const LOGIN_REDIRECT_GRACE_MS = 6_000;
 
 function loginRedirectState(pathname: string, search: string) {
   return { from: `${pathname}${search}` };
@@ -43,9 +43,12 @@ export function RequireAdmin({ children }: { children: ReactElement }) {
   const { user, session, role, effectiveRole, profileFields, hasGuardRow, hasMerchantRow, authReady, sessionReady } =
     useAuth();
   const location = useLocation();
+  const sessionMissing = sessionReady && !hasAuthenticatedSession(user?.id, session?.user?.id);
+  const graceElapsed = useGracePeriod(sessionMissing, LOGIN_REDIRECT_GRACE_MS);
   if (!sessionReady) return <TimedPageLoader label="Checking admin session…" />;
   if (!hasAuthenticatedSession(user?.id, session?.user?.id)) {
     if (session?.user?.id && !user?.id) return <TimedPageLoader label="Restoring your session…" />;
+    if (!graceElapsed) return <TimedPageLoader label="Restoring your session…" />;
     logAuthKickout("no user", "RequireAdmin", { path: location.pathname });
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />
@@ -96,9 +99,12 @@ export function RequireGuard({ children }: { children: ReactElement }) {
 export function RequireMerchant({ children }: { children: ReactElement }) {
   const { user, session, authReady, sessionReady, isMerchantUser } = useAuth();
   const location = useLocation();
+  const sessionMissing = sessionReady && !hasAuthenticatedSession(user?.id, session?.user?.id);
+  const graceElapsed = useGracePeriod(sessionMissing, LOGIN_REDIRECT_GRACE_MS);
   if (!sessionReady) return <TimedPageLoader label="Loading venue hub…" />;
   if (!hasAuthenticatedSession(user?.id, session?.user?.id)) {
     if (session?.user?.id && !user?.id) return <TimedPageLoader label="Restoring your session…" />;
+    if (!graceElapsed) return <TimedPageLoader label="Restoring your session…" />;
     logAuthKickout("no user", "RequireMerchant", { path: location.pathname });
     return (
       <Navigate to="/login" replace state={loginRedirectState(location.pathname, location.search)} />

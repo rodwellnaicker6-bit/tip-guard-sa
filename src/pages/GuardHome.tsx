@@ -176,6 +176,7 @@ function GuardHomeContent() {
           setGuard(null);
         }
       } finally {
+        window.clearTimeout(watchdog);
         if (!cancelled) setLoading(false);
       }
     })();

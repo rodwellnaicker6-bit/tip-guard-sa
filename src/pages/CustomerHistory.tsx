@@ -9,6 +9,7 @@ import EmptyState from "../components/EmptyState";
 import { FetchError } from "../components/FetchError";
 import { SlowLoadHint } from "../components/SlowLoadHint";
 import { useUiWatchdog } from "../lib/uiWatchdog";
+import { useSupabaseQueryPage } from "../hooks/useSupabaseQueryPage";
 
 type TipHistoryRow = {
   id: string;
@@ -19,6 +20,7 @@ type TipHistoryRow = {
 };
 
 export default function CustomerHistory() {
+  useSupabaseQueryPage("transaction-history");
   const { user, sessionReady } = useAuth();
   const [tips, setTips] = useState<TipHistoryRow[]>([]);
   const [error, setError] = useState<string | null>(null);
