@@ -87,7 +87,19 @@ Rendered via `BusinessContactBlock` / `getBusinessContact()`:
 
 ---
 
-## 4. Payment technical compliance
+## 4. Platform fee (revenue)
+
+| Model | Additive 2% — customer pays tip + fee; merchant receives full tip |
+|-------|---------------------------------------------------------------------|
+| R10 | Customer R10.20 · Merchant R10.00 · TipGuard R0.20 |
+| R100 | Customer R102.00 · Merchant R100.00 · TipGuard R2.00 |
+| R500 | Customer R510.00 · Merchant R500.00 · TipGuard R10.00 |
+
+Verify: `npm run verify:platform-fee`
+
+---
+
+## 5. Payment technical compliance
 
 | Check | Status | Evidence |
 |-------|--------|----------|
