@@ -1,0 +1,3 @@
+subject=CN=tipguardsa.co.za
+notBefore=May 25 10:40:16 2026 GMT
+notAfter=Aug 23 10:40:15 2026 GMT

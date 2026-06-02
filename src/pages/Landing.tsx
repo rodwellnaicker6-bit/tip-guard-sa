@@ -4,6 +4,7 @@ import { useAuth } from "../context/useAuth";
 import PaystackTestBanner from "../components/PaystackTestBanner";
 import { TrustIndicators } from "../components/fintech/TrustIndicators";
 import { TipGuardLogo } from "../components/TipGuardLogo";
+import { BusinessContactBlock } from "../components/BusinessContactBlock";
 
 export default function Landing() {
   const { user, role, isGuardUser, isMerchantUser } = useAuth();
@@ -90,12 +91,9 @@ export default function Landing() {
               Paystack
             </a>
           </div>
-          <p className="mt-4 text-center text-xs text-slate-500">
-            TipGuard SA (Pty) Ltd · South Africa ·{" "}
-            <Link to="/contact" className="underline">
-              support &amp; business details
-            </Link>
-          </p>
+          <div className="mx-auto mt-6 max-w-md">
+            <BusinessContactBlock compact />
+          </div>
         </footer>
       </div>
     </div>

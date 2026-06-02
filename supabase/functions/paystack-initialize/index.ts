@@ -5,6 +5,7 @@ import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
 import { isMaintenanceMode, maintenanceResponse } from "../_shared/maintenance.ts";
 import { runFraudChecks } from "../_shared/fraudCheck.ts";
 import { resolvePaystackCheckoutEmail } from "../_shared/paystackEmail.ts";
+import { buildPaystackSuccessCallbackUrl } from "../_shared/publicAppUrl.ts";
 
 const RATE_MAX = 30;
 const RATE_WINDOW_SEC = 60;
@@ -374,10 +375,23 @@ serve(async (req) => {
       channels,
     };
 
-    const callbackBase = Deno.env.get("PUBLIC_APP_URL")?.replace(/\/$/, "") ?? "";
-    if (callbackBase) {
-      paystackBody.callback_url = `${callbackBase}/payment/success?ref=${encodeURIComponent(reference)}`;
-    }
+    const { callbackUrl, origin: appOrigin } = buildPaystackSuccessCallbackUrl({
+      reference,
+      kind,
+      amountCents,
+    });
+    paystackBody.callback_url = callbackUrl;
+
+    console.info("paystack-initialize: callback configured", {
+      public_app_url_env: Deno.env.get("PUBLIC_APP_URL") ?? null,
+      resolved_origin: appOrigin.origin,
+      origin_source: appOrigin.source,
+      payment_reference: reference,
+      callback_url: callbackUrl,
+      redirect_target: callbackUrl,
+      kind,
+      amount_cents: amountCents,
+    });
 
     const initRes = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST",
@@ -423,11 +437,25 @@ serve(async (req) => {
         paystack_reference: reference,
         transaction_id: transactionId,
         status: "received",
-        payload: { kind, amount_cents: amountCents, device_fingerprint: deviceHash, user_id: user.id },
+        payload: {
+          kind,
+          amount_cents: amountCents,
+          device_fingerprint: deviceHash,
+          user_id: user.id,
+          callback_url: callbackUrl,
+          public_app_origin: appOrigin.origin,
+          origin_source: appOrigin.source,
+        },
       },
       { onConflict: "provider,provider_event_id", ignoreDuplicates: true },
     );
     if (paymentEventErr) console.error("payment_events_init", paymentEventErr.message);
+
+    console.info("paystack-initialize: paystack accepted", {
+      payment_reference: initJson.data.reference ?? reference,
+      callback_url: callbackUrl,
+      has_authorization_url: Boolean(initJson.data.authorization_url),
+    });
 
     return new Response(
       JSON.stringify({
@@ -435,6 +463,7 @@ serve(async (req) => {
         authorization_url: initJson.data.authorization_url,
         reference: initJson.data.reference ?? reference,
         email,
+        callback_url: callbackUrl,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

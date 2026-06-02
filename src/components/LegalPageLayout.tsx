@@ -11,7 +11,7 @@ export function LegalPageLayout({ title, updated, children }: Props) {
   return (
     <div className="shell stack legal-page overflow-x-hidden">
       <h1>{title}</h1>
-      <p className="legal-meta">Last updated: {updated} · TipGuard SA (Pty) Ltd template</p>
+      <p className="legal-meta">Last updated: {updated} · TipGuard SA (Pty) Ltd</p>
       <section className="card stack legal-prose">{children}</section>
       <nav className="legal-footer-nav flex flex-wrap gap-3 text-sm">
         <Link to="/">Home</Link>

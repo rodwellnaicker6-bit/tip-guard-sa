@@ -1,0 +1,10 @@
+/**
+ * Canonical operator contact for production (Paystack / POPIA).
+ * Override via VITE_* env on Vercel without redeploying copy changes.
+ */
+export const OPERATOR_CONTACT = {
+  legalName: "TipGuard SA (Pty) Ltd",
+  supportEmail: "support@tipguardsa.co.za",
+  phone: "+27 10 880 4590",
+  address: "15 Alice Lane, Sandton, Johannesburg, 2196, South Africa",
+} as const;

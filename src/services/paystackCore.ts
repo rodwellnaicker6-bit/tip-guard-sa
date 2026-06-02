@@ -16,6 +16,7 @@ import { recordError } from "../lib/errorTelemetry";
 const __paymentParserBundle = PAYMENT_PARSER_MARKER;
 void __paymentParserBundle;
 import { openPaystackInline, zarSubunitsFromCents } from "../lib/paystack";
+import { preferHostedPaystackCheckout } from "../lib/paymentReturnParams";
 import { getPaystackPublicKey, isPaystackConfigured, paystackEnvIssue } from "../lib/paystackEnv";
 import { isSupabaseBrowserConfigured } from "../lib/supabase";
 import { isTransientNetworkError } from "../lib/networkUtils";
@@ -435,6 +436,13 @@ export async function payTipWithPaystack(opts: {
       return;
     }
 
+    if (data.authorization_url && preferHostedPaystackCheckout()) {
+      setPhase(opts, "opening_checkout");
+      logFlow("pay", "tip checkout redirecting to hosted Paystack", { reference: data.reference });
+      window.location.assign(data.authorization_url);
+      return;
+    }
+
     setPhase(opts, "opening_checkout");
     const opened = await openPaystackInline({
       key,
@@ -457,6 +465,11 @@ export async function payTipWithPaystack(opts: {
         opts.navigate(`/payment/failure?reason=${encodeURIComponent("cancelled")}&kind=tip`);
       },
     });
+    if (!opened.ok && data.authorization_url) {
+      logFlow("pay", "inline checkout unavailable — falling back to hosted Paystack");
+      window.location.assign(data.authorization_url);
+      return;
+    }
     if (!opened.ok) {
       recordError("pay_tip_inline", opened.message, { code: "paystack_pop" });
       opts.onError(opened.message);

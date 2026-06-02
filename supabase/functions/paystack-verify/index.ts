@@ -4,6 +4,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
 import { isMaintenanceMode, maintenanceResponse } from "../_shared/maintenance.ts";
 import { runFraudChecks } from "../_shared/fraudCheck.ts";
+import { settlePaystackReference } from "../_shared/paystackReferenceSettlement.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -87,18 +88,6 @@ serve(async (req) => {
       );
     }
 
-    const verifyRes = await fetch(
-      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
-      { headers: { Authorization: `Bearer ${secret}` } },
-    );
-    const verifyJson = await verifyRes.json().catch(() => null) as {
-      status?: boolean;
-      data?: { status?: string; amount?: number; metadata?: Record<string, unknown> };
-    } | null;
-
-    const paystackStatus = verifyJson?.data?.status ?? "unknown";
-    const success = verifyJson?.status === true && paystackStatus === "success";
-
     const { data: tip } = await service
       .from("tips")
       .select("id, status, amount_cents, guard_id, payer_id")
@@ -119,54 +108,11 @@ serve(async (req) => {
       });
     }
 
-    if (success) {
-      const meta = verifyJson?.data?.metadata ?? {};
-      const metaType = typeof meta.type === "string" ? meta.type : null;
-      if (metaType === "guard_tip") {
-        await service.rpc("finalize_tip_from_paystack_reference", { p_reference: reference });
-        await service.rpc("post_tip_settlement_hooks", { p_reference: reference });
-      }
-      await service.from("transactions").update({ status: "succeeded" }).eq("paystack_reference", reference);
-    } else if (paystackStatus === "failed" || paystackStatus === "abandoned") {
-      await service.from("tips").update({ status: "failed" }).eq("paystack_reference", reference);
-      await service.from("transactions").update({ status: "failed" }).eq("paystack_reference", reference);
-    }
+    const result = await settlePaystackReference(service, secret, reference);
 
-    const { data: tipFresh } = await service
-      .from("tips")
-      .select("status, amount_cents")
-      .eq("paystack_reference", reference)
-      .maybeSingle();
-    const { data: txFresh } = await service
-      .from("transactions")
-      .select("status, amount_cents")
-      .eq("paystack_reference", reference)
-      .maybeSingle();
-
-    const { error: paymentEventErr } = await service.from("payment_events").upsert(
-      {
-        provider: "paystack",
-        provider_event_id: `verify:${reference}:${paystackStatus}`,
-        event_type: "transaction.verify",
-        paystack_reference: reference,
-        status: success ? "processed" : paystackStatus === "failed" ? "failed" : "received",
-        payload: { paystack_status: paystackStatus, verified: success },
-      },
-      { onConflict: "provider,provider_event_id", ignoreDuplicates: true },
-    );
-    if (paymentEventErr) console.error("payment_events_verify", paymentEventErr.message);
-
-    return new Response(
-      JSON.stringify({
-        reference,
-        paystack_status: paystackStatus,
-        verified: success,
-        tip_status: tipFresh?.status ?? tip?.status ?? null,
-        transaction_status: txFresh?.status ?? tx?.status ?? null,
-        amount_cents: tipFresh?.amount_cents ?? txFresh?.amount_cents ?? tip?.amount_cents ?? tx?.amount_cents ?? null,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify(result), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
     return new Response(JSON.stringify({ error: (e as Error).message }), {
       status: 500,

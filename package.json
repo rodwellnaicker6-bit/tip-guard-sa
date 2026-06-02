@@ -32,7 +32,10 @@
     "setup:production": "bash scripts/setup-production.sh",
     "readiness": "tsx scripts/production-readiness.ts",
     "smoke:production": "bash scripts/production-smoke.sh",
-    "scan:secrets": "tsx scripts/scan-secrets.ts"
+    "scan:secrets": "tsx scripts/scan-secrets.ts",
+    "record:compliance-video": "tsx scripts/record-paystack-compliance-video.ts",
+    "compliance:verify": "tsx scripts/compliance-lockdown-verify.ts",
+    "compliance:evidence": "tsx scripts/compliance-payment-evidence.ts"
   },
   "dependencies": {
     "@sentry/react": "^10.53.1",
