@@ -43,6 +43,14 @@ export default function PaymentSuccess() {
   const ref = resolvePaymentReference(params);
   const kind = params.get("kind") ?? "payment";
   const amountParam = params.get("amount_cents");
+  const platformFeeParam = params.get("platform_fee_cents");
+  const chargeParam = params.get("charge_amount_cents");
+  const tipCents =
+    amountParam && !Number.isNaN(Number(amountParam)) ? Number(amountParam) : null;
+  const platformFeeCents =
+    platformFeeParam && !Number.isNaN(Number(platformFeeParam)) ? Number(platformFeeParam) : null;
+  const chargeCents =
+    chargeParam && !Number.isNaN(Number(chargeParam)) ? Number(chargeParam) : null;
   const toast = useToast();
   const shown = useRef(false);
   const confirmedToast = useRef(false);
@@ -51,9 +59,9 @@ export default function PaymentSuccess() {
     ref ? "processing" : "pending",
   );
   const [pollGeneration, setPollGeneration] = useState(0);
-  const [confirmedCents, setConfirmedCents] = useState<number | null>(
-    amountParam && !Number.isNaN(Number(amountParam)) ? Number(amountParam) : null,
-  );
+  const [confirmedCents, setConfirmedCents] = useState<number | null>(tipCents);
+  const [confirmedChargeCents, setConfirmedChargeCents] = useState<number | null>(chargeCents);
+  const [confirmedFeeCents, setConfirmedFeeCents] = useState<number | null>(platformFeeCents);
 
   useEffect(() => {
     if (shown.current) return;
@@ -102,9 +110,12 @@ export default function PaymentSuccess() {
         });
         setVerifyState("confirmed");
         const cents =
+          data?.tip_amount_cents ??
           data?.amount_cents ??
-          (amountParam && !Number.isNaN(Number(amountParam)) ? Number(amountParam) : null);
+          tipCents;
         if (cents != null) setConfirmedCents(cents);
+        if (data?.platform_fee_cents != null) setConfirmedFeeCents(data.platform_fee_cents);
+        if (data?.charge_amount_cents != null) setConfirmedChargeCents(data.charge_amount_cents);
         if (!confirmedToast.current) {
           confirmedToast.current = true;
           if (kind === "tip") {
@@ -162,14 +173,21 @@ export default function PaymentSuccess() {
   }, [ref]);
 
   function downloadReceipt() {
-    const cents = confirmedCents;
     const lines = [
       "TipGuard SA — payment receipt",
       `Date: ${new Date().toISOString()}`,
       `Reference: ${ref ?? "n/a"}`,
       `Type: ${kind}`,
       `Verification: ${verifyState}`,
-      cents != null ? `Amount: ${zarFromCents(cents)}` : "",
+      confirmedCents != null ? `Tip (to guard/venue): ${zarFromCents(confirmedCents)}` : "",
+      confirmedFeeCents != null && confirmedFeeCents > 0
+        ? `Platform fee (2%): ${zarFromCents(confirmedFeeCents)}`
+        : "",
+      confirmedChargeCents != null
+        ? `Total paid: ${zarFromCents(confirmedChargeCents)}`
+        : confirmedCents != null
+          ? `Total paid: ${zarFromCents(confirmedCents + (confirmedFeeCents ?? 0))}`
+          : "",
       "",
       "Final settlement is confirmed when Paystack reports success to our server.",
     ].filter(Boolean) as string[];
@@ -273,7 +291,18 @@ export default function PaymentSuccess() {
           </p>
         )}
         {confirmedCents != null && (
-          <p className="mt-2 text-lg font-black text-amber-400">{zarFromCents(confirmedCents)}</p>
+          <div className="mt-2 text-sm text-slate-300">
+            <p>
+              Tip to guard/venue:{" "}
+              <span className="font-black text-amber-400">{zarFromCents(confirmedCents)}</span>
+            </p>
+            {confirmedFeeCents != null && confirmedFeeCents > 0 ? (
+              <p className="mt-1">Platform fee (2%): {zarFromCents(confirmedFeeCents)}</p>
+            ) : null}
+            {confirmedChargeCents != null ? (
+              <p className="mt-1 font-semibold text-white">Total paid: {zarFromCents(confirmedChargeCents)}</p>
+            ) : null}
+          </div>
         )}
         {kind === "tip" && verifyState === "confirmed" && (
           <p className="mt-3 text-xs text-slate-500">

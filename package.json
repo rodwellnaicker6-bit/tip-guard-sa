@@ -35,7 +35,8 @@
     "scan:secrets": "tsx scripts/scan-secrets.ts",
     "record:compliance-video": "tsx scripts/record-paystack-compliance-video.ts",
     "compliance:verify": "tsx scripts/compliance-lockdown-verify.ts",
-    "compliance:evidence": "tsx scripts/compliance-payment-evidence.ts"
+    "compliance:evidence": "tsx scripts/compliance-payment-evidence.ts",
+    "verify:platform-fee": "tsx scripts/verify-platform-fee-live.ts"
   },
   "dependencies": {
     "@sentry/react": "^10.53.1",
@@ -59,6 +60,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "marked": "^18.0.4",
     "pg": "^8.20.0",
     "tailwindcss": "^4.3.0",
     "tsx": "^4.22.0",

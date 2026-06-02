@@ -51,6 +51,12 @@ serve(async (req) => {
     .eq("paystack_reference", reference)
     .maybeSingle();
 
+  const { data: tip } = await service
+    .from("tips")
+    .select("amount_cents, commission_cents, customer_paid_cents, status")
+    .eq("paystack_reference", reference)
+    .maybeSingle();
+
   const uid = body?.user_id ?? (tx?.user_id as string | undefined);
   if (!uid) {
     return new Response(JSON.stringify({ error: "user not found for reference" }), {
@@ -70,7 +76,16 @@ serve(async (req) => {
   }
 
   const eventLabel = body?.event ?? "payment_update";
-  const amountRands = tx?.amount_cents != null ? (Number(tx.amount_cents) / 100).toFixed(2) : "—";
+  const tipRands =
+    tip?.amount_cents != null ? (Number(tip.amount_cents) / 100).toFixed(2) : null;
+  const feeRands =
+    tip?.commission_cents != null ? (Number(tip.commission_cents) / 100).toFixed(2) : null;
+  const paidRands =
+    tip?.customer_paid_cents != null
+      ? (Number(tip.customer_paid_cents) / 100).toFixed(2)
+      : tx?.amount_cents != null
+        ? (Number(tx.amount_cents) / 100).toFixed(2)
+        : "—";
 
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -82,7 +97,18 @@ serve(async (req) => {
       from: fromEmail,
       to: [to],
       subject: `TipGuard — ${eventLabel}`,
-      text: `Hi ${profile?.full_name ?? "there"},\n\nYour TipGuard payment (${reference}) is ${tx?.status ?? "updated"}. Amount: R${amountRands}.\n\n— TipGuard SA`,
+      text: [
+        `Hi ${profile?.full_name ?? "there"},`,
+        "",
+        `Your TipGuard payment (${reference}) is ${tx?.status ?? tip?.status ?? "updated"}.`,
+        tipRands != null ? `Tip: R${tipRands}` : null,
+        feeRands != null && Number(feeRands) > 0 ? `Platform fee (2%): R${feeRands}` : null,
+        `Total paid: R${paidRands}`,
+        "",
+        "— TipGuard SA",
+      ]
+        .filter(Boolean)
+        .join("\n"),
     }),
   });
 

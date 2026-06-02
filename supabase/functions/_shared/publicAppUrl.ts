@@ -38,13 +38,23 @@ export function buildPaystackSuccessCallbackUrl(opts: {
   reference: string;
   kind: "tip" | "wallet_topup";
   amountCents: number;
+  platformFeeCents?: number;
+  chargeAmountCents?: number;
 }): { callbackUrl: string; origin: PublicAppOriginResolution } {
   const resolution = resolvePublicAppOrigin();
-  const refQ = encodeURIComponent(opts.reference);
-  const kindQ = encodeURIComponent(opts.kind);
-  const amountQ = encodeURIComponent(String(opts.amountCents));
-  const callbackUrl =
-    `${resolution.origin}/payment/success?ref=${refQ}&reference=${refQ}&kind=${kindQ}&amount_cents=${amountQ}`;
+  const qs = new URLSearchParams({
+    ref: opts.reference,
+    reference: opts.reference,
+    kind: opts.kind,
+    amount_cents: String(opts.amountCents),
+  });
+  if (opts.platformFeeCents != null && opts.platformFeeCents >= 0) {
+    qs.set("platform_fee_cents", String(opts.platformFeeCents));
+  }
+  if (opts.chargeAmountCents != null && opts.chargeAmountCents > 0) {
+    qs.set("charge_amount_cents", String(opts.chargeAmountCents));
+  }
+  const callbackUrl = `${resolution.origin}/payment/success?${qs.toString()}`;
 
   return { callbackUrl, origin: resolution };
 }

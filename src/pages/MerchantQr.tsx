@@ -259,6 +259,7 @@ export default function MerchantQr() {
         recordError("merchant_qr_hub_load", msg, { code: "timeout" });
         setError("QR hub load timed out. Please try again.");
       } finally {
+        window.clearTimeout(watchdog);
         if (!cancelled && gen === loadGenRef.current) setLoading(false);
       }
     })();

@@ -53,7 +53,7 @@ serve(async (req) => {
 
     const { data: tipRow } = await service
       .from("tips")
-      .select("status, amount_cents")
+      .select("status, amount_cents, commission_cents, customer_paid_cents")
       .eq("paystack_reference", reference)
       .maybeSingle();
 
@@ -84,6 +84,9 @@ serve(async (req) => {
           tip_status: tipRow?.status ?? null,
           transaction_status: txRow?.status ?? null,
           amount_cents: tipRow?.amount_cents ?? txRow?.amount_cents ?? null,
+          tip_amount_cents: tipRow?.amount_cents ?? null,
+          platform_fee_cents: tipRow?.commission_cents ?? null,
+          charge_amount_cents: tipRow?.customer_paid_cents ?? txRow?.amount_cents ?? null,
         }
       : await settlePaystackReference(service, secret, reference);
 

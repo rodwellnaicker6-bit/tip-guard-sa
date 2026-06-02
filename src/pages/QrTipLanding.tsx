@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { centsFromRandInput, zarFromCents } from "../lib/money";
+import { calcAdditivePlatformFee } from "../lib/platformFee";
 import { useAuth } from "../context/useAuth";
 import { startTipCheckout } from "../payments/checkoutFlow";
 import { releaseTipCheckoutLock } from "../services/paystackCore";
@@ -118,6 +119,10 @@ function QrTipLandingContent() {
 
   const cents = useMemo(() => centsFromRandInput(amount), [amount]);
   const amountLabel = cents != null ? zarFromCents(cents) : "R 0.00";
+  const feePreview = useMemo(() => {
+    if (cents == null || cents < 100) return null;
+    return calcAdditivePlatformFee(cents);
+  }, [cents]);
 
   useEffect(() => {
     if (!token) return;
@@ -457,6 +462,12 @@ function QrTipLandingContent() {
           />
         </label>
         <p className="mt-2 text-center text-3xl font-black text-amber-400">{amountLabel}</p>
+        {feePreview && feePreview.platformFeeCents > 0 ? (
+          <p className="mt-2 text-center text-sm text-slate-400">
+            Platform fee {zarFromCents(feePreview.platformFeeCents)} (2%) · You pay{" "}
+            <span className="font-semibold text-amber-300">{zarFromCents(feePreview.chargeAmountCents)}</span>
+          </p>
+        ) : null}
       </GlassPanel>
 
       <p className="mb-4 text-center text-xs text-slate-500">
@@ -493,7 +504,9 @@ function QrTipLandingContent() {
               ? "Preparing checkout…"
               : "Preparing checkout…"
             : payerReady
-              ? `Pay ${amountLabel}`
+              ? feePreview && feePreview.platformFeeCents > 0
+                ? `Pay ${zarFromCents(feePreview.chargeAmountCents)}`
+                : `Pay ${amountLabel}`
               : guestFailed
                 ? "Checkout unavailable"
                 : "Preparing checkout…"}

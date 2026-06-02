@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-02T04:35:31.120Z",
+  "generatedAt": "2026-06-02T05:21:55.799Z",
   "app": "https://tipguardsa.co.za",
   "steps": [
     {
@@ -40,7 +40,7 @@
     {
       "id": "ssl_hsts",
       "pass": true,
-      "detail": "max-age=63072000"
+      "detail": "max-age=63072000; includeSubDomains; preload"
     },
     {
       "id": "ssl_cert_valid",
@@ -60,12 +60,12 @@
     {
       "id": "payment_callback_url",
       "pass": true,
-      "detail": "https://tipguardsa.co.za/payment/success?ref=tg_9da7a5ae55c91b496793a50491ae7bab&reference=tg_9da7a5ae55c91b496793a50491ae7bab&kind=tip&amount_cents=1000"
+      "detail": "https://tipguardsa.co.za/payment/success?ref=tg_9ee5f0eb70aa55cf7b6e52e30eb45f46&reference=tg_9ee5f0eb70aa55cf7b6e52e30eb45f46&kind=tip&amount_cents=1000&platform_fee_cents=20&charge_amount_cents=1020"
     },
     {
       "id": "payment_paystack_hosted",
       "pass": true,
-      "detail": "https://checkout.paystack.com/zk61yl2x2w5w7f5"
+      "detail": "https://checkout.paystack.com/442gf00juwwfm9s"
     },
     {
       "id": "payment_no_marketplace",

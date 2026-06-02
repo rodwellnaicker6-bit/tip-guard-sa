@@ -6,6 +6,7 @@ import { isMaintenanceMode, maintenanceResponse } from "../_shared/maintenance.t
 import { runFraudChecks } from "../_shared/fraudCheck.ts";
 import { resolvePaystackCheckoutEmail } from "../_shared/paystackEmail.ts";
 import { buildPaystackSuccessCallbackUrl } from "../_shared/publicAppUrl.ts";
+import { calcAdditivePlatformFee } from "../_shared/platformFee.ts";
 
 const RATE_MAX = 30;
 const RATE_WINDOW_SEC = 60;
@@ -190,6 +191,10 @@ serve(async (req) => {
     };
 
     let transactionId: string | null = null;
+    let tipAmountCents = amountCents;
+    let commissionCents = 0;
+    let chargeAmountCents = amountCents;
+    let feeBpsApplied = 200;
 
     if (kind === "tip") {
       if (!guardId) {
@@ -262,16 +267,25 @@ serve(async (req) => {
       if (sourceLinkToken) metadata.source_link_token = sourceLinkToken;
 
       const { data: feeRow } = await service.rpc("get_platform_fee_bps");
-      const feeBps = typeof feeRow === "number" ? feeRow : 250;
-      const commissionCents = Math.max(0, Math.round((amountCents * feeBps) / 10000));
-      const netCents = amountCents - commissionCents;
+      feeBpsApplied = typeof feeRow === "number" ? feeRow : 200;
+      const fee = calcAdditivePlatformFee(amountCents, feeBpsApplied);
+      tipAmountCents = fee.tipAmountCents;
+      commissionCents = fee.platformFeeCents;
+      chargeAmountCents = fee.chargeAmountCents;
+
+      metadata.tip_amount_cents = String(tipAmountCents);
+      metadata.commission_cents = String(commissionCents);
+      metadata.charge_amount_cents = String(chargeAmountCents);
+      metadata.fee_bps = String(feeBpsApplied);
+      metadata.fee_model = fee.feeModel;
 
       const tipRow: Record<string, unknown> = {
         guard_id: guard.id,
         payer_id: user.id,
-        amount_cents: amountCents,
+        amount_cents: tipAmountCents,
         commission_cents: commissionCents,
-        net_amount_cents: netCents,
+        customer_paid_cents: chargeAmountCents,
+        net_amount_cents: tipAmountCents,
         payer_device_hash: deviceHash,
         paystack_reference: reference,
         status: "pending",
@@ -287,6 +301,12 @@ serve(async (req) => {
           if (tipRetry) {
             return jsonDbError("Could not create tip record", "tip_insert_failed", tipRetry);
           }
+        } else if (tipErr.message?.includes("customer_paid_cents")) {
+          delete tipRow.customer_paid_cents;
+          const { error: tipRetry } = await service.from("tips").insert(tipRow);
+          if (tipRetry) {
+            return jsonDbError("Could not create tip record", "tip_insert_failed", tipRetry);
+          }
         } else {
           return jsonDbError("Could not create tip record", "tip_insert_failed", tipErr);
         }
@@ -295,9 +315,12 @@ serve(async (req) => {
       const txMeta: Record<string, unknown> = {
         guard_id: guard.id,
         guard_display_name: metadata.guard_display_name,
-        fee_bps: feeBps,
+        fee_bps: feeBpsApplied,
+        fee_model: fee.feeModel,
+        tip_amount_cents: tipAmountCents,
         commission_cents: commissionCents,
-        net_amount_cents: netCents,
+        charge_amount_cents: chargeAmountCents,
+        net_amount_cents: tipAmountCents,
         device_fingerprint: deviceHash,
         payer_device_hash: deviceHash,
       };
@@ -307,7 +330,7 @@ serve(async (req) => {
       const txRowPayload: Record<string, unknown> = {
         user_id: user.id,
         type: "tip",
-        amount_cents: amountCents,
+        amount_cents: chargeAmountCents,
         currency: "ZAR",
         status: "pending",
         paystack_reference: reference,
@@ -368,7 +391,7 @@ serve(async (req) => {
 
     const paystackBody: Record<string, unknown> = {
       email,
-      amount: amountCents,
+      amount: kind === "tip" ? chargeAmountCents : amountCents,
       currency: "ZAR",
       reference,
       metadata,
@@ -378,7 +401,9 @@ serve(async (req) => {
     const { callbackUrl, origin: appOrigin } = buildPaystackSuccessCallbackUrl({
       reference,
       kind,
-      amountCents,
+      amountCents: kind === "tip" ? tipAmountCents : amountCents,
+      platformFeeCents: kind === "tip" ? commissionCents : undefined,
+      chargeAmountCents: kind === "tip" ? chargeAmountCents : undefined,
     });
     paystackBody.callback_url = callbackUrl;
 
@@ -390,7 +415,8 @@ serve(async (req) => {
       callback_url: callbackUrl,
       redirect_target: callbackUrl,
       kind,
-      amount_cents: amountCents,
+      amount_cents: kind === "tip" ? chargeAmountCents : amountCents,
+      tip_amount_cents: kind === "tip" ? tipAmountCents : null,
     });
 
     const initRes = await fetch("https://api.paystack.co/transaction/initialize", {
@@ -464,6 +490,11 @@ serve(async (req) => {
         reference: initJson.data.reference ?? reference,
         email,
         callback_url: callbackUrl,
+        fee_model: kind === "tip" ? "additive" : null,
+        fee_bps: kind === "tip" ? feeBpsApplied : null,
+        tip_amount_cents: kind === "tip" ? tipAmountCents : null,
+        platform_fee_cents: kind === "tip" ? commissionCents : null,
+        charge_amount_cents: kind === "tip" ? chargeAmountCents : null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

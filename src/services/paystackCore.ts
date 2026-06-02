@@ -101,6 +101,11 @@ export type PaystackInitResponse = {
   authorization_url?: string;
   reference: string;
   email: string;
+  fee_model?: string | null;
+  fee_bps?: number | null;
+  tip_amount_cents?: number | null;
+  platform_fee_cents?: number | null;
+  charge_amount_cents?: number | null;
 };
 
 export type PaystackInitResult = {
@@ -436,6 +441,17 @@ export async function payTipWithPaystack(opts: {
       return;
     }
 
+    const chargeCents = data.charge_amount_cents ?? opts.amountCents;
+    const tipCents = data.tip_amount_cents ?? opts.amountCents;
+    const feeCents = data.platform_fee_cents ?? 0;
+    const successQs = new URLSearchParams({
+      ref: data.reference,
+      kind: "tip",
+      amount_cents: String(tipCents),
+    });
+    if (feeCents > 0) successQs.set("platform_fee_cents", String(feeCents));
+    if (chargeCents > 0) successQs.set("charge_amount_cents", String(chargeCents));
+
     if (data.authorization_url && preferHostedPaystackCheckout()) {
       setPhase(opts, "opening_checkout");
       logFlow("pay", "tip checkout redirecting to hosted Paystack", { reference: data.reference });
@@ -447,16 +463,15 @@ export async function payTipWithPaystack(opts: {
     const opened = await openPaystackInline({
       key,
       email: data.email,
-      amountSubunits: zarSubunitsFromCents(opts.amountCents),
+      amountSubunits: zarSubunitsFromCents(chargeCents),
       currency: "ZAR",
       reference: data.reference,
       accessCode: data.access_code,
       onSuccess: (ref) => {
         releaseTipCheckoutLock();
         setPhase(opts, "idle");
-        opts.navigate(
-          `/payment/success?ref=${encodeURIComponent(ref)}&kind=tip&amount_cents=${encodeURIComponent(String(opts.amountCents))}`,
-        );
+        successQs.set("ref", ref);
+        opts.navigate(`/payment/success?${successQs.toString()}`);
       },
       onClose: () => {
         releaseTipCheckoutLock();

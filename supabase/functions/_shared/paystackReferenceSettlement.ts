@@ -7,6 +7,9 @@ export type PaystackSettlementResult = {
   tip_status: string | null;
   transaction_status: string | null;
   amount_cents: number | null;
+  tip_amount_cents?: number | null;
+  platform_fee_cents?: number | null;
+  charge_amount_cents?: number | null;
 };
 
 export async function settlePaystackReference(
@@ -58,7 +61,7 @@ export async function settlePaystackReference(
 
   const { data: tipFresh } = await service
     .from("tips")
-    .select("status, amount_cents")
+    .select("status, amount_cents, commission_cents, customer_paid_cents")
     .eq("paystack_reference", reference)
     .maybeSingle();
   const { data: txFresh } = await service
@@ -88,10 +91,11 @@ export async function settlePaystackReference(
     transaction_status: txFresh?.status ?? tx?.status ?? null,
     amount_cents:
       tipFresh?.amount_cents ??
-      txFresh?.amount_cents ??
       tip?.amount_cents ??
-      tx?.amount_cents ??
       null,
+    tip_amount_cents: tipFresh?.amount_cents ?? tip?.amount_cents ?? null,
+    platform_fee_cents: tipFresh?.commission_cents ?? null,
+    charge_amount_cents: tipFresh?.customer_paid_cents ?? txFresh?.amount_cents ?? tx?.amount_cents ?? null,
   };
 }
 

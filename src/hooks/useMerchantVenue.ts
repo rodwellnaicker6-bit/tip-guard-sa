@@ -120,8 +120,13 @@ export async function fetchMerchantVenueForUser(userId: string): Promise<{
 }
 
 export function invalidateMerchantVenueCache(userId?: string): void {
-  if (userId) venueCache.delete(userId);
-  else venueCache.clear();
+  if (userId) {
+    venueCache.delete(userId);
+    inflight.delete(userId);
+  } else {
+    venueCache.clear();
+    inflight.clear();
+  }
 }
 
 export type MerchantVenueLoadState = {
@@ -137,7 +142,7 @@ export type MerchantVenueLoadState = {
 };
 
 export function useMerchantVenue(): MerchantVenueLoadState {
-  const { user, session, sessionReady, authReady } = useAuth();
+  const { user, session, sessionReady } = useAuth();
   const [merchant, setMerchant] = useState<MerchantVenueRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -155,7 +160,7 @@ export function useMerchantVenue(): MerchantVenueLoadState {
   }, [user?.id]);
 
   useEffect(() => {
-    if (!sessionReady || !authReady) return;
+    if (!sessionReady) return;
 
     const gen = ++loadGenRef.current;
     let cancelled = false;
@@ -171,10 +176,11 @@ export function useMerchantVenue(): MerchantVenueLoadState {
       return;
     }
 
-    logVenue("load start", { uid, sessionReady, authReady, reloadToken });
+    logVenue("load start", { uid, sessionReady, reloadToken });
 
     const watchdog = window.setTimeout(() => {
       if (cancelled || gen !== loadGenRef.current) return;
+      inflight.delete(uid);
       logVenueWarn("load watchdog fired — merchants select did not settle", {
         uid,
         timeoutMs: VENUE_LOAD_TIMEOUT_MS + 1_000,
@@ -194,34 +200,39 @@ export function useMerchantVenue(): MerchantVenueLoadState {
       const venueQuery = "from.merchants.select(id,business_name,location,verified,risk_score?).eq(user_id)";
       logVenue("venue fetch start", { uid, supabaseQuery: venueQuery, timeoutMs: VENUE_LOAD_TIMEOUT_MS });
 
-      const { row, error: venueErr } = await fetchMerchantVenueForUser(uid);
-      const venueMs = Math.round(performance.now() - t0);
+      try {
+        const { row, error: venueErr } = await fetchMerchantVenueForUser(uid);
+        const venueMs = Math.round(performance.now() - t0);
 
-      if (cancelled || gen !== loadGenRef.current) return;
+        if (cancelled || gen !== loadGenRef.current) return;
 
-      logVenue("venue fetch end", {
-        uid,
-        supabaseQuery: venueQuery,
-        queryDurationMs: venueMs,
-        queryResponse: { hasRow: !!row?.id, error: venueErr?.message ?? null },
-      });
+        logVenue("venue fetch end", {
+          uid,
+          supabaseQuery: venueQuery,
+          queryDurationMs: venueMs,
+          queryResponse: { hasRow: !!row?.id, error: venueErr?.message ?? null },
+        });
 
-      if (venueErr) {
-        const msg = venueErr.message;
-        setError(
-          import.meta.env.DEV
-            ? `We could not load your venue. ${msg}`
-            : "We could not load your venue. Please try again.",
-        );
-        setErrorCode("venue_fetch");
-        setMerchant(null);
-      } else {
-        setMerchant(row);
-        setError(null);
-        setErrorCode(null);
+        if (venueErr) {
+          const msg = venueErr.message;
+          setError(
+            import.meta.env.DEV
+              ? `We could not load your venue. ${msg}`
+              : "We could not load your venue. Please try again.",
+          );
+          setErrorCode("venue_fetch");
+          setMerchant(null);
+        } else {
+          setMerchant(row);
+          setError(null);
+          setErrorCode(null);
+        }
+      } finally {
+        window.clearTimeout(watchdog);
+        if (!cancelled && gen === loadGenRef.current) setLoading(false);
       }
 
-      setLoading(false);
+      if (cancelled || gen !== loadGenRef.current) return;
 
       void (async () => {
         const payoutQuery = "from.merchants.select(payout_schedule,...).eq(user_id)";
@@ -248,11 +259,11 @@ export function useMerchantVenue(): MerchantVenueLoadState {
       cancelled = true;
       window.clearTimeout(watchdog);
     };
-  }, [user?.id, session?.user?.id, sessionReady, authReady, reloadToken]);
+  }, [user?.id, session?.user?.id, sessionReady, reloadToken]);
 
   return {
     merchant,
-    loading: loading || !sessionReady || !authReady,
+    loading: loading || !sessionReady,
     error,
     errorCode,
     payoutSchedule,
