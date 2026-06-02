@@ -6,5 +6,5 @@ export const OPERATOR_CONTACT = {
   legalName: "TipGuard SA (Pty) Ltd",
   supportEmail: "support@tipguardsa.co.za",
   phone: "+27 10 880 4590",
-  address: "15 Alice Lane, Sandton, Johannesburg, 2196, South Africa",
+  address: "235 Queen Mary Avenue, Durban, KwaZulu-Natal, South Africa",
 } as const;

@@ -14,7 +14,7 @@
 | End-to-end payment flow | **PASS** | Callback URL deployed; browser return to `/payment/success` confirmed |
 | Compliance screen recording | **PASS** | 66s MP4 at `assets/compliance/PAYSTACK_COMPLIANCE_PAYMENT_FLOW.mp4` |
 | HTTPS & legal routes | **PASS** | All policy URLs return HTTP/2 200 over TLS |
-| Business contact (phone/address) | **MANUAL** | Template placeholders until Vercel env vars set |
+| Business contact (phone/address) | **PASS** | 235 Queen Mary Avenue, Durban — live on `/contact`, footer, legal pages |
 | Paystack portal upload | **MANUAL** | Attach MP4 + policy URLs in merchant verification form |
 | Live payment keys | **FAIL** (by policy) | Switch only after Paystack approval — see `docs/LIVE_KEY_CUTOVER.md` |
 
@@ -82,10 +82,8 @@ Rendered via `BusinessContactBlock` / `getBusinessContact()`:
 |-------|------------------|--------|
 | Legal name | TipGuard SA (Pty) Ltd (default) | **PASS** |
 | Support email | support@tipguard.co.za (default) | **PASS** |
-| Phone | +27 00 000 0000 (placeholder) | **MANUAL** — set `VITE_BUSINESS_PHONE` |
-| Address | 123 Example Street, Sandton… (placeholder) | **MANUAL** — set `VITE_BUSINESS_ADDRESS` |
-
-Production may show an **OPERATOR MUST UPDATE** banner until env vars are set. Paystack reviewers often accept real email + legal name for test review; update phone/address before live-key cutover.
+| Phone | +27 10 880 4590 | **PASS** |
+| Address | 235 Queen Mary Avenue, Durban, KwaZulu-Natal, South Africa | **PASS** |
 
 ---
 
@@ -119,7 +117,7 @@ Production may show an **OPERATOR MUST UPDATE** banner until env vars are set. P
 ### Operator actions before / during Paystack review
 
 - [ ] Upload `PAYSTACK_COMPLIANCE_PAYMENT_FLOW.mp4` to Paystack merchant verification portal (or secure link in cover email)
-- [ ] Set Vercel production: `VITE_BUSINESS_PHONE`, `VITE_BUSINESS_ADDRESS`, `VITE_BUSINESS_LEGAL_NAME`, `VITE_SUPPORT_EMAIL` (redeploy)
+- [x] Business address on production: 235 Queen Mary Avenue, Durban, KwaZulu-Natal, South Africa
 - [ ] Confirm Paystack dashboard webhook URL points to production Edge function
 - [ ] Optional: record 1920×1080 walkthrough per `docs/REVIEW_VIDEO_MASTER_SCRIPT.md` for extended review packs
 

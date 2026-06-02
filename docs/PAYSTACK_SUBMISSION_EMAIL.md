@@ -33,7 +33,7 @@ All payment UI stays on **tipguardsa.co.za** and **checkout.paystack.com** (Pays
 | **Legal name** | TipGuard SA (Pty) Ltd |
 | **Email** | support@tipguardsa.co.za |
 | **Phone** | +27 10 880 4590 |
-| **Address** | 15 Alice Lane, Sandton, Johannesburg, 2196, South Africa |
+| **Address** | 235 Queen Mary Avenue, Durban, KwaZulu-Natal, South Africa |
 | **Contact page** | https://tipguardsa.co.za/contact |
 
 ---

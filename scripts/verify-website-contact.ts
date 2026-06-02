@@ -6,7 +6,7 @@ const REQUIRED = [
   "TipGuard SA",
   "support@tipguardsa.co.za",
   "+27 10 880 4590",
-  "15 Alice Lane",
+  "235 Queen Mary Avenue",
 ];
 
 async function main() {

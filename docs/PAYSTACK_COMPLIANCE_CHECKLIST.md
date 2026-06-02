@@ -17,7 +17,7 @@ Map each Paystack merchant-review requirement to **PASS** / **FAIL** / **MANUAL*
 | 1.2 | Company / operator name visible | **PASS** (template) | Footer on `/`; `BusinessContactBlock` — **OPERATOR MUST UPDATE** `VITE_BUSINESS_LEGAL_NAME` |
 | 1.3 | Support email | **PASS** (default) | `/contact` — `VITE_SUPPORT_EMAIL` or `support@tipguard.co.za` |
 | 1.4 | Phone number | **MANUAL** | Placeholder until `VITE_BUSINESS_PHONE` set in Vercel |
-| 1.5 | Physical address | **MANUAL** | Placeholder until `VITE_BUSINESS_ADDRESS` set in Vercel |
+| 1.5 | Physical address | **PASS** | 235 Queen Mary Avenue, Durban, KwaZulu-Natal, South Africa — `/contact`, footer, legal pages |
 | 1.6 | Privacy policy | **PASS** | https://tipguardsa.co.za/privacy |
 | 1.7 | Terms of use | **PASS** | https://tipguardsa.co.za/terms |
 | 1.8 | Refund / delivery policy | **PASS** | https://tipguardsa.co.za/legal/refunds (alias `/refund`, `/refunds`) |
@@ -87,7 +87,7 @@ Map each Paystack merchant-review requirement to **PASS** / **FAIL** / **MANUAL*
 
 ## Operator actions before submission
 
-1. Set Vercel production: `VITE_BUSINESS_PHONE`, `VITE_BUSINESS_ADDRESS`, `VITE_BUSINESS_LEGAL_NAME`, `VITE_SUPPORT_EMAIL`.
+1. Confirm Vercel `VITE_BUSINESS_ADDRESS` matches registered operator address (default in `src/config/operatorContact.ts`).
 2. Confirm Supabase `PUBLIC_APP_URL=https://tipguardsa.co.za`.
 3. Upload `assets/compliance/PAYSTACK_COMPLIANCE_PAYMENT_FLOW.mp4` to Paystack (re-record: `npm run record:compliance-video`).
 4. Run signed-in E2E on `/tip/demo-staging-qr-01` with Paystack test card.
