@@ -14,7 +14,7 @@ import { initAnalytics } from "./lib/analytics";
 import { initSentry } from "./lib/sentry";
 
 const BOOTSTRAP_FALLBACK_HTML = `
-  <div style="font-family:system-ui,sans-serif;max-width:32rem;margin:2rem auto;padding:1.5rem;color:#e2e8f0;background:#020617;min-height:100vh">
+  <div style="font-family:system-ui,sans-serif;max-width:32rem;margin:2rem auto;padding:1.5rem;color:#e2e8f0;background:#0a0f1a;min-height:100vh">
     <h1 style="color:#fbbf24;font-size:1.25rem">TipGuard could not start</h1>
     <p style="color:#94a3b8;font-size:0.875rem">The app failed to mount. Check the browser console, then reload.</p>
     <button type="button" onclick="location.reload()" style="margin-top:1rem;padding:0.75rem 1rem;border-radius:1rem;border:1px solid rgba(255,255,255,0.15);background:transparent;color:#e2e8f0;font-weight:600;cursor:pointer">Reload</button>

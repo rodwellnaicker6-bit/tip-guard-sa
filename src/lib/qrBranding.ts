@@ -22,8 +22,8 @@ export async function renderQrPrintCard(opts: QrCardOptions): Promise<string> {
   }
 
   const grad = ctx.createLinearGradient(0, 0, width, height);
-  grad.addColorStop(0, "#0f172a");
-  grad.addColorStop(1, "#1e293b");
+  grad.addColorStop(0, "#0a0f1a");
+  grad.addColorStop(1, "#121a2e");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, width, height);
 
@@ -51,7 +51,7 @@ export async function renderQrPrintCard(opts: QrCardOptions): Promise<string> {
   const qrData = await QRCode.toDataURL(opts.tipUrl, {
     width: qrSize,
     margin: 2,
-    color: { dark: "#0f172a", light: "#ffffff" },
+    color: { dark: "#0a0f1a", light: "#ffffff" },
   });
 
   if (opts.logoUrl) {

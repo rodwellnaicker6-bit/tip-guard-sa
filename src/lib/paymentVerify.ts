@@ -21,17 +21,21 @@ export type VerifyPaymentResult = {
   charge_amount_cents?: number | null;
 };
 
-async function invokePaymentStatus(reference: string): Promise<{
+async function invokePaymentStatus(
+  reference: string,
+  accessToken?: string,
+): Promise<{
   data: VerifyPaymentResult | null;
   error: string | null;
 }> {
   const started = Date.now();
   logPayInvokeStart("payment-status", { reference });
+  const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined;
   try {
     const { data, error } = await withOperationTimeout(
       "pay",
       "payment-status invoke",
-      supabase.functions.invoke("payment-status", { body: { reference } }),
+      supabase.functions.invoke("payment-status", { body: { reference }, headers }),
       PAYMENT_VERIFY_TIMEOUT_MS,
     );
     if (error) {
@@ -79,7 +83,7 @@ export async function verifyPaystackReference(
     }
   }
 
-  return invokePaymentStatus(reference);
+  return invokePaymentStatus(reference, session.ok ? session.accessToken : undefined);
 }
 
 /** Poll payment status (session optional — uses payment-status when unauthenticated). */

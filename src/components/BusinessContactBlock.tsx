@@ -30,10 +30,20 @@ export function BusinessContactBlock({ compact = false }: { compact?: boolean })
         </div>
         <div>
           <dt className="text-xs uppercase tracking-wide text-slate-500">Phone</dt>
-          <dd>
-            <a href={`tel:${c.phone.replace(/\s/g, "")}`} className="text-amber-300 underline">
-              {c.phone}
-            </a>
+          <dd className="space-y-1">
+            <div>
+              <a href={`tel:${c.phone.replace(/\s/g, "")}`} className="text-amber-300 underline">
+                {c.phone}
+              </a>
+            </div>
+            <div>
+              <a
+                href={`tel:${c.phoneMobile.replace(/\s/g, "")}`}
+                className="text-amber-300 underline"
+              >
+                {c.phoneMobile}
+              </a>
+            </div>
           </dd>
         </div>
         <div>

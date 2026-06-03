@@ -1,36 +1,36 @@
 {
-  "generatedAt": "2026-06-02T05:21:55.799Z",
-  "app": "https://tipguardsa.co.za",
+  "generatedAt": "2026-06-03T06:37:35.869Z",
+  "app": "https://www.tipguardsa.co.za",
   "steps": [
     {
       "id": "http_home",
       "pass": true,
-      "detail": "200 https://tipguardsa.co.za/"
+      "detail": "200 https://www.tipguardsa.co.za/"
     },
     {
       "id": "http_contact",
       "pass": true,
-      "detail": "200 https://tipguardsa.co.za/contact"
+      "detail": "200 https://www.tipguardsa.co.za/contact"
     },
     {
       "id": "http_terms",
       "pass": true,
-      "detail": "200 https://tipguardsa.co.za/terms"
+      "detail": "200 https://www.tipguardsa.co.za/terms"
     },
     {
       "id": "http_privacy",
       "pass": true,
-      "detail": "200 https://tipguardsa.co.za/privacy"
+      "detail": "200 https://www.tipguardsa.co.za/privacy"
     },
     {
       "id": "http_refunds",
       "pass": true,
-      "detail": "200 https://tipguardsa.co.za/legal/refunds"
+      "detail": "200 https://www.tipguardsa.co.za/legal/refunds"
     },
     {
       "id": "http_tip",
       "pass": true,
-      "detail": "200 https://tipguardsa.co.za/tip/demo-staging-qr-01"
+      "detail": "200 https://www.tipguardsa.co.za/tip/demo-staging-qr-01"
     },
     {
       "id": "ssl_no_mixed_content_index",
@@ -60,12 +60,12 @@
     {
       "id": "payment_callback_url",
       "pass": true,
-      "detail": "https://tipguardsa.co.za/payment/success?ref=tg_9ee5f0eb70aa55cf7b6e52e30eb45f46&reference=tg_9ee5f0eb70aa55cf7b6e52e30eb45f46&kind=tip&amount_cents=1000&platform_fee_cents=20&charge_amount_cents=1020"
+      "detail": "https://tipguardsa.co.za/payment/success?ref=tg_0cff6f288ae3daff957d14c2edf7cdea&reference=tg_0cff6f288ae3daff957d14c2edf7cdea&kind=tip&amount_cents=1000&platform_fee_cents=20&charge_amount_cents=1020"
     },
     {
       "id": "payment_paystack_hosted",
       "pass": true,
-      "detail": "https://checkout.paystack.com/442gf00juwwfm9s"
+      "detail": "https://checkout.paystack.com/9bb91b444d06kwo"
     },
     {
       "id": "payment_no_marketplace",

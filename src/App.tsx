@@ -6,7 +6,6 @@ import { ToastProvider } from "./context/ToastProvider";
 import { AppBootGate } from "./components/AppBootGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { EmergencyErrorBoundary } from "./lib/emergencySafeMode";
-import { BuildDeployBadge } from "./components/BuildDeployBadge";
 import { bootLog, logBootHealth } from "./lib/bootDebug";
 import { SessionIdleWatcher } from "./components/SessionIdleWatcher";
 import { RequireAdmin, RequireAuth, RequireGuard, RequireMerchant } from "./components/RequireAuth";
@@ -503,7 +502,6 @@ export default function App() {
                 <AppRoutes />
               </EmergencyErrorBoundary>
             </AppBootGate>
-            <BuildDeployBadge />
           </AuthProvider>
         </ToastProvider>
       </BrowserRouter>

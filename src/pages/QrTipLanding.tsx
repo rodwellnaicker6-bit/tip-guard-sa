@@ -464,7 +464,7 @@ function QrTipLandingContent() {
         <p className="mt-2 text-center text-3xl font-black text-amber-400">{amountLabel}</p>
         {feePreview && feePreview.platformFeeCents > 0 ? (
           <p className="mt-2 text-center text-sm text-slate-400">
-            Platform fee {zarFromCents(feePreview.platformFeeCents)} (2%) · You pay{" "}
+            Platform Fee (2%): {zarFromCents(feePreview.platformFeeCents)} · Total charged{" "}
             <span className="font-semibold text-amber-300">{zarFromCents(feePreview.chargeAmountCents)}</span>
           </p>
         ) : null}

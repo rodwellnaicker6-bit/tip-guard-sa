@@ -132,7 +132,7 @@ function MerchantDashboardPage() {
 
       <div className="card min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4 fx-fade-up">
         <strong className="text-slate-200">Tips &amp; volume</strong>
-        <p className="mt-1 text-sm text-slate-400">Real aggregates from your guards&apos; tips (not demo data).</p>
+        <p className="mt-1 text-sm text-slate-400">Live aggregates from tips received through your venue QR codes.</p>
         <div className="mt-4">
           <MerchantAnalyticsPanel />
         </div>

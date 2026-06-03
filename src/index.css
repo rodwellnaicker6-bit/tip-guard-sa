@@ -3,10 +3,14 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --bg: #0f1628;
-  --surface: #1a2640;
-  --card: #1e2f4d;
-  --border: #3d5a80;
+  --bg: #0a0f1a;
+  --surface: #121a2e;
+  --card: #162238;
+  --border: #2d4466;
+  --shell-bg: var(--bg);
+  --shell-glow-gold: rgba(251, 191, 36, 0.1);
+  --shell-glow-blue: rgba(96, 165, 250, 0.06);
+  --shell-glow-green: rgba(52, 211, 153, 0.05);
   --gold: #fbbf24;
   --gold-b: #d97706;
   --green: #34d399;
@@ -67,10 +71,10 @@ a {
   padding: max(var(--space-lg), env(safe-area-inset-top)) max(var(--space-md), env(safe-area-inset-right))
     max(48px, env(safe-area-inset-bottom)) max(var(--space-md), env(safe-area-inset-left));
   background:
-    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(251, 191, 36, 0.22), transparent 55%),
-    radial-gradient(ellipse 80% 60% at 100% 50%, rgba(96, 165, 250, 0.14), transparent 50%),
-    radial-gradient(ellipse 60% 50% at 0% 100%, rgba(52, 211, 153, 0.08), transparent 45%),
-    var(--bg);
+    radial-gradient(ellipse 120% 80% at 50% -20%, var(--shell-glow-gold), transparent 55%),
+    radial-gradient(ellipse 80% 60% at 100% 50%, var(--shell-glow-blue), transparent 50%),
+    radial-gradient(ellipse 60% 50% at 0% 100%, var(--shell-glow-green), transparent 45%),
+    var(--shell-bg);
   -webkit-overflow-scrolling: touch;
   overflow-x: hidden;
 }
@@ -269,15 +273,15 @@ button.btn-ghost:hover:not(:disabled) {
   z-index: 0;
   max-width: 100vw;
   background:
-    radial-gradient(ellipse 95% 60% at 50% -8%, rgba(251, 191, 36, 0.38), transparent 50%),
-    radial-gradient(ellipse 75% 50% at 100% 28%, rgba(96, 165, 250, 0.2), transparent 46%),
-    radial-gradient(ellipse 58% 42% at 0% 72%, rgba(52, 211, 153, 0.14), transparent 44%);
+    radial-gradient(ellipse 95% 60% at 50% -8%, var(--shell-glow-gold), transparent 55%),
+    radial-gradient(ellipse 75% 50% at 100% 28%, var(--shell-glow-blue), transparent 50%),
+    radial-gradient(ellipse 58% 42% at 0% 72%, var(--shell-glow-green), transparent 45%);
 }
 
 .marketing-glow--auth {
   background:
-    radial-gradient(ellipse 90% 55% at 50% 0%, rgba(251, 191, 36, 0.36), transparent 48%),
-    radial-gradient(ellipse 65% 42% at 90% 58%, rgba(96, 165, 250, 0.17), transparent 44%);
+    radial-gradient(ellipse 90% 55% at 50% 0%, var(--shell-glow-gold), transparent 55%),
+    radial-gradient(ellipse 65% 42% at 90% 58%, var(--shell-glow-blue), transparent 50%);
 }
 
 .marketing-inner {
@@ -1093,7 +1097,7 @@ a.btn-ghost {
 }
 
 /* Viewport breakpoints: 320 / 375 / 390 / 430 + tablet */
-@media (min-width: 768px) {
+@media (min-width: 720px) {
   :root {
     --shell-max: 720px;
   }
@@ -1104,6 +1108,24 @@ a.btn-ghost {
 
   .marketing-inner {
     max-width: 480px;
+  }
+
+  .hub-nav-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 960px) {
+  :root {
+    --shell-max: 960px;
+  }
+
+  .dashboard-hub {
+    max-width: 960px;
+  }
+
+  .marketing-inner {
+    max-width: 560px;
   }
 }
 
@@ -1133,6 +1155,10 @@ a.btn-ghost {
   min-width: 0;
   overflow-x: hidden;
   padding-bottom: max(76px, calc(60px + env(safe-area-inset-bottom)));
+  background:
+    radial-gradient(ellipse 120% 80% at 50% -20%, var(--shell-glow-gold), transparent 55%),
+    radial-gradient(ellipse 80% 60% at 100% 50%, var(--shell-glow-blue), transparent 50%),
+    var(--shell-bg);
 }
 
 .mobile-bottom-nav {

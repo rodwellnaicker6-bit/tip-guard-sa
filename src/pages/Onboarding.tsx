@@ -17,7 +17,6 @@ import { unwrapRpcSingle } from "../lib/rpcData";
 import { logOnboarding, ONBOARDING_FAILSAFE_MS, withOnboardingTimeout } from "../lib/onboardingDebug";
 import { logOnboardingMutation } from "../lib/onboardingMutationTrace";
 import { recordError } from "../lib/errorTelemetry";
-import { isComplianceDemoMode } from "../lib/complianceDemo";
 import { onboardingErrorMessage } from "../lib/userFacingErrors";
 
 type LocationState = { registeredRole?: "customer" | "guard" | "merchant" };
@@ -461,7 +460,7 @@ export default function Onboarding() {
 
   return (
     <div className="shell mx-auto max-w-lg space-y-4 px-5 py-8 pb-20">
-      {!isComplianceDemoMode() ? <PaystackTestBanner /> : null}
+      <PaystackTestBanner />
       <header className="fx-fade-up text-center">
         <p className="muted-label">
           Step {stepIndex} of {STEPS.length}

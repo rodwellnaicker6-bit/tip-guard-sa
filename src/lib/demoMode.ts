@@ -1,6 +1,7 @@
-/** Staging demo helpers — enable with VITE_DEMO_MODE=true */
+/** Staging demo helpers — enable with VITE_DEMO_MODE=true (never on production builds). */
 
-export const isDemoMode = import.meta.env.VITE_DEMO_MODE === "true";
+export const isDemoMode =
+  !import.meta.env.PROD && import.meta.env.VITE_DEMO_MODE === "true";
 
 export const DEMO_ACCOUNTS = {
   admin: { email: "demo-admin@tipguard.staging", label: "Admin demo" },

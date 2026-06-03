@@ -32,6 +32,7 @@ interface ImportMetaEnv {
   readonly VITE_BUSINESS_LEGAL_NAME?: string;
   /** SA business phone shown on /contact and legal pages */
   readonly VITE_BUSINESS_PHONE?: string;
+  readonly VITE_BUSINESS_PHONE_MOBILE?: string;
   /** Physical business address for Paystack / POPIA */
   readonly VITE_BUSINESS_ADDRESS?: string;
 }

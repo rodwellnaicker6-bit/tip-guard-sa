@@ -1,0 +1,4 @@
+Platform fee live verification (additive 2%)
+R10 tip: Customer R10.20 | Merchant R10.00 | TipGuard R0.20
+R100 tip: Customer R102.00 | Merchant R100.00 | TipGuard R2.00
+R500 tip: Customer R510.00 | Merchant R500.00 | TipGuard R10.00

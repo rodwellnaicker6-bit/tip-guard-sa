@@ -15,6 +15,8 @@ export function pathAfterSignIn(
   }
   if (profileRole === "admin") return "/admin";
   if (profileRole === "guard" || hasGuardRow) return "/guard";
-  if (profileRole === "merchant" || hasMerchantRow) return "/merchant";
+  if (profileRole === "merchant" || hasMerchantRow) {
+    return hasMerchantRow ? "/merchant" : "/merchant/setup";
+  }
   return "/customer/dashboard";
 }

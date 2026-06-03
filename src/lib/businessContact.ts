@@ -6,6 +6,7 @@ export type BusinessContact = {
   legalName: string;
   supportEmail: string;
   phone: string;
+  phoneMobile: string;
   address: string;
 };
 
@@ -19,6 +20,7 @@ export function getBusinessContact(): BusinessContact {
     legalName: env("VITE_BUSINESS_LEGAL_NAME") ?? OPERATOR_CONTACT.legalName,
     supportEmail: env("VITE_SUPPORT_EMAIL") ?? OPERATOR_CONTACT.supportEmail,
     phone: env("VITE_BUSINESS_PHONE") ?? OPERATOR_CONTACT.phone,
+    phoneMobile: env("VITE_BUSINESS_PHONE_MOBILE") ?? OPERATOR_CONTACT.phoneMobile,
     address: env("VITE_BUSINESS_ADDRESS") ?? OPERATOR_CONTACT.address,
   };
 }

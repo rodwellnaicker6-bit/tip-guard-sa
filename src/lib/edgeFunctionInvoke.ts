@@ -6,11 +6,12 @@ import {
 import { isBootDebug } from "./bootDebug";
 import { normalizeSupabaseUrl, projectRefFromSupabaseUrl } from "./supabaseProject";
 
-/** Verbose payment invoke logs (dev, VITE_DEBUG_BOOT, or VITE_DEBUG_PAY). */
+/** Verbose payment invoke logs (dev only — never production). */
 export const isPayDebug =
-  isBootDebug ||
-  import.meta.env.VITE_DEBUG_PAY === "true" ||
-  import.meta.env.VITE_DEBUG_PAY === "1";
+  !import.meta.env.PROD &&
+  (isBootDebug ||
+    import.meta.env.VITE_DEBUG_PAY === "true" ||
+    import.meta.env.VITE_DEBUG_PAY === "1");
 
 /** Resolved Edge Function URL for diagnostics (no secrets). */
 export function edgeFunctionUrl(functionName: string): string | null {

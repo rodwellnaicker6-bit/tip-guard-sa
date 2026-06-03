@@ -58,26 +58,24 @@ export default function MerchantKyc() {
         return;
       }
 
-      const noCase = !k && (!kErr || kErr.code === "PGRST116");
-      if (noCase) {
-        const { data: created, error: cErr } = await supabase
-          .from("kyc_cases")
-          .insert({ party_type: "merchant", party_id: m.id, status: "draft", data: {} })
-          .select("id, status, data, updated_at")
-          .single();
+      if (k) {
+        setKyc(k as KycRow);
+      } else {
+        const { data: ensured, error: eErr } = await supabase.rpc("ensure_merchant_kyc_draft", {
+          p_merchant_id: m.id,
+        });
         if (cancelled) return;
-        if (cErr) {
-          setError(
-            cErr.message.includes("kyc_cases") || cErr.code === "42P01"
-              ? "KYC is not available until database migrations are applied."
-              : cErr.message,
-          );
+        if (eErr) {
+          setError(eErr.message);
           setKyc(null);
         } else {
-          setKyc(created as KycRow);
+          const row = Array.isArray(ensured) ? ensured[0] : ensured;
+          if (row && typeof row === "object" && "id" in row) {
+            setKyc(row as KycRow);
+          } else {
+            setError("Could not initialize KYC. Try again or contact support.");
+          }
         }
-      } else {
-        setKyc(k as KycRow);
       }
 
       const { data: fullMerch } = await supabase.from("merchants").select("company_registration, vat_number").eq("id", m.id).maybeSingle();

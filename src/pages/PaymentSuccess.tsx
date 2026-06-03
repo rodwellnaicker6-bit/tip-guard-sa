@@ -181,12 +181,12 @@ export default function PaymentSuccess() {
       `Verification: ${verifyState}`,
       confirmedCents != null ? `Tip (to guard/venue): ${zarFromCents(confirmedCents)}` : "",
       confirmedFeeCents != null && confirmedFeeCents > 0
-        ? `Platform fee (2%): ${zarFromCents(confirmedFeeCents)}`
+        ? `Platform Fee (2%): ${zarFromCents(confirmedFeeCents)}`
         : "",
       confirmedChargeCents != null
-        ? `Total paid: ${zarFromCents(confirmedChargeCents)}`
+        ? `Total Charged: ${zarFromCents(confirmedChargeCents)}`
         : confirmedCents != null
-          ? `Total paid: ${zarFromCents(confirmedCents + (confirmedFeeCents ?? 0))}`
+          ? `Total Charged: ${zarFromCents(confirmedCents + (confirmedFeeCents ?? 0))}`
           : "",
       "",
       "Final settlement is confirmed when Paystack reports success to our server.",
@@ -202,7 +202,7 @@ export default function PaymentSuccess() {
 
   const statusLabel =
     verifyState === "confirmed"
-      ? "Confirmed with Paystack"
+      ? "Paystack verified"
       : verifyState === "failed"
         ? "We could not confirm this payment yet"
         : verifyState === "processing"
@@ -212,7 +212,7 @@ export default function PaymentSuccess() {
   const showCelebration = verifyState === "confirmed";
 
   return (
-    <div className="shell mx-auto flex min-h-screen max-w-md flex-col gap-6 px-5 py-10 pb-16">
+    <div className="shell mx-auto flex min-h-screen w-full max-w-md flex-col gap-6 px-5 py-10 pb-16 md:max-w-xl">
       <div className="fx-fade-up flex flex-col items-center text-center">
         <div
           className={`fx-scale-in mb-4 flex h-24 w-24 items-center justify-center rounded-full shadow-[0_0_48px_-8px_rgba(16,185,129,0.45)] ${
@@ -293,14 +293,14 @@ export default function PaymentSuccess() {
         {confirmedCents != null && (
           <div className="mt-2 text-sm text-slate-300">
             <p>
-              Tip to guard/venue:{" "}
+              Tip to Guard:{" "}
               <span className="font-black text-amber-400">{zarFromCents(confirmedCents)}</span>
             </p>
             {confirmedFeeCents != null && confirmedFeeCents > 0 ? (
-              <p className="mt-1">Platform fee (2%): {zarFromCents(confirmedFeeCents)}</p>
+              <p className="mt-1">Platform Fee (2%): {zarFromCents(confirmedFeeCents)}</p>
             ) : null}
             {confirmedChargeCents != null ? (
-              <p className="mt-1 font-semibold text-white">Total paid: {zarFromCents(confirmedChargeCents)}</p>
+              <p className="mt-1 font-semibold text-white">Total Charged: {zarFromCents(confirmedChargeCents)}</p>
             ) : null}
           </div>
         )}

@@ -3,10 +3,33 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, recordRateLimitHit } from "../_shared/rateLimit.ts";
 import { isMaintenanceMode, maintenanceResponse } from "../_shared/maintenance.ts";
+import { readPaymentStatusFromRows } from "../_shared/paymentStatusRead.ts";
 import {
   isValidPaystackReference,
   settlePaystackReference,
 } from "../_shared/paystackReferenceSettlement.ts";
+
+async function callerMaySettle(
+  req: Request,
+  tipPayerId: string | null | undefined,
+  txUserId: string | null | undefined,
+): Promise<boolean> {
+  const auth = req.headers.get("Authorization") ?? "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (serviceKey && auth === `Bearer ${serviceKey}`) return true;
+
+  if (!auth.startsWith("Bearer ")) return false;
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+    { global: { headers: { Authorization: auth } } },
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+
+  return tipPayerId === user.id || txUserId === user.id;
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -53,13 +76,13 @@ serve(async (req) => {
 
     const { data: tipRow } = await service
       .from("tips")
-      .select("status, amount_cents, commission_cents, customer_paid_cents")
+      .select("status, amount_cents, commission_cents, customer_paid_cents, payer_id")
       .eq("paystack_reference", reference)
       .maybeSingle();
 
     const { data: txRow } = await service
       .from("transactions")
-      .select("status, amount_cents")
+      .select("status, amount_cents, user_id")
       .eq("paystack_reference", reference)
       .maybeSingle();
 
@@ -70,26 +93,33 @@ serve(async (req) => {
       });
     }
 
-    const alreadyDone =
-      tipRow?.status === "succeeded" ||
-      tipRow?.status === "failed" ||
-      txRow?.status === "succeeded" ||
-      txRow?.status === "failed";
+    const readOnly = readPaymentStatusFromRows(
+      reference,
+      tipRow,
+      txRow,
+    );
 
-    const result = alreadyDone
-      ? {
-          reference,
-          paystack_status: tipRow?.status === "succeeded" || txRow?.status === "succeeded" ? "success" : "failed",
-          verified: tipRow?.status === "succeeded" || txRow?.status === "succeeded",
-          tip_status: tipRow?.status ?? null,
-          transaction_status: txRow?.status ?? null,
-          amount_cents: tipRow?.amount_cents ?? txRow?.amount_cents ?? null,
-          tip_amount_cents: tipRow?.amount_cents ?? null,
-          platform_fee_cents: tipRow?.commission_cents ?? null,
-          charge_amount_cents: tipRow?.customer_paid_cents ?? txRow?.amount_cents ?? null,
-        }
-      : await settlePaystackReference(service, secret, reference);
+    if (readOnly.settled) {
+      const { settled: _s, ...payload } = readOnly;
+      return new Response(JSON.stringify(payload), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
+    const maySettle = await callerMaySettle(
+      req,
+      (tipRow as { payer_id?: string } | null)?.payer_id,
+      (txRow as { user_id?: string } | null)?.user_id,
+    );
+
+    if (!maySettle) {
+      const { settled: _s, ...payload } = readOnly;
+      return new Response(JSON.stringify(payload), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const result = await settlePaystackReference(service, secret, reference);
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

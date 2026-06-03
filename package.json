@@ -36,7 +36,14 @@
     "record:compliance-video": "tsx scripts/record-paystack-compliance-video.ts",
     "compliance:verify": "tsx scripts/compliance-lockdown-verify.ts",
     "compliance:evidence": "tsx scripts/compliance-payment-evidence.ts",
-    "verify:platform-fee": "tsx scripts/verify-platform-fee-live.ts"
+    "verify:platform-fee": "tsx scripts/verify-platform-fee-live.ts",
+    "verify:production-security": "tsx scripts/verify-production-security.ts",
+    "check:submission-v2": "tsx scripts/check-submission-v2.ts",
+    "generate:submission-v2": "tsx scripts/generate-paystack-submission-v2.ts",
+    "ensure:review-merchant": "tsx scripts/ensure-paystack-review-merchant.ts",
+    "generate:reviewer-evidence": "tsx scripts/generate-reviewer-evidence.ts",
+    "paystack:review:verify": "npm run build && npm run lint && npm run verify:production-security && npm run compliance:verify && npm run verify:platform-fee && npm run check:submission-v2",
+    "generate:review-package": "tsx scripts/generate-paystack-review-package.ts"
   },
   "dependencies": {
     "@sentry/react": "^10.53.1",

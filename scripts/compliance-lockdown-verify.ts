@@ -8,7 +8,7 @@ import { execSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { loadEnvFiles, requireEnv } from "./lib/env.js";
 
-const APP = process.env.COMPLIANCE_BASE_URL?.trim() || "https://tipguardsa.co.za";
+const APP = process.env.COMPLIANCE_BASE_URL?.trim() || "https://www.tipguardsa.co.za";
 const GUARD_ID = "b1000003-0003-4003-8003-000000000003";
 const DEMO_QR = "demo-staging-qr-01";
 const EVIDENCE_DIR = path.resolve("assets/compliance/lockdown-evidence");

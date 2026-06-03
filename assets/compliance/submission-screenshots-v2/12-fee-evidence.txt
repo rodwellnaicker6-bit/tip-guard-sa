@@ -1,0 +1,13 @@
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> tipguard-sa@0.0.0 verify:platform-fee
+> tsx scripts/verify-platform-fee-live.ts
+
+PLATFORM FEE MODEL: additive (customer pays tip + 2%)
+fee_bps: 200 (2%)
+
+| Tip | Customer Pays | Merchant Receives | TipGuard Receives |
+|-----|---------------|-------------------|-------------------|
+| R10 | R10.20 | R10.00 | R0.20 | PASS
+| R100 | R102.00 | R100.00 | R2.00 | PASS
+| R500 | R510.00 | R500.00 | R10.00 | PASS

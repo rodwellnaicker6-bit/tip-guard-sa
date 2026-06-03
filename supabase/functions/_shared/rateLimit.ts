@@ -24,7 +24,7 @@ export async function checkRateLimit(
 
   if (error) {
     console.error("rate_limit_count", key.route, error.message);
-    return true;
+    return false;
   }
   return (count ?? 0) < config.max;
 }

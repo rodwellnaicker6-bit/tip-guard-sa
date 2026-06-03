@@ -172,13 +172,11 @@ export async function initializePaystackTransaction(
   }
 
   let accessToken: string;
-  let userId: string;
   const fast = hintFastPath(paymentHint);
   if (fast?.ok) {
     accessToken = fast.accessToken;
-    userId = fast.userId;
     logQrAuth("initializePaystackTransaction using prechecked JWT (no refresh)", {
-      userId,
+      userId: fast.userId,
       t: qrAuthTimestamp(),
     });
   } else {
@@ -213,7 +211,6 @@ export async function initializePaystackTransaction(
       return { data: null, errorMessage: session.message, requiresSignIn };
     }
     accessToken = session.accessToken;
-    userId = session.userId;
   }
 
   const device_fingerprint = await getDeviceFingerprintHash();
